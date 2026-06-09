@@ -38,9 +38,10 @@ func Resolve(cpos []store.CPO) []Source {
 	return out
 }
 
-// Seeds returns the known Belgian NAP charging sources to register on startup.
-// EnergyVision is disabled until a free OCPI key is obtained
-// (email myevplatform@energyvision.be) and ENERGYVISION_TOKEN is set.
+// Seeds returns the known Belgian NAP charging OCPI sources to register on
+// startup (disabled). Enable a source once its token is set and the client
+// supports its OCPI version. See docs/sources.md for the full catalogue
+// (incl. DATEX II aggregators like Eco-Movement that need a separate reader).
 func Seeds() []store.CPO {
 	return []store.CPO{
 		{
@@ -51,7 +52,18 @@ func Seeds() []store.CPO {
 			TokenEnv:    "ENERGYVISION_TOKEN",
 			PollCron:    "0 4 * * *",   // daily 04:00; price changes are rare
 			StatusCron:  "*/3 * * * *", // availability every 3 min
-			Enabled:     false,         // flip to true once a token is available
+			Enabled:     false,         // ready for the current client; needs a token
+		},
+		{
+			// OCPI 2.2.1 — enable once the client supports 2.2.1 (auth + tariffs).
+			ID:          "tesla",
+			Name:        "Tesla Belgium",
+			OCPIBaseURL: "https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/",
+			OCPIVersion: "2.2.1",
+			TokenEnv:    "TESLA_TOKEN",
+			PollCron:    "0 4 * * *",
+			StatusCron:  "*/5 * * * *", // Tesla refreshes every 5 min
+			Enabled:     false,
 		},
 	}
 }
