@@ -19,7 +19,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/appmire/charging/internal/model"
-	"github.com/appmire/charging/internal/normalize"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/source"
 	"github.com/appmire/charging/internal/store"
@@ -71,21 +70,20 @@ func (e *Engine) RunAll(ctx context.Context, sources []source.Source) error {
 	return g.Wait()
 }
 
-// RunAvailability refreshes connector availability only (Locations feed).
+// RunAvailability refreshes connector availability only (light path).
 func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
 	return e.recordRun(ctx, src.CPO.ID, KindAvailability, func() (int, int, error) {
-		locations, err := src.Client().Locations(ctx)
+		conns, err := feedFor(src).Availability(ctx)
 		if err != nil {
-			return 0, 0, fmt.Errorf("fetch locations %s: %w", src.CPO.ID, err)
+			return 0, 0, fmt.Errorf("availability %s: %w", src.CPO.ID, err)
 		}
-		res := normalize.FromOCPI(src.CPO.ID, locations, nil)
-		for _, conn := range res.Connectors {
+		for _, conn := range conns {
 			if _, err := e.upsertConnector(ctx, conn); err != nil {
 				e.Log.Error("upsert connector", "cpo", src.CPO.ID,
 					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
 			}
 		}
-		return len(res.Connectors), 0, nil
+		return len(conns), 0, nil
 	})
 }
 
@@ -93,26 +91,19 @@ func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
 // change detection.
 func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 	return e.recordRun(ctx, src.CPO.ID, KindPrice, func() (int, int, error) {
-		client := src.Client()
-		locations, err := client.Locations(ctx)
+		conns, tariffs, err := feedFor(src).Full(ctx)
 		if err != nil {
-			return 0, 0, fmt.Errorf("fetch locations %s: %w", src.CPO.ID, err)
+			return 0, 0, fmt.Errorf("full pass %s: %w", src.CPO.ID, err)
 		}
-		tariffs, err := client.Tariffs(ctx)
-		if err != nil {
-			return 0, 0, fmt.Errorf("fetch tariffs %s: %w", src.CPO.ID, err)
-		}
-
-		res := normalize.FromOCPI(src.CPO.ID, locations, tariffs)
 		changes := 0
-		for _, conn := range res.Connectors {
+		for _, conn := range conns {
 			id, err := e.upsertConnector(ctx, conn)
 			if err != nil {
 				e.Log.Error("upsert connector", "cpo", src.CPO.ID,
 					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
 				continue
 			}
-			ch, err := e.processTariff(ctx, id, conn, res.Tariffs)
+			ch, err := e.processTariff(ctx, id, conn, tariffs)
 			if err != nil {
 				e.Log.Error("process tariff", "cpo", src.CPO.ID,
 					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
@@ -122,7 +113,7 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 				changes++
 			}
 		}
-		return len(res.Connectors), changes, nil
+		return len(conns), changes, nil
 	})
 }
 

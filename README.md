@@ -79,7 +79,8 @@ The `ingest` scheduler is built to run 24/7:
 cmd/ingest   poller binary: -once (cron/CI) or in-process scheduler
 cmd/api      HTTP API: cheapest-nearby + price-history
 
-internal/ocpi       OCPI 2.1.1 client (paginated Locations + Tariffs, Token auth)
+internal/ocpi       OCPI 2.1.1 + 2.2.1 client (discovery, paged Locations+Tariffs)
+internal/datex      DATEX II v3 EnergyInfrastructure reader (aggregators)
 internal/normalize  OCPI -> canonical model
 internal/model      canonical types + tariff content hash
 internal/pricing    comparable standard-session price from tariff components

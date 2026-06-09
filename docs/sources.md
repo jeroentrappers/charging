@@ -29,15 +29,20 @@ commercial **OCPI** API is the richer alternative.
 
 ## What's needed to consume each format
 
-- **OCPI 2.1.1** — works with the current client today (EnergyVision).
-- **OCPI 2.2.1** — needs: the `/versions` discovery handshake, the 2.2.1 auth
-  scheme (`Authorization: Token base64(token)`), and 2.2.1 tariff fields (VAT).
-  Unlocks Tesla + Monta. *Build this next to scale OCPI sources.*
-- **DATEX II** — needs a DATEX II `EnergyInfrastructure` reader mapping into our
-  canonical model. Unlocks Eco-Movement (20 networks), Gireve, INDIGO. Mandatory
-  NAP format from 2026-04-14, so this is a strategic build, not optional.
-- **Static JSON file** (Road) — small adapter to fetch a file URL instead of an
-  OCPI module; low effort, low coverage.
+- **OCPI 2.1.1** — ✅ supported (EnergyVision). Just needs a token.
+- **OCPI 2.2.1** — ✅ supported: `/versions` discovery, base64 `Token` auth, and
+  2.2.1 fields (`max_electric_power`, `tariff_ids`). Unlocks Tesla + Monta once
+  tokens are set.
+- **DATEX II** — ✅ reader built (`internal/datex`, v3 EnergyInfrastructure) and
+  wired via `cpo.source_type='datex'`. Unlocks Eco-Movement (20 networks),
+  Gireve, INDIGO. *Element paths + auth (Bearer vs URL token) need validating
+  against the real Eco-Movement feed; static feed has no live status yet.*
+  Mandatory NAP format from 2026-04-14.
+- **Static JSON file** (Road) — still needs a small file-fetch adapter; low
+  effort, low coverage.
+
+Seeded (disabled) sources: `energyvision` (OCPI 2.1.1), `tesla` (OCPI 2.2.1),
+`ecomovement` (DATEX II). Enable with a token once access is granted.
 
 ## Access-request checklist
 

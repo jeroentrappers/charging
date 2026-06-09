@@ -42,6 +42,7 @@ type CPO struct {
 	TokenEnv    string
 	PollCron    string // price (tariff) poll schedule
 	StatusCron  string // availability poll schedule
+	SourceType  string // "ocpi" (default) | "datex"
 	Enabled     bool
 }
 
@@ -49,20 +50,24 @@ func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
 	if c.StatusCron == "" {
 		c.StatusCron = "*/3 * * * *"
 	}
+	if c.SourceType == "" {
+		c.SourceType = "ocpi"
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, enabled)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, ocpi_base_url=EXCLUDED.ocpi_base_url,
 			ocpi_version=EXCLUDED.ocpi_version, token_env=EXCLUDED.token_env,
-			poll_cron=EXCLUDED.poll_cron, status_cron=EXCLUDED.status_cron, enabled=EXCLUDED.enabled`,
-		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.Enabled)
+			poll_cron=EXCLUDED.poll_cron, status_cron=EXCLUDED.status_cron,
+			source_type=EXCLUDED.source_type, enabled=EXCLUDED.enabled`,
+		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.SourceType, c.Enabled)
 	return err
 }
 
 func (s *Store) ListEnabledCPOs(ctx context.Context) ([]CPO, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), poll_cron, status_cron, enabled
+		SELECT id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), poll_cron, status_cron, source_type, enabled
 		FROM cpo WHERE enabled ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -71,7 +76,7 @@ func (s *Store) ListEnabledCPOs(ctx context.Context) ([]CPO, error) {
 	var out []CPO
 	for rows.Next() {
 		var c CPO
-		if err := rows.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.PollCron, &c.StatusCron, &c.Enabled); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.PollCron, &c.StatusCron, &c.SourceType, &c.Enabled); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

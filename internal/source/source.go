@@ -55,7 +55,7 @@ func Seeds() []store.CPO {
 			Enabled:     false,         // ready for the current client; needs a token
 		},
 		{
-			// OCPI 2.2.1 — enable once the client supports 2.2.1 (auth + tariffs).
+			// OCPI 2.2.1 — the client now supports 2.2.1; enable once a token is set.
 			ID:          "tesla",
 			Name:        "Tesla Belgium",
 			OCPIBaseURL: "https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/",
@@ -63,6 +63,19 @@ func Seeds() []store.CPO {
 			TokenEnv:    "TESLA_TOKEN",
 			PollCron:    "0 4 * * *",
 			StatusCron:  "*/5 * * * *", // Tesla refreshes every 5 min
+			Enabled:     false,
+		},
+		{
+			// DATEX II aggregator (~20 networks). For DATEX sources OCPIBaseURL
+			// holds the feed URL. Validate element paths/auth against the real
+			// feed before enabling; the NAP token may be a URL query param.
+			ID:          "ecomovement",
+			Name:        "Eco-Movement (NAP aggregator)",
+			OCPIBaseURL: "https://api.eco-movement.com/api/nap/datexii/locations",
+			SourceType:  "datex",
+			TokenEnv:    "ECOMOVEMENT_TOKEN",
+			PollCron:    "0 5 * * *",
+			StatusCron:  "*/10 * * * *",
 			Enabled:     false,
 		},
 	}
