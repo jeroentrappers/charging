@@ -16,9 +16,9 @@ type Source struct {
 	Token string
 }
 
-// Client builds an OCPI client for this source.
+// Client builds an OCPI client for this source, honoring its OCPI version.
 func (s Source) Client() *ocpi.Client {
-	return ocpi.New(s.CPO.OCPIBaseURL, s.Token)
+	return ocpi.NewVersioned(s.CPO.OCPIBaseURL, s.Token, s.CPO.OCPIVersion)
 }
 
 // HasToken reports whether a usable token was resolved.

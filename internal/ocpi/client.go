@@ -2,6 +2,7 @@ package ocpi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,28 +10,54 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Client talks to a single CPO's OCPI 2.1.1 sender interface.
+// Client talks to a single CPO's OCPI sender interface (2.1.1 or 2.2.1).
 type Client struct {
-	BaseURL    string // e.g. https://ocpi.energyvision.be/cpo/2.1.1/
-	Token      string // OCPI auth token (sent as "Authorization: Token <token>")
+	BaseURL    string // version base, e.g. https://ocpi.energyvision.be/cpo/2.1.1/
+	Token      string // OCPI auth token
+	Version    string // "2.1.1" (default) or "2.2.1"
 	HTTP       *http.Client
 	PageLimit  int           // page size requested; 0 -> 100
 	MaxRetries int           // per-request retries on 5xx/network errors; 0 -> 3
 	RetryWait  time.Duration // base backoff; 0 -> 500ms
+
+	discoverOnce sync.Once
+	endpoints    map[string]string // module identifier -> URL (from discovery)
 }
 
-func New(baseURL, token string) *Client {
+func New(baseURL, token string) *Client { return NewVersioned(baseURL, token, "2.1.1") }
+
+func NewVersioned(baseURL, token, version string) *Client {
+	if version == "" {
+		version = "2.1.1"
+	}
 	return &Client{
 		BaseURL:    strings.TrimRight(baseURL, "/") + "/",
 		Token:      token,
+		Version:    version,
 		HTTP:       &http.Client{Timeout: 30 * time.Second},
 		PageLimit:  100,
 		MaxRetries: 3,
 		RetryWait:  500 * time.Millisecond,
 	}
+}
+
+func (c *Client) isV2_2() bool { return strings.HasPrefix(c.Version, "2.2") }
+
+// authValue returns the Authorization header value. OCPI 2.2+ requires the
+// token to be base64-encoded; 2.1.1 sends it raw. Both use the "Token" scheme.
+func (c *Client) authValue() string {
+	if c.Token == "" {
+		return ""
+	}
+	tok := c.Token
+	if c.isV2_2() {
+		tok = base64.StdEncoding.EncodeToString([]byte(c.Token))
+	}
+	return "Token " + tok
 }
 
 // Locations fetches all pages of the Locations module.
@@ -41,6 +68,46 @@ func (c *Client) Locations(ctx context.Context) ([]Location, error) {
 // Tariffs fetches all pages of the Tariffs module.
 func (c *Client) Tariffs(ctx context.Context) ([]Tariff, error) {
 	return fetchAll[Tariff](ctx, c, "tariffs")
+}
+
+// moduleURL resolves a module's base URL. For 2.2+ it first tries the OCPI
+// version-details discovery (mapping identifiers to URLs); it always falls back
+// to {BaseURL}{module}. The trailing-slash convention matches fetchPage.
+func (c *Client) moduleURL(ctx context.Context, module string) string {
+	if c.isV2_2() {
+		c.discoverOnce.Do(func() { c.discover(ctx) })
+		if u, ok := c.endpoints[module]; ok && u != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	return c.BaseURL + module // BaseURL has a trailing slash
+}
+
+// discover queries the version-details endpoint (the BaseURL) and caches the
+// module endpoint URLs. Failures are non-fatal: callers fall back to {base}{module}.
+func (c *Client) discover(ctx context.Context) {
+	body, _, err := c.doWithRetry(ctx, strings.TrimRight(c.BaseURL, "/"))
+	if err != nil {
+		return
+	}
+	var env ObjectEnvelope[VersionDetails]
+	if err := json.Unmarshal(body, &env); err != nil {
+		return
+	}
+	if env.StatusCode != 0 && env.StatusCode != StatusSuccess {
+		return
+	}
+	m := make(map[string]string, len(env.Data.Endpoints))
+	for _, ep := range env.Data.Endpoints {
+		// Prefer SENDER role (the data-provider interface) when roles are present.
+		if existing, ok := m[ep.Identifier]; ok && existing != "" && ep.Role != "" && ep.Role != "SENDER" {
+			continue
+		}
+		m[ep.Identifier] = ep.URL
+	}
+	if len(m) > 0 {
+		c.endpoints = m
+	}
 }
 
 // fetchAll pages through an OCPI module using offset/limit pagination,
@@ -69,7 +136,7 @@ func fetchAll[T any](ctx context.Context, c *Client, module string) ([]T, error)
 }
 
 func fetchPage[T any](ctx context.Context, c *Client, module string, offset, limit int) ([]T, int, error) {
-	u, err := url.Parse(c.BaseURL + module)
+	u, err := url.Parse(c.moduleURL(ctx, module))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -137,8 +204,8 @@ func (c *Client) do(ctx context.Context, urlStr string) ([]byte, http.Header, bo
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Token "+c.Token)
+	if v := c.authValue(); v != "" {
+		req.Header.Set("Authorization", v)
 	}
 	req.Header.Set("Accept", "application/json")
 

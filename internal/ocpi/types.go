@@ -18,6 +18,28 @@ type Envelope[T any] struct {
 // StatusSuccess is the OCPI status_code for a successful request.
 const StatusSuccess = 1000
 
+// ---- Versions / module discovery (OCPI versions endpoint) ----
+
+// ObjectEnvelope wraps a single (non-list) OCPI data object.
+type ObjectEnvelope[T any] struct {
+	Data       T      `json:"data"`
+	StatusCode int    `json:"status_code"`
+	StatusMsg  string `json:"status_message"`
+}
+
+// VersionDetails is the response of an OCPI version-details endpoint: the set of
+// module endpoints exposed for that version.
+type VersionDetails struct {
+	Version   string     `json:"version"`
+	Endpoints []Endpoint `json:"endpoints"`
+}
+
+type Endpoint struct {
+	Identifier string `json:"identifier"` // e.g. "locations", "tariffs"
+	Role       string `json:"role"`       // SENDER | RECEIVER (2.2+)
+	URL        string `json:"url"`
+}
+
 // ---- Locations module ----
 
 type Location struct {
@@ -54,14 +76,30 @@ type EVSE struct {
 }
 
 type Connector struct {
-	ID          string    `json:"id"`
-	Standard    string    `json:"standard"`   // e.g. IEC_62196_T2, IEC_62196_T2_COMBO
-	Format      string    `json:"format"`     // SOCKET | CABLE
-	PowerType   string    `json:"power_type"` // AC_1_PHASE | AC_3_PHASE | DC
-	Voltage     int       `json:"voltage"`
-	Amperage    int       `json:"amperage"`
-	TariffID    string    `json:"tariff_id"`
-	LastUpdated time.Time `json:"last_updated"`
+	ID        string `json:"id"`
+	Standard  string `json:"standard"`   // e.g. IEC_62196_T2, IEC_62196_T2_COMBO
+	Format    string `json:"format"`     // SOCKET | CABLE
+	PowerType string `json:"power_type"` // AC_1_PHASE | AC_3_PHASE | DC
+	Voltage   int    `json:"voltage"`
+	Amperage  int    `json:"amperage"`
+	// MaxElectricPower (watts) is present in OCPI 2.2.1 and preferred over
+	// computing power from voltage*amperage when available.
+	MaxElectricPower int       `json:"max_electric_power"`
+	TariffID         string    `json:"tariff_id"`
+	TariffIDs        []string  `json:"tariff_ids"` // OCPI 2.2.1 uses a list
+	LastUpdated      time.Time `json:"last_updated"`
+}
+
+// Tariff returns the connector's effective tariff id across OCPI versions
+// (2.1.1 single tariff_id, 2.2.1 tariff_ids list).
+func (c Connector) Tariff() string {
+	if c.TariffID != "" {
+		return c.TariffID
+	}
+	if len(c.TariffIDs) > 0 {
+		return c.TariffIDs[0]
+	}
+	return ""
 }
 
 // ---- Tariffs module ----

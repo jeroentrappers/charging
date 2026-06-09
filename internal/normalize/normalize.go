@@ -38,7 +38,7 @@ func FromOCPI(cpoID string, locations []ocpi.Location, tariffs []ocpi.Tariff) Re
 					Name:        loc.Name,
 					Address:     address(loc),
 					EVSEStatus:  evse.Status,
-					TariffID:    con.TariffID,
+					TariffID:    con.Tariff(),
 				})
 			}
 		}
@@ -101,9 +101,13 @@ func currentType(powerType string) string {
 	return model.CurrentAC
 }
 
-// connectorPowerKW estimates max power from voltage/amperage/phases, since
-// OCPI 2.1.1 connectors carry no explicit max-power field.
+// connectorPowerKW prefers the explicit max_electric_power (OCPI 2.2.1, watts);
+// otherwise it estimates from voltage/amperage/phases (OCPI 2.1.1 carries no
+// explicit max-power field).
 func connectorPowerKW(c ocpi.Connector) float64 {
+	if c.MaxElectricPower > 0 {
+		return round1(float64(c.MaxElectricPower) / 1000)
+	}
 	if c.Voltage <= 0 || c.Amperage <= 0 {
 		return 0
 	}
