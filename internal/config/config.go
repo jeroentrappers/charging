@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -13,15 +14,34 @@ type Config struct {
 	// Reference vehicle for the comparable session prices.
 	VehicleUsableKWh   float64
 	VehicleConsumption float64 // kWh / 100 km
+
+	// Availability older than this is treated as unknown (not "available").
+	AvailabilityStaleAfter time.Duration
+	// Price freshness window for the readiness check.
+	PriceStaleAfter time.Duration
+	// Address for the ingest process to expose Prometheus /metrics.
+	MetricsAddr string
 }
 
 func Load() Config {
 	return Config{
-		DatabaseURL:        env("DATABASE_URL", "postgres://charging:charging@localhost:5433/charging?sslmode=disable"),
-		APIAddr:            env("API_ADDR", ":8080"),
-		VehicleUsableKWh:   envFloat("VEHICLE_USABLE_KWH", 60),
-		VehicleConsumption: envFloat("VEHICLE_CONSUMPTION_KWH100", 18),
+		DatabaseURL:            env("DATABASE_URL", "postgres://charging:charging@localhost:5433/charging?sslmode=disable"),
+		APIAddr:                env("API_ADDR", ":8080"),
+		VehicleUsableKWh:       envFloat("VEHICLE_USABLE_KWH", 60),
+		VehicleConsumption:     envFloat("VEHICLE_CONSUMPTION_KWH100", 18),
+		AvailabilityStaleAfter: envDuration("AVAILABILITY_STALE_AFTER", 15*time.Minute),
+		PriceStaleAfter:        envDuration("PRICE_STALE_AFTER", 48*time.Hour),
+		MetricsAddr:            env("METRICS_ADDR", ":9090"),
 	}
+}
+
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }
 
 func env(key, def string) string {

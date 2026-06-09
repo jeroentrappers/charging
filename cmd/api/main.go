@@ -16,14 +16,18 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/appmire/charging/internal/config"
+	"github.com/appmire/charging/internal/ingest"
+	"github.com/appmire/charging/internal/metrics"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
 )
 
 type server struct {
-	st      *store.Store
-	log     *slog.Logger
-	vehicle pricing.Vehicle
+	st              *store.Store
+	log             *slog.Logger
+	vehicle         pricing.Vehicle
+	staleAfter      time.Duration
+	priceStaleAfter time.Duration
 }
 
 func main() {
@@ -44,11 +48,15 @@ func main() {
 			UsableKWh:         cfg.VehicleUsableKWh,
 			ConsumptionKWh100: cfg.VehicleConsumption,
 		},
+		staleAfter:      cfg.AvailabilityStaleAfter,
+		priceStaleAfter: cfg.PriceStaleAfter,
 	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Get("/healthz", s.health)
+	r.Get("/readyz", s.ready)
+	r.Handle("/metrics", metrics.Handler())
 	r.Get("/sessions", s.sessions)
 	r.Get("/chargers/cheapest", s.cheapest)
 	r.Get("/chargers/{id}/price-history", s.priceHistory)
@@ -71,6 +79,60 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// GET /readyz — ready only if the DB is reachable and every enabled source has
+// produced a recent successful availability and price ingest. Returns 503 with
+// per-source detail otherwise. (No enabled sources => ready, with a note.)
+func (s *server) ready(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := s.st.Pool.Ping(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})
+		return
+	}
+	cpos, err := s.st.ListEnabledCPOs(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "cannot list sources"})
+		return
+	}
+
+	availWindow := 2 * s.staleAfter
+	sources := []map[string]any{}
+	ready := true
+	for _, c := range cpos {
+		a := s.freshness(ctx, c.ID, ingest.KindAvailability, availWindow)
+		p := s.freshness(ctx, c.ID, ingest.KindPrice, s.priceStaleAfter)
+		if !a.OK || !p.OK {
+			ready = false
+		}
+		sources = append(sources, map[string]any{"cpo": c.ID, "availability": a, "price": p})
+	}
+
+	code := http.StatusOK
+	if !ready {
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, map[string]any{
+		"ready":          ready,
+		"enabled_source": len(cpos),
+		"sources":        sources,
+	})
+}
+
+type freshness struct {
+	OK     bool       `json:"ok"`
+	LastAt *time.Time `json:"last_success_at"`
+}
+
+// freshness reports whether the last successful run of kind is within window.
+// A zero window disables the check (always ok).
+func (s *server) freshness(ctx context.Context, cpoID, kind string, window time.Duration) freshness {
+	t, found, err := s.st.LastSuccess(ctx, cpoID, kind)
+	if err != nil || !found {
+		return freshness{OK: window <= 0}
+	}
+	ok := window <= 0 || time.Since(t) <= window
+	return freshness{OK: ok, LastAt: &t}
 }
 
 // GET /sessions — list the comparison session profiles for the reference vehicle.
@@ -108,6 +170,7 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 		PlugType:   q.Get("plug"),
 		OnlyAvail:  q.Get("available") == "true" || q.Get("available") == "1",
 		Session:    session,
+		StaleAfter: s.staleAfter,
 		Limit:      limit,
 	}
 	res, err := s.st.CheapestNearby(r.Context(), nq)

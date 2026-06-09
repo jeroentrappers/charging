@@ -1,7 +1,11 @@
 // Package ingest is the change-data-capture engine. Because the OCPI feeds only
 // ever expose the *current* tariff, we manufacture history by polling: on every
-// pass we detect whether a connector's tariff content changed and, if so, close
-// the previous version and open a new one (SCD Type 2).
+// price pass we detect whether a connector's tariff content changed and, if so,
+// close the previous version and open a new one (SCD Type 2).
+//
+// Two kinds of pass run on different cadences:
+//   - availability: fetch Locations only, refresh status. Frequent (minutes).
+//   - price:        fetch Locations + Tariffs, run the SCD2 diff. Rare (daily).
 package ingest
 
 import (
@@ -21,12 +25,21 @@ import (
 	"github.com/appmire/charging/internal/store"
 )
 
+// Kinds of ingestion pass (also stored in ingest_run.kind).
+const (
+	KindAvailability = "availability"
+	KindPrice        = "price"
+)
+
 // Engine runs ingestion against the store.
 type Engine struct {
 	Store   *store.Store
 	Log     *slog.Logger
 	Vehicle pricing.Vehicle // reference car for the comparable session prices
 	Limit   int             // max concurrent sources; 0 -> NumCPU
+
+	// OnRun, if set, is called after each pass for metrics. Safe for nil.
+	OnRun func(cpoID, kind string, rowsSeen, changes int, dur time.Duration, err error)
 }
 
 func NewEngine(st *store.Store, log *slog.Logger) *Engine {
@@ -36,9 +49,9 @@ func NewEngine(st *store.Store, log *slog.Logger) *Engine {
 	return &Engine{Store: st, Log: log, Vehicle: pricing.DefaultVehicle}
 }
 
-// RunAll ingests every source concurrently (bounded). It never returns early on
-// a single source failure; per-source errors are logged and recorded in
-// ingest_run, and the first error is returned for visibility.
+// RunAll runs a full price pass (which also refreshes availability) for every
+// source concurrently (bounded). Used by the one-shot `-once` mode. A single
+// source failure is logged and recorded, never aborting the others.
 func (e *Engine) RunAll(ctx context.Context, sources []source.Source) error {
 	limit := e.Limit
 	if limit <= 0 {
@@ -52,73 +65,110 @@ func (e *Engine) RunAll(ctx context.Context, sources []source.Source) error {
 				e.Log.Warn("skipping source without token", "cpo", src.CPO.ID)
 				return nil
 			}
-			return e.RunSource(ctx, src)
+			return e.RunPrices(ctx, src)
 		})
 	}
 	return g.Wait()
 }
 
-// RunSource performs one ingestion pass for a single CPO.
-func (e *Engine) RunSource(ctx context.Context, src source.Source) (err error) {
-	runID, startErr := e.Store.StartRun(ctx, src.CPO.ID)
-	if startErr != nil {
-		return fmt.Errorf("start run %s: %w", src.CPO.ID, startErr)
-	}
-	var rowsSeen, changes int
-	defer func() {
-		if ferr := e.Store.FinishRun(ctx, runID, rowsSeen, changes, err); ferr != nil {
-			e.Log.Error("finish run", "cpo", src.CPO.ID, "err", ferr)
+// RunAvailability refreshes connector availability only (Locations feed).
+func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
+	return e.recordRun(ctx, src.CPO.ID, KindAvailability, func() (int, int, error) {
+		locations, err := src.Client().Locations(ctx)
+		if err != nil {
+			return 0, 0, fmt.Errorf("fetch locations %s: %w", src.CPO.ID, err)
 		}
-		e.Log.Info("ingest pass complete", "cpo", src.CPO.ID,
-			"connectors", rowsSeen, "tariff_changes", changes, "err", err)
-	}()
-
-	client := src.Client()
-	locations, ferr := client.Locations(ctx)
-	if ferr != nil {
-		return fmt.Errorf("fetch locations %s: %w", src.CPO.ID, ferr)
-	}
-	tariffs, ferr := client.Tariffs(ctx)
-	if ferr != nil {
-		return fmt.Errorf("fetch tariffs %s: %w", src.CPO.ID, ferr)
-	}
-
-	res := normalize.FromOCPI(src.CPO.ID, locations, tariffs)
-	rowsSeen = len(res.Connectors)
-
-	for _, conn := range res.Connectors {
-		ch, perr := e.processConnector(ctx, conn, res.Tariffs)
-		if perr != nil {
-			// Don't abort the whole pass for one bad row; log and continue.
-			e.Log.Error("process connector", "cpo", src.CPO.ID,
-				"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", perr)
-			continue
+		res := normalize.FromOCPI(src.CPO.ID, locations, nil)
+		for _, conn := range res.Connectors {
+			if _, err := e.upsertConnector(ctx, conn); err != nil {
+				e.Log.Error("upsert connector", "cpo", src.CPO.ID,
+					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
+			}
 		}
-		if ch {
-			changes++
-		}
-	}
-	return nil
+		return len(res.Connectors), 0, nil
+	})
 }
 
-// processConnector upserts identity + availability, then applies tariff change
-// detection. It returns whether a new tariff version was recorded.
-func (e *Engine) processConnector(ctx context.Context, conn model.Connector, tariffs map[string]model.Tariff) (bool, error) {
+// RunPrices runs a full pass: refresh identity/availability and apply tariff
+// change detection.
+func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
+	return e.recordRun(ctx, src.CPO.ID, KindPrice, func() (int, int, error) {
+		client := src.Client()
+		locations, err := client.Locations(ctx)
+		if err != nil {
+			return 0, 0, fmt.Errorf("fetch locations %s: %w", src.CPO.ID, err)
+		}
+		tariffs, err := client.Tariffs(ctx)
+		if err != nil {
+			return 0, 0, fmt.Errorf("fetch tariffs %s: %w", src.CPO.ID, err)
+		}
+
+		res := normalize.FromOCPI(src.CPO.ID, locations, tariffs)
+		changes := 0
+		for _, conn := range res.Connectors {
+			id, err := e.upsertConnector(ctx, conn)
+			if err != nil {
+				e.Log.Error("upsert connector", "cpo", src.CPO.ID,
+					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
+				continue
+			}
+			ch, err := e.processTariff(ctx, id, conn, res.Tariffs)
+			if err != nil {
+				e.Log.Error("process tariff", "cpo", src.CPO.ID,
+					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
+				continue
+			}
+			if ch {
+				changes++
+			}
+		}
+		return len(res.Connectors), changes, nil
+	})
+}
+
+// recordRun wraps a pass with run-log bookkeeping, logging, and the metrics hook.
+func (e *Engine) recordRun(ctx context.Context, cpoID, kind string, fn func() (rowsSeen, changes int, err error)) (err error) {
+	start := time.Now()
+	runID, startErr := e.Store.StartRun(ctx, cpoID, kind)
+	if startErr != nil {
+		return fmt.Errorf("start run %s/%s: %w", cpoID, kind, startErr)
+	}
+	rowsSeen, changes, err := fn()
+	if ferr := e.Store.FinishRun(ctx, runID, rowsSeen, changes, err); ferr != nil {
+		e.Log.Error("finish run", "cpo", cpoID, "kind", kind, "err", ferr)
+	}
+	dur := time.Since(start)
+	e.Log.Info("ingest pass complete", "cpo", cpoID, "kind", kind,
+		"connectors", rowsSeen, "tariff_changes", changes, "dur", dur, "err", err)
+	if e.OnRun != nil {
+		e.OnRun(cpoID, kind, rowsSeen, changes, dur, err)
+	}
+	return err
+}
+
+// upsertConnector refreshes a connector's identity and current availability.
+func (e *Engine) upsertConnector(ctx context.Context, conn model.Connector) (int64, error) {
 	id, err := e.Store.UpsertCharger(ctx, conn)
 	if err != nil {
-		return false, fmt.Errorf("upsert charger: %w", err)
+		return 0, fmt.Errorf("upsert charger: %w", err)
 	}
-
 	avail := 0
 	if conn.Available() {
 		avail = 1
 	}
 	if err := e.Store.UpsertStatus(ctx, id, conn.EVSEStatus, avail); err != nil {
-		return false, fmt.Errorf("upsert status: %w", err)
+		return 0, fmt.Errorf("upsert status: %w", err)
 	}
+	return id, nil
+}
 
-	// No tariff referenced or not present in this feed: leave history untouched.
-	// Honesty rule: absence is "unknown", never recorded as free/zero.
+// processTariff applies SCD2 change detection for one connector's tariff.
+// It returns whether a new tariff version was recorded.
+//
+// Honesty: a missing tariff_id (or a tariff absent from this feed) is treated
+// as "unknown" and leaves history untouched — we do NOT close the open version,
+// since a transient feed gap must not look like a price withdrawal.
+func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connector, tariffs map[string]model.Tariff) (bool, error) {
 	if conn.TariffID == "" {
 		return false, nil
 	}

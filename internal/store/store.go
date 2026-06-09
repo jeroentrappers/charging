@@ -40,25 +40,29 @@ type CPO struct {
 	OCPIBaseURL string
 	OCPIVersion string
 	TokenEnv    string
-	PollCron    string
+	PollCron    string // price (tariff) poll schedule
+	StatusCron  string // availability poll schedule
 	Enabled     bool
 }
 
 func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
+	if c.StatusCron == "" {
+		c.StatusCron = "*/3 * * * *"
+	}
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, enabled)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, enabled)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, ocpi_base_url=EXCLUDED.ocpi_base_url,
 			ocpi_version=EXCLUDED.ocpi_version, token_env=EXCLUDED.token_env,
-			poll_cron=EXCLUDED.poll_cron, enabled=EXCLUDED.enabled`,
-		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.Enabled)
+			poll_cron=EXCLUDED.poll_cron, status_cron=EXCLUDED.status_cron, enabled=EXCLUDED.enabled`,
+		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.Enabled)
 	return err
 }
 
 func (s *Store) ListEnabledCPOs(ctx context.Context) ([]CPO, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), poll_cron, enabled
+		SELECT id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), poll_cron, status_cron, enabled
 		FROM cpo WHERE enabled ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -67,7 +71,7 @@ func (s *Store) ListEnabledCPOs(ctx context.Context) ([]CPO, error) {
 	var out []CPO
 	for rows.Next() {
 		var c CPO
-		if err := rows.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.PollCron, &c.Enabled); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.PollCron, &c.StatusCron, &c.Enabled); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -157,12 +161,28 @@ func (s *Store) ReplaceTariff(ctx context.Context, chargerID int64, w TariffWrit
 
 // ---- Ingestion run log ----
 
-func (s *Store) StartRun(ctx context.Context, cpoID string) (int64, error) {
+func (s *Store) StartRun(ctx context.Context, cpoID, kind string) (int64, error) {
 	var id int64
 	err := s.Pool.QueryRow(ctx,
-		`INSERT INTO ingest_run (cpo_id, started_at) VALUES ($1, now()) RETURNING id`,
-		cpoID).Scan(&id)
+		`INSERT INTO ingest_run (cpo_id, kind, started_at) VALUES ($1,$2, now()) RETURNING id`,
+		cpoID, kind).Scan(&id)
 	return id, err
+}
+
+// LastSuccess returns the finish time of the most recent error-free run of the
+// given kind for a CPO. found is false when there has been no successful run.
+func (s *Store) LastSuccess(ctx context.Context, cpoID, kind string) (t time.Time, found bool, err error) {
+	err = s.Pool.QueryRow(ctx, `
+		SELECT finished_at FROM ingest_run
+		WHERE cpo_id=$1 AND kind=$2 AND error IS NULL AND finished_at IS NOT NULL
+		ORDER BY finished_at DESC LIMIT 1`, cpoID, kind).Scan(&t)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return t, true, nil
 }
 
 func (s *Store) FinishRun(ctx context.Context, runID int64, rowsSeen, changes int, runErr error) error {
@@ -195,6 +215,8 @@ type NearbyCharger struct {
 	SessionPrice *float64           `json:"session_price_eur,omitempty"`
 	Prices       map[string]float64 `json:"comparable_prices"` // per-session profile prices
 	Currency     string             `json:"currency"`
+	StatusAt     *time.Time         `json:"status_updated_at"`
+	Stale        bool               `json:"availability_stale"` // status older than the freshness window
 }
 
 type NearbyQuery struct {
@@ -205,24 +227,32 @@ type NearbyQuery struct {
 	PlugType   string  `json:"plug_type"`    // "" = no filter
 	OnlyAvail  bool    `json:"only_available"`
 	Session    string  `json:"session"` // profile key to sort/return by; "" = headline
-	Limit      int     `json:"limit"`
+	// StaleAfter: availability older than this counts as unknown (excluded when
+	// OnlyAvail) and flagged Stale. Zero disables staleness handling.
+	StaleAfter time.Duration `json:"stale_after"`
+	Limit      int           `json:"limit"`
 }
 
 // CheapestNearby returns chargers within radius, optionally only those with a
-// free connector, ordered by comparable price (nulls last) then distance.
+// free connector whose availability is fresh, ordered by comparable price
+// (nulls last) then distance.
 func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyCharger, error) {
 	if q.Limit <= 0 || q.Limit > 200 {
 		q.Limit = 50
 	}
+	staleSecs := q.StaleAfter.Seconds() // 0 -> staleness checks are no-ops
 
-	// Default sort is the headline price; with a session, sort by that profile's
-	// price from the jsonb map (chargers lacking it sort last).
-	args := []any{q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit}
+	// $1..$8 are fixed; an optional session key is $9.
+	args := []any{q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs}
 	orderExpr := "tv.comparable_price_eur"
 	if q.Session != "" {
 		args = append(args, q.Session)
-		orderExpr = "(tv.comparable_prices->>$8)::float8"
+		orderExpr = "(tv.comparable_prices->>$9)::float8"
 	}
+
+	// A status is fresh when staleness is disabled ($8<=0) or it was updated
+	// within the window.
+	const freshExpr = `($8 <= 0 OR (st.updated_at IS NOT NULL AND st.updated_at > now() - make_interval(secs => $8)))`
 
 	query := fmt.Sprintf(`
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
@@ -230,16 +260,18 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
 		       ST_Distance(c.geom, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography) AS dist,
 		       COALESCE(st.available_count,0),
-		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR')
+		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
+		       st.updated_at,
+		       (NOT %s) AS stale
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		WHERE ST_DWithin(c.geom, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
 		  AND ($5 = '' OR c.plug_type = $5)
-		  AND (NOT $6 OR COALESCE(st.available_count,0) > 0)
+		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
 		ORDER BY %s ASC NULLS LAST, dist ASC
-		LIMIT $7`, orderExpr)
+		LIMIT $7`, freshExpr, freshExpr, orderExpr)
 
 	rows, err := s.Pool.Query(ctx, query, args...)
 	if err != nil {
@@ -252,7 +284,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		var pricesJSON []byte
 		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
-			&n.PriceEUR, &pricesJSON, &n.Currency); err != nil {
+			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale); err != nil {
 			return nil, err
 		}
 		n.Prices = decodePrices(pricesJSON)

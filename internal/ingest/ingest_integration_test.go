@@ -65,7 +65,7 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 
 	// --- Pass 1: first observation -> exactly one open tariff version.
 	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{sampleTariff(0.45, t0)})
-	if err := eng.RunSource(ctx, src); err != nil {
+	if err := eng.RunPrices(ctx, src); err != nil {
 		t.Fatalf("pass 1: %v", err)
 	}
 	assertCounts(t, st, 1, 1, 1) // 1 charger, 1 version total, 1 open
@@ -90,7 +90,7 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 
 	// --- Pass 2: identical feed -> NO new version (change detection holds).
 	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{sampleTariff(0.45, t0)})
-	if err := eng.RunSource(ctx, src); err != nil {
+	if err := eng.RunPrices(ctx, src); err != nil {
 		t.Fatalf("pass 2: %v", err)
 	}
 	assertCounts(t, st, 1, 1, 1) // still exactly one version
@@ -98,7 +98,7 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 	// --- Pass 3: price change -> new version, previous one closed.
 	t1 := t0.Add(48 * time.Hour)
 	feed.set([]ocpi.Location{sampleLocation("CHARGING")}, []ocpi.Tariff{sampleTariff(0.55, t1)})
-	if err := eng.RunSource(ctx, src); err != nil {
+	if err := eng.RunPrices(ctx, src); err != nil {
 		t.Fatalf("pass 3: %v", err)
 	}
 	assertCounts(t, st, 1, 2, 1) // 2 versions total, 1 still open
@@ -138,7 +138,7 @@ func TestIngest_CheapestNearbyQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{sampleTariff(0.45, time.Now())})
-	if err := NewEngine(st, log).RunSource(ctx, source.Source{CPO: cpo, Token: token}); err != nil {
+	if err := NewEngine(st, log).RunPrices(ctx, source.Source{CPO: cpo, Token: token}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,6 +184,52 @@ func TestIngest_CheapestNearbyQuery(t *testing.T) {
 	}
 	if len(far) != 0 {
 		t.Fatalf("want 0 far chargers, got %d", len(far))
+	}
+}
+
+func TestCheapestNearby_StaleAvailabilityExcluded(t *testing.T) {
+	ctx := context.Background()
+	st := setup(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	const token = "test-token"
+	feed := newMockFeed(token)
+	srv := feed.server()
+	defer srv.Close()
+
+	cpo := store.CPO{ID: "mockcpo", Name: "Mock CPO", OCPIBaseURL: srv.URL + "/", OCPIVersion: "2.1.1", PollCron: "0 4 * * *", Enabled: true}
+	if err := st.UpsertCPO(ctx, cpo); err != nil {
+		t.Fatal(err)
+	}
+	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{sampleTariff(0.45, time.Now())})
+	if err := NewEngine(st, log).RunPrices(ctx, source.Source{CPO: cpo, Token: token}); err != nil {
+		t.Fatal(err)
+	}
+
+	q := store.NearbyQuery{Lat: 51.0544, Lon: 3.7251, RadiusM: 2000, OnlyAvail: true, StaleAfter: 15 * time.Minute, Limit: 10}
+
+	// Fresh: included.
+	if res, err := st.CheapestNearby(ctx, q); err != nil || len(res) != 1 || res[0].Stale {
+		t.Fatalf("fresh availability should be included and not stale: res=%+v err=%v", res, err)
+	}
+
+	// Age the status well beyond the window.
+	id := singleChargerID(t, st)
+	if _, err := st.Pool.Exec(ctx,
+		`UPDATE charger_status SET updated_at = now() - interval '1 hour' WHERE charger_id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now excluded from available-only.
+	if res, err := st.CheapestNearby(ctx, q); err != nil || len(res) != 0 {
+		t.Fatalf("stale availability should be excluded under OnlyAvail: got %d (err %v)", len(res), err)
+	}
+	// But still visible (and flagged stale) without the available filter.
+	q2 := q
+	q2.OnlyAvail = false
+	res, err := st.CheapestNearby(ctx, q2)
+	if err != nil || len(res) != 1 || !res[0].Stale {
+		t.Fatalf("without OnlyAvail the charger should appear and be flagged stale: res=%+v err=%v", res, err)
 	}
 }
 

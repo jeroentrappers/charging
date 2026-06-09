@@ -7,14 +7,15 @@ import (
 	"context"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/robfig/cron/v3"
+	"time"
 
 	"github.com/appmire/charging/internal/config"
 	"github.com/appmire/charging/internal/ingest"
+	"github.com/appmire/charging/internal/metrics"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/source"
 	"github.com/appmire/charging/internal/store"
@@ -48,7 +49,21 @@ func main() {
 		UsableKWh:         cfg.VehicleUsableKWh,
 		ConsumptionKWh100: cfg.VehicleConsumption,
 	}
+	eng.OnRun = func(cpo, kind string, rows, changes int, dur time.Duration, err error) {
+		metrics.Observe(time.Now(), cpo, kind, rows, changes, dur, err)
+	}
 	log.Info("reference vehicle", "usable_kwh", cfg.VehicleUsableKWh, "consumption_kwh100", cfg.VehicleConsumption)
+
+	// Expose Prometheus metrics (best-effort; ingestion continues regardless).
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		log.Info("metrics listening", "addr", cfg.MetricsAddr)
+		srv := &http.Server{Addr: cfg.MetricsAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("metrics server", "err", err)
+		}
+	}()
 
 	if *once {
 		runOnce(ctx, st, eng, log)
@@ -70,41 +85,17 @@ func runOnce(ctx context.Context, st *store.Store, eng *ingest.Engine, log *slog
 	}
 }
 
-// runScheduler schedules each source by its own cron expression and also runs
-// one pass immediately at startup.
+// runScheduler runs availability + price passes on each source's cadence,
+// reloading the registry periodically, until a termination signal arrives.
 func runScheduler(ctx context.Context, st *store.Store, eng *ingest.Engine, log *slog.Logger) {
-	srcs := resolveEnabled(ctx, st, log)
-	if len(srcs) == 0 {
-		log.Warn("no enabled sources with tokens; scheduler idle",
-			"hint", "set a source token and enable it, then restart")
-	}
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	c := cron.New()
-	for _, src := range srcs {
-		s := src
-		if _, err := c.AddFunc(s.CPO.PollCron, func() {
-			if err := eng.RunSource(ctx, s); err != nil {
-				log.Error("scheduled ingest", "cpo", s.CPO.ID, "err", err)
-			}
-		}); err != nil {
-			log.Error("invalid cron", "cpo", s.CPO.ID, "cron", s.CPO.PollCron, "err", err)
-		}
-	}
-	c.Start()
-	defer c.Stop()
-
-	// Initial pass so we don't wait for the first tick.
-	if len(srcs) > 0 {
-		if err := eng.RunAll(ctx, srcs); err != nil {
-			log.Error("startup ingestion errors", "err", err)
-		}
-	}
-
-	log.Info("ingest scheduler running", "sources", len(srcs))
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	log.Info("shutting down")
+	sched := ingest.NewScheduler(eng, func(ctx context.Context) []source.Source {
+		return resolveEnabled(ctx, st, log)
+	}, 5*time.Minute)
+	sched.Run(ctx)
+	log.Info("shutdown complete")
 }
 
 func resolveEnabled(ctx context.Context, st *store.Store, log *slog.Logger) []source.Source {

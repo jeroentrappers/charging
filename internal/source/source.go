@@ -49,8 +49,9 @@ func Seeds() []store.CPO {
 			OCPIBaseURL: "https://ocpi.energyvision.be/cpo/2.1.1/",
 			OCPIVersion: "2.1.1",
 			TokenEnv:    "ENERGYVISION_TOKEN",
-			PollCron:    "0 4 * * *", // daily 04:00; price changes are rare
-			Enabled:     false,       // flip to true once a token is available
+			PollCron:    "0 4 * * *",   // daily 04:00; price changes are rare
+			StatusCron:  "*/3 * * * *", // availability every 3 min
+			Enabled:     false,         // flip to true once a token is available
 		},
 	}
 }

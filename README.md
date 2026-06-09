@@ -46,6 +46,25 @@ aggregate the feeds ourselves. The first wired source is **EnergyVision**
 - **Store layer uses pgx directly** (not sqlc): PostGIS `geography` + `numeric`
   fight code generation, and explicit geo expressions/casts are cleaner.
 
+### Running continuously (unattended)
+
+The `ingest` scheduler is built to run 24/7:
+
+- **Two cadences:** availability is polled frequently (`status_cron`, default
+  every 3 min) via the Locations feed; price/tariff diffs run rarely
+  (`poll_cron`, default daily). The full pass also refreshes availability.
+- **Staleness:** availability older than `AVAILABILITY_STALE_AFTER` (default
+  15 min) is treated as *unknown* — excluded from `available=true` and flagged
+  `availability_stale` — so a dead feed never masquerades as "free".
+- **Overlap-safe:** a pass is skipped if the previous one of the same job is
+  still running (no pile-ups).
+- **Hot registry reload:** the scheduler re-reads the `cpo` table every 5 min,
+  so enabling or adding a source takes effect without a restart.
+- **Graceful shutdown:** on SIGINT/SIGTERM it waits for in-flight passes.
+- **Observability:** Prometheus `/metrics` (runs, rows, changes, duration,
+  last-success timestamp per CPO+kind) and an API `/readyz` that fails if any
+  enabled source has no recent successful availability/price ingest.
+
 ### Data honesty rules (so statistics stay credible)
 
 - `observed_from`/`observed_to` are *when we saw the change*, not the CPO's real
@@ -104,6 +123,8 @@ curl 'localhost:8080/chargers/1/price-history'
 | Method | Path | Description |
 |---|---|---|
 | GET | `/healthz` | liveness + DB ping |
+| GET | `/readyz` | ready only if every enabled source has recent successful ingests |
+| GET | `/metrics` | Prometheus metrics |
 | GET | `/sessions` | the 10 comparison sessions for the reference vehicle |
 | GET | `/chargers/cheapest` | nearby chargers, cheapest first |
 | GET | `/chargers/{id}/price-history` | every recorded tariff version |
