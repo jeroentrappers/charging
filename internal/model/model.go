@@ -30,6 +30,8 @@ type Connector struct {
 	CurrentType string // AC | DC
 	Name        string
 	Address     string
+	PostalCode  string
+	City        string
 
 	EVSEStatus string // raw OCPI EVSE status (AVAILABLE, CHARGING, ...)
 	TariffID   string // reference into the tariff map; "" if none

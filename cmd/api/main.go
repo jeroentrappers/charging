@@ -69,6 +69,10 @@ func main() {
 	r.Get("/sessions", s.sessions)
 	r.Get("/chargers/cheapest", s.cheapest)
 	r.Get("/chargers/{id}/price-history", s.priceHistory)
+	r.Get("/stats/overview", s.statsOverview)
+	r.Get("/stats/sessions", s.statsSessions)
+	r.Get("/stats/regions", s.statsRegions)
+	r.Get("/stats/price-trend", s.statsPriceTrend)
 
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,
@@ -142,6 +146,69 @@ func (s *server) freshness(ctx context.Context, cpoID, kind string, window time.
 	}
 	ok := window <= 0 || time.Since(t) <= window
 	return freshness{OK: ok, LastAt: &t}
+}
+
+// GET /stats/overview — market counts + headline-price aggregates by current type.
+func (s *server) statsOverview(w http.ResponseWriter, r *http.Request) {
+	o, err := s.st.Overview(r.Context())
+	if err != nil {
+		s.log.Error("stats overview", "err", err)
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, o)
+}
+
+// GET /stats/sessions — avg/min/max price per comparison-session profile.
+func (s *server) statsSessions(w http.ResponseWriter, r *http.Request) {
+	st, err := s.st.SessionStats(r.Context())
+	if err != nil {
+		s.log.Error("stats sessions", "err", err)
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	if st == nil {
+		st = []store.SessionStat{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": st})
+}
+
+// GET /stats/regions?by=city|postal&limit=
+func (s *server) statsRegions(w http.ResponseWriter, r *http.Request) {
+	by := r.URL.Query().Get("by")
+	if by == "" {
+		by = "city"
+	}
+	if by != "city" && by != "postal" {
+		writeErr(w, http.StatusBadRequest, "by must be 'city' or 'postal'")
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	res, err := s.st.RegionStats(r.Context(), by, limit)
+	if err != nil {
+		s.log.Error("stats regions", "err", err)
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	if res == nil {
+		res = []store.PriceAgg{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"by": by, "regions": res})
+}
+
+// GET /stats/price-trend?months=
+func (s *server) statsPriceTrend(w http.ResponseWriter, r *http.Request) {
+	months, _ := strconv.Atoi(r.URL.Query().Get("months"))
+	res, err := s.st.PriceTrend(r.Context(), months)
+	if err != nil {
+		s.log.Error("stats price-trend", "err", err)
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	if res == nil {
+		res = []store.TrendPoint{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"trend": res})
 }
 
 // GET /sessions — list the comparison session profiles for the reference vehicle.

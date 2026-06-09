@@ -128,6 +128,10 @@ curl 'localhost:8080/chargers/1/price-history'
 | GET | `/sessions` | the 10 comparison sessions for the reference vehicle |
 | GET | `/chargers/cheapest` | nearby chargers, cheapest first |
 | GET | `/chargers/{id}/price-history` | every recorded tariff version |
+| GET | `/stats/overview` | market counts + avg/median price by current type |
+| GET | `/stats/sessions` | avg/min/max price per comparison session |
+| GET | `/stats/regions?by=city\|postal` | average price per region |
+| GET | `/stats/price-trend?months=` | monthly average price over the history |
 
 `/chargers/cheapest` query params: `lat`, `lon` (required), `radius` (m,
 default 5000), `min_power` (kW), `plug` (OCPI standard), `available`

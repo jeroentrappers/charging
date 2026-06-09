@@ -87,16 +87,16 @@ func (s *Store) UpsertCharger(ctx context.Context, c model.Connector) (int64, er
 	var id int64
 	err := s.Pool.QueryRow(ctx, `
 		INSERT INTO charger
-			(cpo_id, evse_uid, connector_id, geom, power_kw, plug_type, current_type, name, address, last_seen_at)
+			(cpo_id, evse_uid, connector_id, geom, power_kw, plug_type, current_type, name, address, postal_code, city, last_seen_at)
 		VALUES
-			($1,$2,$3, ST_SetSRID(ST_MakePoint($4,$5),4326)::geography, $6,$7,$8,$9,$10, now())
+			($1,$2,$3, ST_SetSRID(ST_MakePoint($4,$5),4326)::geography, $6,$7,$8,$9,$10,$11,$12, now())
 		ON CONFLICT (cpo_id, evse_uid, connector_id) DO UPDATE SET
 			geom=EXCLUDED.geom, power_kw=EXCLUDED.power_kw, plug_type=EXCLUDED.plug_type,
 			current_type=EXCLUDED.current_type, name=EXCLUDED.name, address=EXCLUDED.address,
-			last_seen_at=now()
+			postal_code=EXCLUDED.postal_code, city=EXCLUDED.city, last_seen_at=now()
 		RETURNING id`,
 		c.CPOID, c.EVSEUID, c.ConnectorID, c.Lon, c.Lat,
-		c.PowerKW, c.PlugType, c.CurrentType, c.Name, c.Address).Scan(&id)
+		c.PowerKW, c.PlugType, c.CurrentType, c.Name, c.Address, c.PostalCode, c.City).Scan(&id)
 	return id, err
 }
 

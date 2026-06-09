@@ -37,6 +37,8 @@ func FromOCPI(cpoID string, locations []ocpi.Location, tariffs []ocpi.Tariff) Re
 					CurrentType: currentType(con.PowerType),
 					Name:        loc.Name,
 					Address:     address(loc),
+					PostalCode:  loc.PostalCode,
+					City:        loc.City,
 					EVSEStatus:  evse.Status,
 					TariffID:    con.Tariff(),
 				})
