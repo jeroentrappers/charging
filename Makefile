@@ -57,3 +57,23 @@ run-api: ## Run the API server
 demo-seed: ## Load optional demo data so the API returns results without a key
 	docker compose exec -T db psql -U charging -d charging -v ON_ERROR_STOP=1 -f - < db/demo_seed.sql
 	@echo "demo data loaded"
+
+# ---- Production (single VM) ----
+PROD := docker compose -p charging_prod -f docker-compose.prod.yml
+
+prod-up: ## Build images and start the full prod stack (db + migrate + api + ingest)
+	$(PROD) up -d --build
+
+prod-down: ## Stop the prod stack (keeps the data volume)
+	$(PROD) down
+
+prod-logs: ## Tail prod logs
+	$(PROD) logs -f --tail=100
+
+prod-ps: ## Show prod service status
+	$(PROD) ps
+
+prod-backup: ## Dump the prod database to backups/ (timestamp passed in as TS=...)
+	@mkdir -p backups
+	$(PROD) exec -T db pg_dump -U charging -d charging | gzip > "backups/charging-$(or $(TS),manual).sql.gz"
+	@echo "backup written to backups/charging-$(or $(TS),manual).sql.gz"

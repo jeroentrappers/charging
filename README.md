@@ -155,6 +155,29 @@ curl localhost:8080/sessions
 curl 'localhost:8080/chargers/cheapest?lat=51.0548&lon=3.7260&radius=5000&session=charge1080_dc300'
 ```
 
+## Deploy (single VM)
+
+Everything ships as one image (`api`, `ingest`, `migrate` binaries on a
+distroless base). `docker-compose.prod.yml` runs PostGIS + a one-shot migration
+step + the API and ingest services:
+
+```bash
+cp .env.example .env        # set source tokens; DATABASE_URL is overridden to the compose DB
+make prod-up                # build image, start db -> migrate -> api + ingest
+make prod-ps                # status
+make prod-logs              # tail
+make prod-backup TS=$(date +%F)   # gzip pg_dump into backups/
+```
+
+- **Migrations** run automatically on each deploy (embedded in the `migrate`
+  binary; api/ingest wait for it via `depends_on: service_completed_successfully`).
+- **Restart policy** `unless-stopped` keeps api/ingest alive across crashes and
+  reboots; the API container has a self-probing healthcheck (`api -healthcheck`).
+- **Metrics** are exposed by the ingest service on `:9090` (not published by
+  default; scrape it on the VM or add a port mapping).
+- The prod stack uses its own compose project (`charging_prod`) and data volume,
+  separate from the local dev DB.
+
 ## Getting real data
 
 The EnergyVision feed needs a free OCPI key.

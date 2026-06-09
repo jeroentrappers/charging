@@ -1,0 +1,61 @@
+# Production stack for a single VM. Tokens live in .env (see .env.example).
+#   docker compose -f docker-compose.prod.yml up -d --build
+x-app: &app
+  build: .
+  image: charging:latest
+  env_file: .env
+  environment:
+    # Overrides the dev DATABASE_URL from .env to point at the compose DB.
+    DATABASE_URL: postgres://charging:charging@db:5432/charging?sslmode=disable
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: charging
+      POSTGRES_PASSWORD: charging
+      POSTGRES_DB: charging
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charging -d charging"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["/usr/local/bin/migrate"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command: ["/usr/local/bin/api"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/api", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  ingest:
+    <<: *app
+    command: ["/usr/local/bin/ingest"]
+    environment:
+      DATABASE_URL: postgres://charging:charging@db:5432/charging?sslmode=disable
+      METRICS_ADDR: ":9090"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

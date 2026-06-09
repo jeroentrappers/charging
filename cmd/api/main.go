@@ -6,10 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,8 +33,15 @@ type server struct {
 }
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "probe the local /healthz endpoint and exit (for container healthchecks)")
+	flag.Parse()
+
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+
+	if *healthcheck {
+		os.Exit(runHealthcheck(cfg.APIAddr))
+	}
 
 	st, err := store.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -209,6 +218,25 @@ func (s *server) priceHistory(w http.ResponseWriter, r *http.Request) {
 		"charger_id": id,
 		"history":    hist,
 	})
+}
+
+// runHealthcheck probes the local /healthz endpoint; used by the container
+// healthcheck since the distroless image has no shell or curl.
+func runHealthcheck(addr string) int {
+	host := addr
+	if strings.HasPrefix(host, ":") {
+		host = "127.0.0.1" + host
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + host + "/healthz")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 func parseFloat(s string) (float64, bool) {
