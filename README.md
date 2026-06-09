@@ -37,10 +37,12 @@ aggregate the feeds ourselves. The first wired source is **EnergyVision**
   historized; occupancy is not.
 - **PostgreSQL + PostGIS** for geo ("nearby" via `ST_DWithin` + KNN), relational
   data, and temporal history in one store.
-- **Comparable price.** Raw OCPI tariffs mix €/kWh, €/min and session fees, so
-  they aren't directly sortable. We compute the cost of a fixed **standard
-  session (add 30 kWh at the connector's power)** into `comparable_price_eur`.
-  This makes AC and DC chargers comparable and "cheapest" well-defined.
+- **Comparable price across realistic sessions.** Raw OCPI tariffs mix €/kWh,
+  €/min and session fees, so they aren't directly sortable. We price a set of
+  **10 realistic charging sessions** (see below) into `comparable_prices` jsonb,
+  plus a single headline `comparable_price_eur` for the default sort. This makes
+  AC and DC chargers comparable and "cheapest" well-defined — and lets a user
+  ask "cheapest for *my* kind of session".
 - **Store layer uses pgx directly** (not sqlc): PostGIS `geography` + `numeric`
   fight code generation, and explicit geo expressions/casts are cleaner.
 
@@ -102,13 +104,35 @@ curl 'localhost:8080/chargers/1/price-history'
 | Method | Path | Description |
 |---|---|---|
 | GET | `/healthz` | liveness + DB ping |
+| GET | `/sessions` | the 10 comparison sessions for the reference vehicle |
 | GET | `/chargers/cheapest` | nearby chargers, cheapest first |
 | GET | `/chargers/{id}/price-history` | every recorded tariff version |
 
 `/chargers/cheapest` query params: `lat`, `lon` (required), `radius` (m,
 default 5000), `min_power` (kW), `plug` (OCPI standard), `available`
-(`true`/`1`), `limit` (default 50). Results are ordered by
-`comparable_price_eur` (nulls last), then distance.
+(`true`/`1`), `session` (a profile key — sort & return that session's price),
+`limit` (default 50). Without `session`, results are ordered by the headline
+`comparable_price_eur`; with one, by that session's price (chargers that can't
+serve it sort last). Each result carries the full `comparable_prices` map.
+
+### Comparison sessions
+
+Each charger is priced for 10 realistic sessions: two energy needs (a 100 km
+top-up and a 10→80 % charge) at four power tiers (AC 11/22 kW, DC 150/300 kW),
+plus a quick urban top-up and an overnight destination charge. Energy is
+**metered** (includes charging losses), and DC durations use a **charging-curve
+average** (a 150 kW charger averages ~110 kW over 10→80 %), so per-minute
+components are billed honestly. A session only applies to a charger that can
+deliver it (current type + power tier).
+
+The reference vehicle is configurable (defaults to a mid-size EV, 60 kWh usable,
+18 kWh/100 km) via `VEHICLE_USABLE_KWH` and `VEHICLE_CONSUMPTION_KWH100`.
+
+```bash
+curl localhost:8080/sessions
+# cheapest charger for a 10–80% fast charge on DC:
+curl 'localhost:8080/chargers/cheapest?lat=51.0548&lon=3.7260&radius=5000&session=charge1080_dc300'
+```
 
 ## Getting real data
 

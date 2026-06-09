@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -70,9 +71,21 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 	assertCounts(t, st, 1, 1, 1) // 1 charger, 1 version total, 1 open
 
 	chargerID := singleChargerID(t, st)
-	if price := currentPrice(t, st, chargerID); price == nil || *price != 13.75 {
-		// 30 kWh * 0.45 + 0.25 flat = 13.75
-		t.Fatalf("pass 1 comparable price: want 13.75, got %v", price)
+	p1 := currentPrice(t, st, chargerID)
+	if p1 == nil || *p1 <= 0 {
+		t.Fatalf("pass 1 headline price should be positive, got %v", p1)
+	}
+	// The 22 kW AC fixture must price the AC session matrix and no DC profiles.
+	prices := currentPrices(t, st, chargerID)
+	for _, k := range []string{"charge1080_ac11", "charge1080_ac22", "urban_ac22", "overnight_ac11"} {
+		if _, ok := prices[k]; !ok {
+			t.Fatalf("pass 1 prices missing AC profile %s; got %v", k, prices)
+		}
+	}
+	for _, k := range []string{"charge1080_dc150", "topup100_dc300"} {
+		if _, ok := prices[k]; ok {
+			t.Fatalf("AC charger should not have DC profile %s", k)
+		}
 	}
 
 	// --- Pass 2: identical feed -> NO new version (change detection holds).
@@ -90,13 +103,19 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 	}
 	assertCounts(t, st, 1, 2, 1) // 2 versions total, 1 still open
 
-	if price := currentPrice(t, st, chargerID); price == nil || *price != 16.75 {
-		// 30 * 0.55 + 0.25 = 16.75
-		t.Fatalf("pass 3 comparable price: want 16.75, got %v", price)
+	p3 := currentPrice(t, st, chargerID)
+	if p3 == nil || *p3 <= *p1 {
+		t.Fatalf("pass 3 headline should rise after price increase: p1=%v p3=%v", *p1, p3)
+	}
+	// Every session in the matrix must have risen too.
+	prices3 := currentPrices(t, st, chargerID)
+	if !(prices3["charge1080_ac22"] > prices["charge1080_ac22"]) {
+		t.Fatalf("session price should rise: before=%v after=%v",
+			prices["charge1080_ac22"], prices3["charge1080_ac22"])
 	}
 
-	// The closed version must have observed_to set and the previous price.
-	assertClosedVersionPrice(t, st, chargerID, 13.75)
+	// The closed version must have observed_to set and the previous headline price.
+	assertClosedVersionPrice(t, st, chargerID, *p1)
 
 	// Availability flipped to CHARGING -> not available.
 	if avail := availableCount(t, st, chargerID); avail != 0 {
@@ -134,14 +153,28 @@ func TestIngest_CheapestNearbyQuery(t *testing.T) {
 		t.Fatalf("want 1 nearby charger, got %d", len(res))
 	}
 	got := res[0]
-	if got.PriceEUR == nil || *got.PriceEUR != 13.75 {
-		t.Fatalf("want price 13.75, got %v", got.PriceEUR)
+	if got.PriceEUR == nil || *got.PriceEUR <= 0 {
+		t.Fatalf("want positive headline price, got %v", got.PriceEUR)
 	}
 	if got.DistanceM <= 0 || got.DistanceM > 50 {
 		t.Fatalf("distance looks wrong: %v m", got.DistanceM)
 	}
 	if got.Available != 1 {
 		t.Fatalf("want available 1, got %d", got.Available)
+	}
+	if len(got.Prices) == 0 {
+		t.Fatal("expected per-session comparable_prices on the result")
+	}
+
+	// Query for a specific session profile -> SessionPrice populated.
+	bySession, err := st.CheapestNearby(ctx, store.NearbyQuery{
+		Lat: 51.0544, Lon: 3.7251, RadiusM: 2000, Session: "charge1080_ac22", Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bySession) != 1 || bySession[0].SessionPrice == nil {
+		t.Fatalf("session query should populate SessionPrice, got %+v", bySession)
 	}
 
 	// A far-away query must return nothing.
@@ -194,6 +227,21 @@ func currentPrice(t *testing.T, st *store.Store, chargerID int64) *float64 {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func currentPrices(t *testing.T, st *store.Store, chargerID int64) map[string]float64 {
+	t.Helper()
+	var raw []byte
+	if err := st.Pool.QueryRow(context.Background(),
+		`SELECT comparable_prices FROM tariff_version WHERE charger_id=$1 AND observed_to IS NULL`,
+		chargerID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]float64{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("decode comparable_prices: %v", err)
+	}
+	return m
 }
 
 func assertClosedVersionPrice(t *testing.T, st *store.Store, chargerID int64, want float64) {

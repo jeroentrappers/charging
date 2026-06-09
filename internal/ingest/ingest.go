@@ -6,6 +6,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -22,16 +23,17 @@ import (
 
 // Engine runs ingestion against the store.
 type Engine struct {
-	Store *store.Store
-	Log   *slog.Logger
-	Limit int // max concurrent sources; 0 -> NumCPU
+	Store   *store.Store
+	Log     *slog.Logger
+	Vehicle pricing.Vehicle // reference car for the comparable session prices
+	Limit   int             // max concurrent sources; 0 -> NumCPU
 }
 
 func NewEngine(st *store.Store, log *slog.Logger) *Engine {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Engine{Store: st, Log: log}
+	return &Engine{Store: st, Log: log, Vehicle: pricing.DefaultVehicle}
 }
 
 // RunAll ingests every source concurrently (bounded). It never returns early on
@@ -138,17 +140,31 @@ func (e *Engine) processConnector(ctx context.Context, conn model.Connector, tar
 	if err != nil {
 		return false, fmt.Errorf("marshal components: %w", err)
 	}
+
+	// Headline (default sort) + the per-session comparison matrix.
 	var comparable *float64
-	if c, ok := pricing.Comparable(tar, conn.PowerKW); ok {
+	if c, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle); ok {
 		comparable = &c
 	}
+	pricesJSON, err := json.Marshal(pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle))
+	if err != nil {
+		return false, fmt.Errorf("marshal prices: %w", err)
+	}
+
 	var srcUpdated *time.Time
 	if !tar.LastUpdated.IsZero() {
 		t := tar.LastUpdated
 		srcUpdated = &t
 	}
 
-	if err := e.Store.ReplaceTariff(ctx, id, newHash, components, comparable, tar.Currency, srcUpdated); err != nil {
+	if err := e.Store.ReplaceTariff(ctx, id, store.TariffWrite{
+		Hash:              newHash,
+		Components:        components,
+		Comparable:        comparable,
+		Prices:            pricesJSON,
+		Currency:          tar.Currency,
+		SourceLastUpdated: srcUpdated,
+	}); err != nil {
 		return false, fmt.Errorf("replace tariff: %w", err)
 	}
 	return true, nil

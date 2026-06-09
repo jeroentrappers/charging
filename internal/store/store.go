@@ -5,7 +5,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -121,9 +123,23 @@ func (s *Store) CurrentTariffHash(ctx context.Context, chargerID int64) (hash st
 	return hash, true, nil
 }
 
+// TariffWrite is the payload for a new tariff version.
+type TariffWrite struct {
+	Hash              string
+	Components        []byte // price_components jsonb (the normalized tariff)
+	Comparable        *float64
+	Prices            []byte // comparable_prices jsonb ({profile_key: price})
+	Currency          string
+	SourceLastUpdated *time.Time
+}
+
 // ReplaceTariff closes the current open version (if any) and inserts a new one,
 // atomically. Call only when the hash has actually changed.
-func (s *Store) ReplaceTariff(ctx context.Context, chargerID int64, hash string, components []byte, comparable *float64, currency string, sourceLastUpdated *time.Time) error {
+func (s *Store) ReplaceTariff(ctx context.Context, chargerID int64, w TariffWrite) error {
+	prices := w.Prices
+	if len(prices) == 0 {
+		prices = []byte("{}")
+	}
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx,
 			`UPDATE tariff_version SET observed_to=now() WHERE charger_id=$1 AND observed_to IS NULL`,
@@ -132,9 +148,9 @@ func (s *Store) ReplaceTariff(ctx context.Context, chargerID int64, hash string,
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO tariff_version
-				(charger_id, tariff_hash, price_components, comparable_price_eur, currency, observed_from, source_last_updated)
-			VALUES ($1,$2,$3,$4,$5, now(), $6)`,
-			chargerID, hash, components, comparable, currency, sourceLastUpdated)
+				(charger_id, tariff_hash, price_components, comparable_price_eur, comparable_prices, currency, observed_from, source_last_updated)
+			VALUES ($1,$2,$3,$4,$5,$6, now(), $7)`,
+			chargerID, w.Hash, w.Components, w.Comparable, prices, w.Currency, w.SourceLastUpdated)
 		return err
 	})
 }
@@ -164,19 +180,21 @@ func (s *Store) FinishRun(ctx context.Context, runID int64, rowsSeen, changes in
 // ---- Query side (serves the app) ----
 
 type NearbyCharger struct {
-	ID          int64    `json:"id"`
-	CPOID       string   `json:"cpo_id"`
-	Name        string   `json:"name"`
-	Address     string   `json:"address"`
-	Lat         float64  `json:"lat"`
-	Lon         float64  `json:"lon"`
-	PowerKW     float64  `json:"power_kw"`
-	PlugType    string   `json:"plug_type"`
-	CurrentType string   `json:"current_type"`
-	DistanceM   float64  `json:"distance_m"`
-	Available   int      `json:"available_count"`
-	PriceEUR    *float64 `json:"comparable_price_eur"`
-	Currency    string   `json:"currency"`
+	ID           int64              `json:"id"`
+	CPOID        string             `json:"cpo_id"`
+	Name         string             `json:"name"`
+	Address      string             `json:"address"`
+	Lat          float64            `json:"lat"`
+	Lon          float64            `json:"lon"`
+	PowerKW      float64            `json:"power_kw"`
+	PlugType     string             `json:"plug_type"`
+	CurrentType  string             `json:"current_type"`
+	DistanceM    float64            `json:"distance_m"`
+	Available    int                `json:"available_count"`
+	PriceEUR     *float64           `json:"comparable_price_eur"` // headline (10–80% at this charger's power)
+	SessionPrice *float64           `json:"session_price_eur,omitempty"`
+	Prices       map[string]float64 `json:"comparable_prices"` // per-session profile prices
+	Currency     string             `json:"currency"`
 }
 
 type NearbyQuery struct {
@@ -186,6 +204,7 @@ type NearbyQuery struct {
 	MinPowerKW float64 `json:"min_power_kw"` // 0 = no filter
 	PlugType   string  `json:"plug_type"`    // "" = no filter
 	OnlyAvail  bool    `json:"only_available"`
+	Session    string  `json:"session"` // profile key to sort/return by; "" = headline
 	Limit      int     `json:"limit"`
 }
 
@@ -195,13 +214,23 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 	if q.Limit <= 0 || q.Limit > 200 {
 		q.Limit = 50
 	}
-	rows, err := s.Pool.Query(ctx, `
+
+	// Default sort is the headline price; with a session, sort by that profile's
+	// price from the jsonb map (chargers lacking it sort last).
+	args := []any{q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit}
+	orderExpr := "tv.comparable_price_eur"
+	if q.Session != "" {
+		args = append(args, q.Session)
+		orderExpr = "(tv.comparable_prices->>$8)::float8"
+	}
+
+	query := fmt.Sprintf(`
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
 		       ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
 		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
 		       ST_Distance(c.geom, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography) AS dist,
 		       COALESCE(st.available_count,0),
-		       tv.comparable_price_eur::float8, COALESCE(tv.currency,'EUR')
+		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR')
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
@@ -209,9 +238,10 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
 		  AND ($5 = '' OR c.plug_type = $5)
 		  AND (NOT $6 OR COALESCE(st.available_count,0) > 0)
-		ORDER BY tv.comparable_price_eur ASC NULLS LAST, dist ASC
-		LIMIT $7`,
-		q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit)
+		ORDER BY %s ASC NULLS LAST, dist ASC
+		LIMIT $7`, orderExpr)
+
+	rows, err := s.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -219,28 +249,44 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 	var out []NearbyCharger
 	for rows.Next() {
 		var n NearbyCharger
+		var pricesJSON []byte
 		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
-			&n.PriceEUR, &n.Currency); err != nil {
+			&n.PriceEUR, &pricesJSON, &n.Currency); err != nil {
 			return nil, err
+		}
+		n.Prices = decodePrices(pricesJSON)
+		if q.Session != "" {
+			if v, ok := n.Prices[q.Session]; ok {
+				n.SessionPrice = &v
+			}
 		}
 		out = append(out, n)
 	}
 	return out, rows.Err()
 }
 
+func decodePrices(b []byte) map[string]float64 {
+	m := map[string]float64{}
+	if len(b) > 0 {
+		_ = json.Unmarshal(b, &m)
+	}
+	return m
+}
+
 type PricePoint struct {
-	PriceEUR          *float64   `json:"comparable_price_eur"`
-	Currency          string     `json:"currency"`
-	ObservedFrom      time.Time  `json:"observed_from"`
-	ObservedTo        *time.Time `json:"observed_to"`
-	SourceLastUpdated *time.Time `json:"source_last_updated"`
+	PriceEUR          *float64           `json:"comparable_price_eur"`
+	Prices            map[string]float64 `json:"comparable_prices"`
+	Currency          string             `json:"currency"`
+	ObservedFrom      time.Time          `json:"observed_from"`
+	ObservedTo        *time.Time         `json:"observed_to"`
+	SourceLastUpdated *time.Time         `json:"source_last_updated"`
 }
 
 // PriceHistory returns every recorded tariff version for a charger, newest first.
 func (s *Store) PriceHistory(ctx context.Context, chargerID int64) ([]PricePoint, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT comparable_price_eur::float8, currency, observed_from, observed_to, source_last_updated
+		SELECT comparable_price_eur::float8, COALESCE(comparable_prices,'{}'::jsonb), currency, observed_from, observed_to, source_last_updated
 		FROM tariff_version WHERE charger_id=$1
 		ORDER BY observed_from DESC`, chargerID)
 	if err != nil {
@@ -250,9 +296,11 @@ func (s *Store) PriceHistory(ctx context.Context, chargerID int64) ([]PricePoint
 	var out []PricePoint
 	for rows.Next() {
 		var p PricePoint
-		if err := rows.Scan(&p.PriceEUR, &p.Currency, &p.ObservedFrom, &p.ObservedTo, &p.SourceLastUpdated); err != nil {
+		var pricesJSON []byte
+		if err := rows.Scan(&p.PriceEUR, &pricesJSON, &p.Currency, &p.ObservedFrom, &p.ObservedTo, &p.SourceLastUpdated); err != nil {
 			return nil, err
 		}
+		p.Prices = decodePrices(pricesJSON)
 		out = append(out, p)
 	}
 	return out, rows.Err()

@@ -18,9 +18,23 @@ const StandardKWh = 30.0
 
 // Session describes the basket to price.
 type Session struct {
-	KWh   float64
-	Power float64 // kW, used to derive charging duration for TIME components
-	At    time.Time
+	KWh      float64
+	Power    float64 // kW charger tier; used to match power-based tariff restrictions
+	AvgPower float64 // effective average kW used to derive duration; 0 -> falls back to Power
+	At       time.Time
+}
+
+// duration returns the charging time in hours, using the effective average
+// power (which, for DC, is below the rated tier due to the charging curve).
+func (s Session) duration() float64 {
+	p := s.AvgPower
+	if p <= 0 {
+		p = s.Power
+	}
+	if p <= 0 {
+		return 0
+	}
+	return s.KWh / p
 }
 
 // referenceTime is a fixed, deterministic moment (a Wednesday, 12:00 UTC) used
@@ -45,10 +59,7 @@ func Comparable(t model.Tariff, powerKW float64) (cost float64, ok bool) {
 // component of that dimension provides the price. PARKING_TIME is excluded
 // from the charging-session comparable.
 func Evaluate(t model.Tariff, s Session) (float64, bool) {
-	var hours float64
-	if s.Power > 0 {
-		hours = s.KWh / s.Power
-	}
+	hours := s.duration()
 
 	energyPrice, energyOK := firstPrice(t, s, hours, "ENERGY")
 	flatPrice, flatOK := firstPrice(t, s, hours, "FLAT")

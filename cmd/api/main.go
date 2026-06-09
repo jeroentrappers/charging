@@ -16,12 +16,14 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/appmire/charging/internal/config"
+	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
 )
 
 type server struct {
-	st  *store.Store
-	log *slog.Logger
+	st      *store.Store
+	log     *slog.Logger
+	vehicle pricing.Vehicle
 }
 
 func main() {
@@ -35,11 +37,19 @@ func main() {
 	}
 	defer st.Close()
 
-	s := &server{st: st, log: log}
+	s := &server{
+		st:  st,
+		log: log,
+		vehicle: pricing.Vehicle{
+			UsableKWh:         cfg.VehicleUsableKWh,
+			ConsumptionKWh100: cfg.VehicleConsumption,
+		},
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Get("/healthz", s.health)
+	r.Get("/sessions", s.sessions)
 	r.Get("/chargers/cheapest", s.cheapest)
 	r.Get("/chargers/{id}/price-history", s.priceHistory)
 
@@ -63,7 +73,15 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GET /chargers/cheapest?lat=&lon=&radius=&min_power=&plug=&available=&limit=
+// GET /sessions — list the comparison session profiles for the reference vehicle.
+func (s *server) sessions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vehicle":  s.vehicle,
+		"sessions": pricing.Profiles(s.vehicle),
+	})
+}
+
+// GET /chargers/cheapest?lat=&lon=&radius=&min_power=&plug=&available=&session=&limit=
 func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	lat, okLat := parseFloat(q.Get("lat"))
@@ -79,11 +97,17 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 	minPower, _ := parseFloat(q.Get("min_power"))
 	limit, _ := strconv.Atoi(q.Get("limit"))
 
+	session := q.Get("session")
+	if session != "" && !pricing.IsProfile(session) {
+		writeErr(w, http.StatusBadRequest, "unknown session profile; see GET /sessions")
+		return
+	}
 	nq := store.NearbyQuery{
 		Lat: lat, Lon: lon, RadiusM: radius,
 		MinPowerKW: minPower,
 		PlugType:   q.Get("plug"),
 		OnlyAvail:  q.Get("available") == "true" || q.Get("available") == "1",
+		Session:    session,
 		Limit:      limit,
 	}
 	res, err := s.st.CheapestNearby(r.Context(), nq)

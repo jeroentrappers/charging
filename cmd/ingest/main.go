@@ -15,6 +15,7 @@ import (
 
 	"github.com/appmire/charging/internal/config"
 	"github.com/appmire/charging/internal/ingest"
+	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/source"
 	"github.com/appmire/charging/internal/store"
 )
@@ -43,6 +44,11 @@ func main() {
 	}
 
 	eng := ingest.NewEngine(st, log)
+	eng.Vehicle = pricing.Vehicle{
+		UsableKWh:         cfg.VehicleUsableKWh,
+		ConsumptionKWh100: cfg.VehicleConsumption,
+	}
+	log.Info("reference vehicle", "usable_kwh", cfg.VehicleUsableKWh, "consumption_kwh100", cfg.VehicleConsumption)
 
 	if *once {
 		runOnce(ctx, st, eng, log)
