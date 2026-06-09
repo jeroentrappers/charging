@@ -1,0 +1,19 @@
+# Binaries
+/bin/
+cmd/api/api
+cmd/ingest/ingest
+*.exe
+
+# Env / secrets
+.env
+.env.local
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

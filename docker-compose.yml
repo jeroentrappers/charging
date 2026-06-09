@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: charging
+      POSTGRES_PASSWORD: charging
+      POSTGRES_DB: charging
+    ports:
+      - "5433:5432"
+    volumes:
+      - charging_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charging -d charging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  charging_pgdata:
