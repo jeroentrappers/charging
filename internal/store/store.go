@@ -180,12 +180,13 @@ type NearbyCharger struct {
 }
 
 type NearbyQuery struct {
-	Lat, Lon   float64
-	RadiusM    float64
-	MinPowerKW float64 // 0 = no filter
-	PlugType   string  // "" = no filter
-	OnlyAvail  bool
-	Limit      int
+	Lat        float64 `json:"lat"`
+	Lon        float64 `json:"lon"`
+	RadiusM    float64 `json:"radius_m"`
+	MinPowerKW float64 `json:"min_power_kw"` // 0 = no filter
+	PlugType   string  `json:"plug_type"`    // "" = no filter
+	OnlyAvail  bool    `json:"only_available"`
+	Limit      int     `json:"limit"`
 }
 
 // CheapestNearby returns chargers within radius, optionally only those with a

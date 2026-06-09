@@ -53,3 +53,7 @@ run-ingest: ## Run ingestion scheduler (cron)
 
 run-api: ## Run the API server
 	go run ./cmd/api
+
+demo-seed: ## Load optional demo data so the API returns results without a key
+	docker compose exec -T db psql -U charging -d charging -v ON_ERROR_STOP=1 -f - < db/demo_seed.sql
+	@echo "demo data loaded"
