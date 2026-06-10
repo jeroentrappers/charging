@@ -38,9 +38,11 @@ fmt: ## gofmt
 vet: ## go vet
 	go vet ./...
 
-build: ## Build both binaries
+build: ## Build all binaries (api, ingest, migrate, chargingctl)
 	go build -o bin/ingest ./cmd/ingest
 	go build -o bin/api ./cmd/api
+	go build -o bin/migrate ./cmd/migrate
+	go build -o bin/chargingctl ./cmd/chargingctl
 
 test: ## Run all tests
 	go test ./...

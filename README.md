@@ -133,6 +133,38 @@ curl 'localhost:8080/chargers/1/price-history'
 | GET | `/stats/sessions` | avg/min/max price per comparison session |
 | GET | `/stats/regions?by=city\|postal` | average price per region |
 | GET | `/stats/price-trend?months=` | monthly average price over the history |
+| GET/POST | `/admin/sources` | list / add sources (admin) |
+| POST | `/admin/sources/{id}/enable\|disable` | toggle a source (admin) |
+| PUT | `/admin/sources/{id}/token` | set a source token (admin) |
+| DELETE | `/admin/sources/{id}` | remove a source (admin) |
+| POST | `/admin/ingest/{id}/run?kind=` | trigger an ingestion pass (admin) |
+| GET | `/admin/runs` | recent ingestion runs (admin) |
+
+`/admin/*` is the **control plane**: protected by a `ADMIN_TOKEN` bearer
+(disabled entirely if `ADMIN_TOKEN` is unset). Token values are never returned
+(only `has_token`).
+
+### API/CLI-driven: `chargingctl`
+
+Everything is operable through the API; **`chargingctl` is a thin client over
+it (never the DB)** — same contract as the web app. Build with `make build`
+(produces `bin/chargingctl`).
+
+```bash
+export CHARGING_API=http://localhost:8080 ADMIN_TOKEN=…
+chargingctl chargers cheapest --lat 51.05 --lon 3.72 --session charge1080_dc300
+chargingctl sessions
+chargingctl stats price-trend --months 12
+chargingctl sources list
+chargingctl runs --cpo energyvision
+```
+
+Bringing a source live (e.g. when an OCPI key arrives) is now pure CLI — no SQL:
+```bash
+chargingctl sources set-token energyvision "$TOKEN"
+chargingctl sources enable energyvision
+chargingctl ingest run energyvision        # then: chargingctl runs --cpo energyvision
+```
 
 `/chargers/cheapest` query params: `lat`, `lon` (required), `radius` (m,
 default 5000), `min_power` (kW), `plug` (OCPI standard), `available`
