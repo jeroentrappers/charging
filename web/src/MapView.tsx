@@ -20,6 +20,19 @@ function Viewport({ onChange }: { onChange: (lat: number, lon: number, radiusM: 
   return null
 }
 
+// Keeps Leaflet's internal size in sync when the map container resizes (the
+// mobile split, the expand toggle, orientation changes) — otherwise tiles grey out.
+function AutoResize() {
+  const map = useMap()
+  useEffect(() => {
+    const el = map.getContainer()
+    const ro = new ResizeObserver(() => map.invalidateSize())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [map])
+  return null
+}
+
 // Recenters the map when `to` changes (e.g. after geolocation), without fighting
 // the user's manual panning.
 function Recenter({ to }: { to: [number, number] | null }) {
@@ -72,6 +85,7 @@ export function MapView(props: {
           attribution='&copy; OpenStreetMap'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <AutoResize />
         <Recenter to={props.recenterTo} />
         <FocusOn to={props.focus} nonce={props.focusNonce} />
         <Viewport onChange={props.onViewport} />
