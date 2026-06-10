@@ -12,7 +12,7 @@ Last researched: 2026-06-09.
 | Source | Open (no key)? | Ad-hoc price? | Availability? |
 |---|---|---|---|
 | **Road** | ✅ yes | ✅ **yes** | ✅ yes (status) |
-| **Monta** | ⚠️ free creds (clientId/secret via form) | ✅ **yes** | ✅ yes |
+| **Monta** (Public API) | list: ✅ open / price: ⚠️ key | ⚠️ key + **per-EVSE** only | ⚠️ key + per-EVSE |
 | EnergyVision | ⚠️ free key (email) | likely (OCPI Tariffs) | ✅ |
 | Tesla | ⚠️ key (401 without) | likely (OCPI Tariffs) | ✅ |
 | Eco-Movement (NAP feed) | ✅ yes | ❌ no | ❌ no |
@@ -20,21 +20,30 @@ Last researched: 2026-06-09.
 | Gireve (EVCI) | ❌ fee-based license | ❌ not in open set | — |
 
 **Conclusion:** **Road is the only fully-open (no-credential) source with ad-hoc
-price** — and it's already live. **Monta** is the best key-gated target: its AFIR
-endpoint carries **both ad-hoc price and availability** (richer than Road), free
-under AFIR but needs a `clientId`/`clientSecret`. All other open feeds are
-location-only. Open Charge Map (global, free key) has only a sparse,
-unstructured `UsageCost` text field — not comparable tariffs.
+price in bulk** — and it's already live. No other open feed gives bulk price:
+Eco-Movement, INDIGO and **Monta's open charge-points list** are all
+location-only. **Monta's** price + availability are key-gated and **per-EVSE**
+(on-demand), so useful as a live "price for the tapped charger" lookup (with a
+key, Monta network only), not for bulk ingestion. Open Charge Map (global, free
+key) has only a sparse, unstructured `UsageCost` text field — not comparable
+tariffs.
 
-**Monta AFIR access (free, under AFIR):**
-1. Start at the access doc → [`docs.partner-api.monta.com/docs/afir-access`](https://docs.partner-api.monta.com/docs/afir-access)
-   (request form there; approval in a few business days; or email data@monta.com).
-2. You get a `clientId`/`clientSecret`; exchange them for a short-lived Bearer
-   token ([auth ref](https://docs.partner-api.monta.com/reference/ref-authentication)).
-3. Endpoint `get-afir-charge-points` (filterable by country); rate limit
-   100 req / 10 min. Includes location, connectors, power, **status & ad-hoc price**.
-   Wiring: this is OCPI-ish JSON, not our `ocpi_file`/`datex` shape — needs a small
-   Monta adapter (OAuth token + its JSON schema).
+**Monta — NEW Public API** (the Partner API AFIR endpoint is deprecated, sunset
+2026-09-08). Probed live 2026-06-10:
+- **Charge points (bulk):** `GET https://public-api.monta.com/api/v1/afir/charge-points?country=BE`
+  — **OPEN, no auth** (countries BE, DK). **DATEX II serialised as JSON**.
+  Location + connectors + power only — **NO price** (verified: no price/tariff/
+  currency keys). Paginated (`perPage`). → location coverage, like Eco-Movement.
+- **Per-EVSE status:** `GET …/afir/charge-points/{evseId}/status` — returns
+  **availability + ad-hoc price**, but **Bearer auth required** and **one call
+  per EVSE** (rate limit 100 req / 10 min). Verified: 400 "upstream" without a
+  token even for valid BE EVSE ids.
+- **So Monta gives no open *bulk* price.** Its price is key-gated + per-EVSE →
+  only practical as an **on-demand "live price for the tapped charger"** lookup
+  (needs a Monta key, covers Monta's network only), not bulk ingestion/history.
+- Access (free under AFIR): [`docs.public-api.monta.com`](https://docs.public-api.monta.com/) →
+  request form / data@monta.com. The bulk list (locations) is JSON-DATEX → needs
+  a small JSON adapter (distinct from our XML `datex` reader); status needs OAuth.
 
 **INDIGO note:** its open static file uses the **same DATEX II profile as
 Eco-Movement** (`maxPowerAtSocket`, `facilityLocation>address`, `refillPoint` …),
