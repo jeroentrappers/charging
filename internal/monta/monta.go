@@ -46,6 +46,13 @@ func New(clientID, clientSecret string) *Client {
 	}
 }
 
+// SetLimit reconfigures the status-call rate limiter. Use a conservative rate
+// for the background crawl so on-demand lookups (sharing the same 100/10min
+// credential budget) still have headroom.
+func (c *Client) SetLimit(every time.Duration, burst int) {
+	c.limiter = rate.NewLimiter(rate.Every(every), burst)
+}
+
 func (c *Client) ensureToken(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

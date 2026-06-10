@@ -24,13 +24,14 @@ type Scheduler struct {
 	log         *slog.Logger
 	load        LoadFunc
 	reloadEvery time.Duration
+	crawling    map[string]bool // monta sources with a running crawler
 }
 
 func NewScheduler(eng *Engine, load LoadFunc, reloadEvery time.Duration) *Scheduler {
 	if reloadEvery <= 0 {
 		reloadEvery = 5 * time.Minute
 	}
-	return &Scheduler{eng: eng, log: eng.Log, load: load, reloadEvery: reloadEvery}
+	return &Scheduler{eng: eng, log: eng.Log, load: load, reloadEvery: reloadEvery, crawling: map[string]bool{}}
 }
 
 // Run builds the schedule and blocks until ctx is cancelled, then waits for any
@@ -44,6 +45,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 	// Run a full pass at startup so we don't wait for the first tick.
 	go s.eng.RunAll(ctx, srcs)
+	s.ensureCrawlers(ctx, srcs)
 
 	ticker := time.NewTicker(s.reloadEvery)
 	defer ticker.Stop()
@@ -63,7 +65,21 @@ func (s *Scheduler) Run(ctx context.Context) {
 				c = s.build(ctx, srcs)
 				c.Start()
 			}
+			s.ensureCrawlers(ctx, next) // pick up newly-enabled monta sources
 		}
+	}
+}
+
+// ensureCrawlers starts a background price/status crawl for each ready Monta
+// source not already crawling. Crawlers run until ctx is cancelled.
+func (s *Scheduler) ensureCrawlers(ctx context.Context, srcs []source.Source) {
+	for _, src := range srcs {
+		if src.CPO.SourceType != "monta" || !src.Ready() || s.crawling[src.CPO.ID] {
+			continue
+		}
+		s.crawling[src.CPO.ID] = true
+		src := src
+		go s.eng.RunMontaCrawl(ctx, src)
 	}
 }
 

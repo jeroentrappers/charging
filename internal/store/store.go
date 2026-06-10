@@ -174,6 +174,40 @@ func (s *Store) UpsertStatus(ctx context.Context, chargerID int64, status string
 	return err
 }
 
+// RefreshTarget is a charger the Monta crawl should refresh next.
+type RefreshTarget struct {
+	ID          int64
+	EVSEUID     string
+	PowerKW     float64
+	CurrentType string
+}
+
+// ChargersToRefresh returns a CPO's chargers ordered by least-recently-statused
+// first (NULLs first), so a paced crawl cycles through all of them — whether or
+// not they ended up with a price last time (status is always written).
+func (s *Store) ChargersToRefresh(ctx context.Context, cpoID string, limit int) ([]RefreshTarget, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT c.id, c.evse_uid, COALESCE(c.power_kw,0)::float8, COALESCE(c.current_type,'')
+		FROM charger c
+		LEFT JOIN charger_status st ON st.charger_id = c.id
+		WHERE c.cpo_id = $1
+		ORDER BY st.updated_at ASC NULLS FIRST
+		LIMIT $2`, cpoID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RefreshTarget
+	for rows.Next() {
+		var t RefreshTarget
+		if err := rows.Scan(&t.ID, &t.EVSEUID, &t.PowerKW, &t.CurrentType); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ---- Tariff versioning (SCD Type 2) ----
 
 // CurrentTariffHash returns the hash of the charger's current (open) tariff
