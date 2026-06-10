@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { api, type Charger, type PricePoint, type TariffComponent, type TariffRestrictions } from './api'
+import { api, type Charger, type LiveStatus, type PricePoint, type TariffComponent, type TariffRestrictions } from './api'
 import { AvailBadge, availOf, ago, eur } from './ui'
 
 function isIdle(type: string): boolean {
@@ -45,6 +45,8 @@ function restrictionText(r: TariffRestrictions | undefined, t: TFunction): strin
 export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose: () => void }) {
   const { t } = useTranslation()
   const [history, setHistory] = useState<PricePoint[] | null>(null)
+  const [live, setLive] = useState<LiveStatus | null>(null)
+  const [liveLoading, setLiveLoading] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -52,6 +54,18 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
     return () => {
       alive = false
     }
+  }, [charger.id])
+
+  // On open, ask for the freshest status. Only Monta chargers (with creds
+  // configured) come back as a live reading; otherwise the stored badge stands.
+  function refreshLive() {
+    setLiveLoading(true)
+    api.live(charger.id).then(setLive).catch(() => {}).finally(() => setLiveLoading(false))
+  }
+  useEffect(() => {
+    setLive(null)
+    refreshLive()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [charger.id])
 
   const chart = (history ?? [])
@@ -80,6 +94,15 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
         <div style={{ marginTop: 8 }}>
           <AvailBadge a={availOf(charger)} /> <span className="muted">· {t('detail.updated', { ago: ago(charger.status_updated_at, t) })}</span>
         </div>
+        {live?.source === 'live' && (
+          <div className="live-row" style={{ marginTop: 6 }}>
+            <span className={`badge ${live.available ? 'free' : 'busy'}`}>● {t('detail.live')}: {t(live.available ? 'avail.free' : 'avail.busy')}</span>
+            <span className="muted"> · {t('detail.updated', { ago: ago(live.checked_at, t) })}</span>
+            <button className="btn" onClick={refreshLive} disabled={liveLoading} style={{ marginLeft: 8 }}>
+              {liveLoading ? t('detail.checking') : t('detail.refresh')}
+            </button>
+          </div>
+        )}
 
         <div className="kv">
           <div className="cell"><div className="k">{t('detail.priceThisSession')}</div><div className="v">{eur(charger.session_price_eur ?? charger.comparable_price_eur)}</div></div>

@@ -25,6 +25,7 @@ import (
 	"github.com/appmire/charging/internal/export"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
+	"github.com/appmire/charging/internal/monta"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
 )
@@ -40,6 +41,7 @@ type server struct {
 	adminToken      string
 	exportDir       string
 	engine          *ingest.Engine
+	live            *liveService
 }
 
 func main() {
@@ -74,6 +76,18 @@ func main() {
 	}
 	s.engine = ingest.NewEngine(st, log)
 	s.engine.Vehicle = s.vehicle
+
+	// On-demand live status: build a Monta client if creds are available (DB
+	// token for the "monta" source, else MONTA_CREDS). Without them the
+	// /chargers/{id}/live endpoint just serves the last stored status.
+	var montaClient *monta.Client
+	if creds := montaCreds(context.Background(), st); creds != "" {
+		if id, secret, ok := strings.Cut(creds, ":"); ok {
+			montaClient = monta.New(id, secret)
+			log.Info("live status: Monta client configured")
+		}
+	}
+	s.live = newLiveService(montaClient, s.vehicle, log)
 
 	// Bulk dataset export: regenerate the open static dumps on a schedule and
 	// serve them from exportDir (see routes()).

@@ -21,6 +21,8 @@ func (s *server) registerPublic(api huma.API) {
 		summary("Find the cheapest chargers nearby"))
 	huma.Get(api, "/chargers/{id}/price-history", s.opPriceHistory, tag("Chargers"),
 		summary("Ad-hoc price history for a charger"))
+	huma.Get(api, "/chargers/{id}/live", s.opChargerLive, tag("Chargers"),
+		summary("Live availability for a charger (on-demand Monta lookup)"))
 	huma.Get(api, "/stats/overview", s.opStatsOverview, tag("Statistics"),
 		summary("Market counts and headline-price aggregates"))
 	huma.Get(api, "/stats/sessions", s.opStatsSessions, tag("Statistics"),
@@ -55,12 +57,12 @@ func (s *server) opSessions(_ context.Context, _ *struct{}) (*sessionsOut, error
 // ---- GET /chargers/cheapest ----
 
 type cheapestIn struct {
-	Lat       float64  `query:"lat" required:"true" doc:"Origin latitude"`
-	Lon       float64  `query:"lon" required:"true" doc:"Origin longitude"`
-	Radius    float64  `query:"radius" default:"5000" doc:"Search radius in metres"`
-	MinPower  float64  `query:"min_power" doc:"Only chargers rated at least this many kW"`
-	Plug      string   `query:"plug" doc:"OCPI connector standard, e.g. IEC_62196_T2_COMBO"`
-	Available bool     `query:"available" doc:"Only chargers currently reported free"`
+	Lat       float64 `query:"lat" required:"true" doc:"Origin latitude"`
+	Lon       float64 `query:"lon" required:"true" doc:"Origin longitude"`
+	Radius    float64 `query:"radius" default:"5000" doc:"Search radius in metres"`
+	MinPower  float64 `query:"min_power" doc:"Only chargers rated at least this many kW"`
+	Plug      string  `query:"plug" doc:"OCPI connector standard, e.g. IEC_62196_T2_COMBO"`
+	Available bool    `query:"available" doc:"Only chargers currently reported free"`
 	Session   string  `query:"session" doc:"Standard comparison profile key (see GET /sessions)"`
 	EnergyKWh float64 `query:"energy_kwh" doc:"Custom session: energy to add to the battery (kWh, 1-250). Overrides 'session'."`
 	PowerKW   float64 `query:"power_kw" doc:"Custom session: target power (kW, 1-400). Omit (or 0) for as-fast-as-possible."`

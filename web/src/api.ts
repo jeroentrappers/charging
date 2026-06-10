@@ -132,12 +132,23 @@ export interface CheapestParams {
   limit?: number
 }
 
+export interface LiveStatus {
+  id: number
+  source: 'live' | 'cached' | 'unavailable'
+  status: string
+  available: boolean
+  checked_at: string
+  headline_price_eur?: number | null
+  currency?: string
+}
+
 export const api = {
   cheapest: (p: CheapestParams) =>
     get<{ results: Charger[]; count: number }>('/chargers/cheapest', { ...p }),
   sessions: () => get<{ sessions: SessionProfile[] }>('/sessions'),
   priceHistory: (id: number) =>
     get<{ charger_id: number; history: PricePoint[] }>(`/chargers/${id}/price-history`),
+  live: (id: number) => get<LiveStatus>(`/chargers/${id}/live`),
   overview: () => get<Overview>('/stats/overview'),
   trend: (months = 12) => get<{ trend: TrendPoint[] }>('/stats/price-trend', { months }),
   regions: (by = 'city') => get<{ by: string; regions: PriceAgg[] }>('/stats/regions', { by }),
