@@ -373,6 +373,7 @@ func decodePrices(b []byte) map[string]float64 {
 type PricePoint struct {
 	PriceEUR          *float64           `json:"comparable_price_eur"`
 	Prices            map[string]float64 `json:"comparable_prices"`
+	Components        json.RawMessage    `json:"price_components"` // the structured tariff (€/kWh, €/min, fees, restrictions)
 	Currency          string             `json:"currency"`
 	ObservedFrom      time.Time          `json:"observed_from"`
 	ObservedTo        *time.Time         `json:"observed_to"`
@@ -382,7 +383,7 @@ type PricePoint struct {
 // PriceHistory returns every recorded tariff version for a charger, newest first.
 func (s *Store) PriceHistory(ctx context.Context, chargerID int64) ([]PricePoint, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT comparable_price_eur::float8, COALESCE(comparable_prices,'{}'::jsonb), currency, observed_from, observed_to, source_last_updated
+		SELECT comparable_price_eur::float8, COALESCE(comparable_prices,'{}'::jsonb), price_components, currency, observed_from, observed_to, source_last_updated
 		FROM tariff_version WHERE charger_id=$1
 		ORDER BY observed_from DESC`, chargerID)
 	if err != nil {
@@ -392,11 +393,12 @@ func (s *Store) PriceHistory(ctx context.Context, chargerID int64) ([]PricePoint
 	var out []PricePoint
 	for rows.Next() {
 		var p PricePoint
-		var pricesJSON []byte
-		if err := rows.Scan(&p.PriceEUR, &pricesJSON, &p.Currency, &p.ObservedFrom, &p.ObservedTo, &p.SourceLastUpdated); err != nil {
+		var pricesJSON, componentsJSON []byte
+		if err := rows.Scan(&p.PriceEUR, &pricesJSON, &componentsJSON, &p.Currency, &p.ObservedFrom, &p.ObservedTo, &p.SourceLastUpdated); err != nil {
 			return nil, err
 		}
 		p.Prices = decodePrices(pricesJSON)
+		p.Components = json.RawMessage(componentsJSON)
 		out = append(out, p)
 	}
 	return out, rows.Err()

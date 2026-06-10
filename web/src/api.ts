@@ -38,9 +38,38 @@ export interface SessionProfile {
   metered_kwh: number
 }
 
+export interface TariffComponent {
+  type: string // ENERGY | FLAT | TIME | PARKING_TIME
+  price: number
+  step_size: number
+}
+export interface TariffRestrictions {
+  start_time?: string
+  end_time?: string
+  start_date?: string
+  end_date?: string
+  min_kwh?: number
+  max_kwh?: number
+  min_power?: number
+  max_power?: number
+  min_duration?: number
+  max_duration?: number
+  day_of_week?: string[]
+}
+export interface TariffElement {
+  price_components: TariffComponent[]
+  restrictions?: TariffRestrictions
+}
+export interface TariffStruct {
+  ocpi_id?: string
+  currency: string
+  elements: TariffElement[]
+}
+
 export interface PricePoint {
   comparable_price_eur: number | null
   comparable_prices: Record<string, number>
+  price_components: TariffStruct | null
   currency: string
   observed_from: string
   observed_to: string | null
