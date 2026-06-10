@@ -47,15 +47,15 @@ Seeded (disabled) sources: `energyvision` (OCPI 2.1.1), `tesla` (OCPI 2.2.1),
 ## Access-request checklist
 
 Each direct CPO needs its own free key (AFIR: non-discriminatory, no cost).
-Send the same short request (use-case: public price-comparison app; ask for
-OCPI Locations + Tariffs access and the token):
+**All requests sent 2026-06-10** (drafts in `access-request-emails.md`); awaiting
+replies. Tick off and set the token env once each arrives.
 
-- [ ] EnergyVision — myevplatform@energyvision.be  → `ENERGYVISION_TOKEN`
-- [ ] Tesla Belgium — spolireddi@tesla.com / aboumssimrat@tesla.com → `TESLA_TOKEN`
-- [ ] Monta — data@monta.com → `MONTA_TOKEN`
-- [ ] Road — roaming-dev@road.io → `ROAD_TOKEN`
-- [ ] Eco-Movement — nap@eco-movement.com (NAP DATEX token may be public; ask about
-      OCPI access + whether price/availability are included) → `ECOMOVEMENT_TOKEN`
+- [x] EnergyVision — myevplatform@energyvision.be → `ENERGYVISION_TOKEN` — sent, awaiting reply
+- [x] Tesla Belgium — spolireddi@tesla.com / aboumssimrat@tesla.com → `TESLA_TOKEN` — sent, awaiting reply
+- [x] Monta — data@monta.com → `MONTA_TOKEN` — sent, awaiting reply
+- [x] Road — roaming-dev@road.io → `ROAD_TOKEN` — sent, awaiting reply
+- [x] Eco-Movement — nap@eco-movement.com → `ECOMOVEMENT_TOKEN` — sent, awaiting reply
+      (asked about OCPI access + whether price/availability are included)
 
 ## Suggested integration order
 
