@@ -21,6 +21,8 @@ type Config struct {
 	PriceStaleAfter time.Duration
 	// Address for the ingest process to expose Prometheus /metrics.
 	MetricsAddr string
+	// Comma-separated allowed CORS origins for the API ("*" = any).
+	CORSOrigins string
 }
 
 func Load() Config {
@@ -32,6 +34,7 @@ func Load() Config {
 		AvailabilityStaleAfter: envDuration("AVAILABILITY_STALE_AFTER", 15*time.Minute),
 		PriceStaleAfter:        envDuration("PRICE_STALE_AFTER", 48*time.Hour),
 		MetricsAddr:            env("METRICS_ADDR", ":9090"),
+		CORSOrigins:            env("CORS_ORIGINS", "*"),
 	}
 }
 

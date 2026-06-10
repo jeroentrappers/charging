@@ -63,6 +63,7 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
+	r.Use(corsMiddleware(cfg.CORSOrigins))
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
 	r.Handle("/metrics", metrics.Handler())
@@ -304,6 +305,39 @@ func runHealthcheck(addr string) int {
 		return 1
 	}
 	return 0
+}
+
+// corsMiddleware allows browser clients on other origins to call the read API.
+// origins is comma-separated; "*" allows any. Echoes a matching Origin so that
+// credentialed requests still work if locked down later.
+func corsMiddleware(origins string) func(http.Handler) http.Handler {
+	allowAny := strings.TrimSpace(origins) == "*" || origins == ""
+	allowed := map[string]bool{}
+	for _, o := range strings.Split(origins, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			allowed[o] = true
+		}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			switch {
+			case allowAny:
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			case origin != "" && allowed[origin]:
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Max-Age", "300")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func parseFloat(s string) (float64, bool) {
