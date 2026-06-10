@@ -107,6 +107,11 @@ export function MapView(props: {
           )
         })}
       </MapContainer>
+      {/* Search origin: distances are measured from the map centre. Fixed in the
+          centre of the viewport (purely visual; pointer-events:none). */}
+      <div className="origin" aria-hidden="true">
+        <span className="origin-label">distances from here</span>
+      </div>
     </div>
   )
 }

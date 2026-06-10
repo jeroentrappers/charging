@@ -14,17 +14,34 @@ export default function App() {
   const [speed, setSpeed] = useState('dc150')
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '' })
   const [located, setLocated] = useState<[number, number] | null>(null)
+  const [geoNote, setGeoNote] = useState('')
 
   function locate() {
-    if (!navigator.geolocation) return
+    if (!navigator.geolocation) {
+      setGeoNote('Location not supported — drag the map')
+      return
+    }
+    setGeoNote('Locating…')
     navigator.geolocation.getCurrentPosition(
-      (p) => setLocated([p.coords.latitude, p.coords.longitude]),
-      () => {},
-      { enableHighAccuracy: true, timeout: 8000 },
+      (p) => {
+        setLocated([p.coords.latitude, p.coords.longitude])
+        setGeoNote('')
+      },
+      (err) => {
+        // Geolocation needs a secure context (HTTPS or localhost); a non-secure
+        // origin or a denial both land here.
+        setGeoNote(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location blocked — drag the map to set your area'
+            : 'Location unavailable — drag the map to set your area',
+        )
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
     )
   }
   useEffect(() => {
     locate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -47,6 +64,7 @@ export default function App() {
             <button className="chip" onClick={locate}>📍 Locate me</button>
             <FilterBarInline filters={filters} setFilters={setFilters} />
           </div>
+          {geoNote && <div className="geo-note">{geoNote}</div>}
         </div>
       )}
 
