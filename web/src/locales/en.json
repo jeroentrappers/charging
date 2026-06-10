@@ -1,5 +1,5 @@
 {
-  "nav": { "find": "Find", "insights": "Insights" },
+  "nav": { "find": "Find", "insights": "Insights", "apiDocs": "API docs" },
   "geo": {
     "locate": "Locate me",
     "locating": "Locating…",

@@ -9,6 +9,10 @@
 const runtimeBase = typeof window !== 'undefined' ? window.__CONFIG__?.apiBase : ''
 const BASE = (runtimeBase || import.meta.env.VITE_API_BASE || 'http://localhost:8080').replace(/\/$/, '')
 
+// Public API origin (e.g. https://charging.appmire.be/api) — used for outbound
+// links like the interactive docs.
+export const API_BASE = BASE
+
 export interface Charger {
   id: number
   cpo_id: string

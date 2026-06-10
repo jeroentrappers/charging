@@ -25,6 +25,10 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        // The API is served same-origin under /api (reverse proxy). Without this,
+        // the SW's SPA fallback would intercept browser navigations to /api/docs,
+        // /api/openapi.yaml, /api/export/… and render the PWA shell instead.
+        navigateFallbackDenylist: [/^\/api\//],
         // config.js is generated at container startup, so it must NOT be
         // precached (its build-time bytes are a dev placeholder).
         globIgnores: ['**/config.js'],

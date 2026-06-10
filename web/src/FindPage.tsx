@@ -25,7 +25,11 @@ export function FindPage(props: {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [detailId, setDetailId] = useState<number | null>(null)
+  // The open detail is a *snapshot* of the selected charger, not a lookup into
+  // the live results — so it survives a query refresh that no longer includes it
+  // (e.g. after panning/filtering). It's refreshed in place when the same
+  // charger reappears in new results.
+  const [detailCharger, setDetailCharger] = useState<Charger | null>(null)
   const [focusNonce, setFocusNonce] = useState(0)
   const [expanded, setExpanded] = useState(false)
 
@@ -76,16 +80,27 @@ export function FindPage(props: {
     return () => clearTimeout(t)
   }, [oLat, oLon, radius, props.sessionKey, props.energyKWh, props.powerKW, props.filters])
 
-  const detail = detailId != null ? chargers.find((c) => c.id === detailId) ?? null : null
+  // Refresh the open detail's data from new results, but keep the snapshot if
+  // the charger isn't in the latest set (don't let it vanish).
+  useEffect(() => {
+    setDetailCharger((prev) => (prev ? chargers.find((c) => c.id === prev.id) ?? prev : null))
+  }, [chargers])
 
   function select(id: number) {
     setSelectedId(id)
-    setDetailId(id)
+    setDetailCharger(chargers.find((c) => c.id === id) ?? null)
     setFocusNonce((n) => n + 1)
   }
+  function closeDetail() {
+    setDetailCharger(null)
+    setSelectedId(null)
+  }
 
-  const selected = selectedId != null ? chargers.find((c) => c.id === selectedId) ?? null : null
-  const focus: [number, number] | null = selected ? [selected.lat, selected.lon] : null
+  // Focus the map on the open charger (from the snapshot, so it's always known).
+  const focus: [number, number] | null = detailCharger ? [detailCharger.lat, detailCharger.lon] : null
+  // Keep the selected charger's marker on the map even if it left the results.
+  const mapChargers =
+    detailCharger && !chargers.some((c) => c.id === detailCharger.id) ? [...chargers, detailCharger] : chargers
 
   return (
     <div className="find">
@@ -98,7 +113,7 @@ export function FindPage(props: {
         origin={origin}
         showOrigin={hasFix}
         accuracyM={accuracyM}
-        chargers={chargers}
+        chargers={mapChargers}
         selectedId={selectedId}
         onSelect={select}
         onViewport={(lat, lon, r) => setVp({ lat, lon, radius: r })}
@@ -132,9 +147,9 @@ export function FindPage(props: {
         </div>
       </div>
 
-      {detail && (
+      {detailCharger && (
         <Suspense fallback={null}>
-          <ChargerDetail charger={detail} onClose={() => setDetailId(null)} />
+          <ChargerDetail charger={detailCharger} onClose={closeDetail} />
         </Suspense>
       )}
     </div>

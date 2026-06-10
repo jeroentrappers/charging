@@ -1,5 +1,5 @@
 {
-  "nav": { "find": "Rechercher", "insights": "Analyses" },
+  "nav": { "find": "Rechercher", "insights": "Analyses", "apiDocs": "Doc API" },
   "geo": {
     "locate": "Me localiser",
     "locating": "Localisation…",

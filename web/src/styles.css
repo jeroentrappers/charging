@@ -41,6 +41,10 @@ button { font: inherit; cursor: pointer; }
 .tabs button.active { background: #ecfdf5; color: var(--green); }
 .lang { margin-left: auto; }
 .lang select { font: inherit; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: var(--surface); color: var(--ink); }
+.header-links { display: flex; align-items: center; gap: 12px; }
+.hlink { color: var(--muted); font-weight: 600; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.hlink:hover { color: var(--green); }
+.hlink svg { width: 18px; height: 18px; fill: currentColor; }
 
 /* ---- session selector (hero control) ---- */
 .controls { background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 14px; z-index: 19; }

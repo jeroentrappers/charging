@@ -1,5 +1,5 @@
 {
-  "nav": { "find": "Zoeken", "insights": "Inzichten" },
+  "nav": { "find": "Zoeken", "insights": "Inzichten", "apiDocs": "API-docs" },
   "geo": {
     "locate": "Mijn locatie",
     "locating": "Locatie bepalen…",

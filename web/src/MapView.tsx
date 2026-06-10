@@ -30,14 +30,16 @@ function RecenterOnNonce({ to, nonce }: { to: [number, number] | null; nonce: nu
   return null
 }
 
-// Flies to the selected charger so it's centred and visible.
+// Pans to the selected charger so it's centred and visible. Keeps the current
+// zoom on purpose: zooming in would shrink the search radius, which re-runs the
+// query narrower and can drop the very charger that was selected.
 function FocusOn({ to, nonce }: { to: [number, number] | null; nonce: number }) {
   const map = useMap()
   const last = useRef(-1)
   useEffect(() => {
     if (!to || nonce === last.current) return
     last.current = nonce
-    map.flyTo(to, Math.max(map.getZoom(), 15), { duration: 0.4 })
+    map.panTo(to, { duration: 0.4 })
   }, [to, nonce, map])
   return null
 }
