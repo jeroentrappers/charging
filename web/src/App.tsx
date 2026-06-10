@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { FindPage } from './FindPage'
 import { SessionBar, FilterBar, sessionKey, type Filters } from './ui'
 
@@ -15,10 +15,23 @@ export default function App() {
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '' })
   const [located, setLocated] = useState<[number, number] | null>(null)
   const [geoNote, setGeoNote] = useState('')
+  const [geoNonce, setGeoNonce] = useState(0) // bumps on each explicit locate -> recenter + re-follow geo
+  const watchId = useRef<number | null>(null)
 
+  // Live updates while the user moves; doesn't recenter the map (the pin moves).
+  function startWatch() {
+    if (watchId.current != null || !navigator.geolocation) return
+    watchId.current = navigator.geolocation.watchPosition(
+      (p) => setLocated([p.coords.latitude, p.coords.longitude]),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000 },
+    )
+  }
+
+  // Explicit locate: get a fix now, recenter the map, and start following.
   function locate() {
     if (!navigator.geolocation) {
-      setGeoNote('Location not supported — drag the map')
+      setGeoNote('Location not supported — tap the map to set your spot')
       return
     }
     setGeoNote('Locating…')
@@ -26,14 +39,16 @@ export default function App() {
       (p) => {
         setLocated([p.coords.latitude, p.coords.longitude])
         setGeoNote('')
+        setGeoNonce((n) => n + 1)
+        startWatch()
       },
       (err) => {
         // Geolocation needs a secure context (HTTPS or localhost); a non-secure
         // origin or a denial both land here.
         setGeoNote(
           err.code === err.PERMISSION_DENIED
-            ? 'Location blocked — drag the map to set your area'
-            : 'Location unavailable — drag the map to set your area',
+            ? 'Location blocked — tap the map to set your spot'
+            : 'Location unavailable — tap the map to set your spot',
         )
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
@@ -41,6 +56,9 @@ export default function App() {
   }
   useEffect(() => {
     locate()
+    return () => {
+      if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -71,7 +89,8 @@ export default function App() {
       {tab === 'find' ? (
         <FindPage
           initial={located ?? DEFAULT_CENTER}
-          recenterTo={located}
+          located={located}
+          geoNonce={geoNonce}
           sessionKey={sessionKey(need, speed)}
           filters={filters}
         />

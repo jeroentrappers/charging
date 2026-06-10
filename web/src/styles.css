@@ -65,25 +65,13 @@ button { font: inherit; cursor: pointer; }
 .map { position: relative; flex: 3 1 0; min-height: 0; z-index: 0; } /* z-index:0 contains Leaflet's high-z panes */
 .leaflet-container { height: 100%; width: 100%; background: #dde3ea; }
 
-/* Search origin marker, pinned at the map centre (the point distances are
-   measured from). Purely visual — never intercepts map gestures. */
-.origin { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 500; pointer-events: none; }
-.origin::before {
-  content: ''; position: absolute; top: 50%; left: 50%; width: 16px; height: 16px;
-  transform: translate(-50%, -50%); border-radius: 50%;
-  background: rgba(21, 128, 61, 0.25); animation: ping 2s ease-out infinite;
+/* Hint shown over the map until a location (geolocation or a tapped point) is set. */
+.map-hint {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 600;
+  font-size: 12px; font-weight: 600; color: var(--ink);
+  background: rgba(255,255,255,.92); padding: 6px 12px; border-radius: 999px; box-shadow: var(--shadow);
+  pointer-events: none;
 }
-.origin::after {
-  content: ''; position: absolute; top: 50%; left: 50%; width: 14px; height: 14px;
-  transform: translate(-50%, -50%); border-radius: 50%;
-  background: var(--green); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35);
-}
-.origin-label {
-  position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
-  white-space: nowrap; font-size: 11px; font-weight: 600; color: var(--ink);
-  background: rgba(255,255,255,.9); padding: 2px 7px; border-radius: 999px; box-shadow: var(--shadow);
-}
-@keyframes ping { 0% { width: 14px; height: 14px; opacity: .8; } 100% { width: 42px; height: 42px; opacity: 0; } }
 
 .sheet {
   position: relative; background: var(--surface);

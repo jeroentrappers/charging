@@ -1,20 +1,21 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api, type Charger } from './api'
 import { MapView } from './MapView'
 import { AvailBadge, availOf, eur, km, priceOf, type Filters } from './ui'
 
-// The detail panel renders the price-history chart; split the charting lib out.
 const ChargerDetail = lazy(() => import('./ChargerDetail').then((m) => ({ default: m.ChargerDetail })))
 
 interface Viewport { lat: number; lon: number; radius: number }
 
 export function FindPage(props: {
   initial: [number, number]
-  recenterTo: [number, number] | null
+  located: [number, number] | null // live geolocation, or null if unavailable
+  geoNonce: number // bumps on each explicit "Locate me"
   sessionKey: string | undefined
   filters: Filters
 }) {
   const [vp, setVp] = useState<Viewport | null>(null)
+  const [manualOrigin, setManualOrigin] = useState<[number, number] | null>(null)
   const [chargers, setChargers] = useState<Charger[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -23,16 +24,33 @@ export function FindPage(props: {
   const [focusNonce, setFocusNonce] = useState(0)
   const [expanded, setExpanded] = useState(false)
 
+  // "Locate me" re-follows geolocation: clear any manually-dropped pin.
+  const lastGeo = useRef(props.geoNonce)
   useEffect(() => {
-    if (!vp) return
+    if (props.geoNonce !== lastGeo.current) {
+      lastGeo.current = props.geoNonce
+      setManualOrigin(null)
+    }
+  }, [props.geoNonce])
+
+  // The search origin: a manually-dropped pin wins, else live geolocation, else
+  // the map centre (so the app works before any location is set).
+  const origin: [number, number] =
+    manualOrigin ?? props.located ?? (vp ? [vp.lat, vp.lon] : props.initial)
+  const hasFix = manualOrigin != null || props.located != null
+  const oLat = origin[0]
+  const oLon = origin[1]
+  const radius = vp?.radius ?? 5000
+
+  useEffect(() => {
     const t = setTimeout(async () => {
       setLoading(true)
       setError(false)
       try {
         const r = await api.cheapest({
-          lat: vp.lat,
-          lon: vp.lon,
-          radius: vp.radius,
+          lat: oLat,
+          lon: oLon,
+          radius,
           session: props.sessionKey,
           available: props.filters.available,
           min_power: props.filters.minPower || undefined,
@@ -47,32 +65,37 @@ export function FindPage(props: {
       }
     }, 300)
     return () => clearTimeout(t)
-  }, [vp, props.sessionKey, props.filters])
+  }, [oLat, oLon, radius, props.sessionKey, props.filters])
 
   const detail = detailId != null ? chargers.find((c) => c.id === detailId) ?? null : null
-  const selected = selectedId != null ? chargers.find((c) => c.id === selectedId) ?? null : null
-  const focus: [number, number] | null = selected ? [selected.lat, selected.lon] : null
 
-  // Selecting (from the list or the map) both flies the map to the charger and
-  // opens its detail panel.
   function select(id: number) {
     setSelectedId(id)
     setDetailId(id)
     setFocusNonce((n) => n + 1)
   }
 
+  const selected = selectedId != null ? chargers.find((c) => c.id === selectedId) ?? null : null
+  const focus: [number, number] | null = selected ? [selected.lat, selected.lon] : null
+
   return (
     <div className="find">
       <MapView
         initial={props.initial}
-        recenterTo={props.recenterTo}
+        recenterTo={props.located}
+        recenterNonce={props.geoNonce}
         focus={focus}
         focusNonce={focusNonce}
+        origin={origin}
+        showOrigin={hasFix}
         chargers={chargers}
         selectedId={selectedId}
         onSelect={select}
-        onViewport={(lat, lon, radius) => setVp({ lat, lon, radius })}
+        onViewport={(lat, lon, r) => setVp({ lat, lon, radius: r })}
+        onPick={(lat, lon) => setManualOrigin([lat, lon])}
       />
+
+      {!hasFix && <div className="map-hint">Tap the map to set your location</div>}
 
       <div className={`sheet ${expanded ? 'expanded' : ''}`}>
         <div className="handle"><button aria-label="toggle list" onClick={() => setExpanded((e) => !e)} /></div>
