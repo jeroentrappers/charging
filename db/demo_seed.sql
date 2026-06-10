@@ -1,14 +1,21 @@
 -- Optional demo data so the API returns something before a real OCPI key is
--- available. Apply with:  make demo-seed   (or psql -f db/demo_seed.sql)
+-- available. Apply with:  make demo-seed   (or psql -f db/demo_seed.sql), or via
+-- the docker-compose "demo" profile.
+--
+-- Idempotent and scoped to the 'demo' CPO: it does NOT touch the real source
+-- registry or any ingested data, so it's safe to run alongside live sources.
 --
 -- The comparable_prices below are illustrative but internally consistent:
 --   AC charger: pure 0.40 €/kWh  -> power tier doesn't change price (no time fee)
 --   DC charger: 0.59 €/kWh + 0.35 session + 6 €/h -> faster DC (300) beats 150
 --     because the per-hour component runs for less time (charging-curve aware).
-TRUNCATE tariff_version, charger_status, charger, ingest_run, cpo RESTART IDENTITY CASCADE;
-
 INSERT INTO cpo (id, name, ocpi_base_url, enabled)
-VALUES ('demo', 'Demo CPO', 'http://demo/', false);
+VALUES ('demo', 'Demo CPO', 'http://demo/', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Clear only the demo chargers (cascades to their status + tariff history),
+-- then reinsert — so re-running is safe.
+DELETE FROM charger WHERE cpo_id = 'demo';
 
 -- Charger 1: AC 22 kW (Type 2), Gent Markt.
 WITH c AS (
@@ -39,4 +46,4 @@ SELECT id, 'demo-dc',
 FROM c;
 
 INSERT INTO charger_status (charger_id, status, available_count)
-SELECT id, 'AVAILABLE', 1 FROM charger;
+SELECT id, 'AVAILABLE', 1 FROM charger WHERE cpo_id = 'demo';

@@ -250,6 +250,7 @@ app is built and served by its own nginx image.
 ```bash
 cp .env.example .env        # set source tokens; DATABASE_URL is overridden to the compose DB
 make prod-up                # build images, start db -> migrate -> api + ingest + web
+make prod-demo              # same, plus load demo data so the map shows chargers
 make prod-ps                # status
 make prod-logs              # tail
 make prod-backup TS=$(date +%F)   # gzip pg_dump into backups/

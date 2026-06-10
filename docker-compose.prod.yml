@@ -33,6 +33,21 @@ services:
       db:
         condition: service_healthy
 
+  # Optional demo data (idempotent). Only runs with the "demo" profile:
+  #   make prod-demo   (or: docker compose ... --profile demo up)
+  demo-seed:
+    image: postgis/postgis:17-3.5
+    profiles: ["demo"]
+    environment:
+      PGPASSWORD: charging
+    entrypoint: ["sh", "-c", "psql -h db -U charging -d charging -v ON_ERROR_STOP=1 -f /seed.sql"]
+    volumes:
+      - ./db/demo_seed.sql:/seed.sql:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
     <<: *app
     command: ["/usr/local/bin/api"]

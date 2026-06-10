@@ -63,8 +63,11 @@ demo-seed: ## Load optional demo data so the API returns results without a key
 # ---- Production (single VM) ----
 PROD := docker compose -p charging_prod -f docker-compose.prod.yml
 
-prod-up: ## Build images and start the full prod stack (db + migrate + api + ingest)
+prod-up: ## Build images and start the full prod stack (db + migrate + api + ingest + web)
 	$(PROD) up -d --build
+
+prod-demo: ## Like prod-up, plus load demo data so the map shows chargers
+	$(PROD) --profile demo up -d --build
 
 prod-down: ## Stop the prod stack (keeps the data volume)
 	$(PROD) down
