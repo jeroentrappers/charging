@@ -40,6 +40,7 @@ type server struct {
 	priceStaleAfter time.Duration
 	adminToken      string
 	exportDir       string
+	apiBasePath     string
 	engine          *ingest.Engine
 	live            *liveService
 }
@@ -73,6 +74,7 @@ func main() {
 		priceStaleAfter: cfg.PriceStaleAfter,
 		adminToken:      cfg.AdminToken,
 		exportDir:       cfg.ExportDir,
+		apiBasePath:     cfg.APIBasePath,
 	}
 	s.engine = ingest.NewEngine(st, log)
 	s.engine.Vehicle = s.vehicle
@@ -119,6 +121,12 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Use(corsMiddleware(corsOrigins))
 
+	// When the API is reverse-proxied under a path prefix (e.g. nginx maps
+	// /api/ -> this server with the prefix stripped), the served paths stay at
+	// root but the *advertised* spec server URL and the docs' spec link must
+	// carry the public prefix. API_BASE_PATH sets it ("" for root mounting).
+	basePath := strings.TrimRight(s.apiBasePath, "/")
+
 	// Operational endpoints — deliberately outside the API contract.
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
@@ -133,6 +141,9 @@ func (s *server) routes(corsOrigins string) http.Handler {
 		"dumps (NDJSON, GeoJSON, OCPI Locations+Tariffs) under /export — see " +
 		"/export/index.json for the manifest, sizes, checksums and licence."
 	cfg.DocsPath = "" // served below with Scalar instead of the bundled renderer
+	if basePath != "" {
+		cfg.OpenAPI.Servers = []*huma.Server{{URL: basePath, Description: "Public base path"}}
+	}
 	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"adminToken": {
 			Type:        "http",
@@ -144,7 +155,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	s.registerPublic(api)
 	s.registerAdmin(api)
 
-	r.Get("/docs", scalarDocs)
+	r.Get("/docs", scalarDocs(basePath))
 
 	// Open bulk dataset dumps (static files regenerated on a schedule). Served
 	// with gzip + short caching so a CDN can absorb "give me everything" load.
@@ -302,10 +313,10 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 }
 
 // scalarDocs serves the interactive API reference (Scalar), pointed at the
-// huma-generated OpenAPI document.
-func scalarDocs(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(`<!doctype html>
+// huma-generated OpenAPI document. basePath is the public prefix the API is
+// reverse-proxied under ("" when mounted at root).
+func scalarDocs(basePath string) http.HandlerFunc {
+	html := `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -313,8 +324,12 @@ func scalarDocs(w http.ResponseWriter, _ *http.Request) {
     <title>Charging API reference</title>
   </head>
   <body>
-    <script id="api-reference" data-url="/openapi.yaml"></script>
+    <script id="api-reference" data-url="` + basePath + `/openapi.yaml"></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
   </body>
-</html>`))
+</html>`
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(html))
+	}
 }

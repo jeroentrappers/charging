@@ -26,6 +26,10 @@ type Config struct {
 	// Bearer token protecting the admin endpoints; empty disables them.
 	AdminToken string
 
+	// Public path prefix the API is reverse-proxied under (e.g. "/api"); sets
+	// the OpenAPI server URL and the docs' spec link. Empty = mounted at root.
+	APIBasePath string
+
 	// Bulk dataset export (open static dumps served at /export). Empty dir
 	// disables it.
 	ExportDir        string
@@ -44,6 +48,7 @@ func Load() Config {
 		MetricsAddr:            env("METRICS_ADDR", ":9090"),
 		CORSOrigins:            env("CORS_ORIGINS", "*"),
 		AdminToken:             os.Getenv("ADMIN_TOKEN"),
+		APIBasePath:            env("API_BASE_PATH", ""),
 		ExportDir:              env("EXPORT_DIR", "./export"),
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
