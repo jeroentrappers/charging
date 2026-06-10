@@ -1,6 +1,10 @@
 package pricing
 
-import "github.com/appmire/charging/internal/model"
+import (
+	"time"
+
+	"github.com/appmire/charging/internal/model"
+)
 
 // Vehicle is the reference car the session energy figures are based on. It is
 // configurable so the comparison can be tuned to a fleet or a typical local EV.
@@ -96,9 +100,26 @@ func IsProfile(key string) bool {
 	return false
 }
 
-// session builds the pricing Session for a resolved profile.
-func (p ResolvedProfile) session() Session {
-	return Session{KWh: p.MeteredKW, Power: p.TierKW, AvgPower: p.AvgKW, At: referenceTime()}
+// session builds the pricing Session for a resolved profile at the reference time.
+func (p ResolvedProfile) session() Session { return p.sessionAt(referenceTime()) }
+
+func (p ResolvedProfile) sessionAt(at time.Time) Session {
+	return Session{KWh: p.MeteredKW, Power: p.TierKW, AvgPower: p.AvgKW, At: at}
+}
+
+// SessionPriceAt returns the price for one profile key evaluated at a specific
+// time (for time-of-day tariffs), if the charger can serve that session.
+func SessionPriceAt(t model.Tariff, chargerPowerKW float64, currentType, sessionKey string, v Vehicle, at time.Time) (float64, bool) {
+	for _, p := range Profiles(v) {
+		if p.Key != sessionKey {
+			continue
+		}
+		if !p.supportedBy(chargerPowerKW, currentType) {
+			return 0, false
+		}
+		return Evaluate(t, p.sessionAt(at))
+	}
+	return 0, false
 }
 
 // supportedBy reports whether a charger can actually deliver this session.
@@ -128,16 +149,21 @@ func AllPrices(t model.Tariff, chargerPowerKW float64, currentType string, v Veh
 // value, even ones whose power doesn't match a standard tier). DC duration uses
 // a taper factor.
 func Headline(t model.Tariff, chargerPowerKW float64, currentType string, v Vehicle) (float64, bool) {
+	return HeadlineAt(t, chargerPowerKW, currentType, v, referenceTime())
+}
+
+// HeadlineAt is Headline evaluated at a specific time (for time-of-day tariffs).
+func HeadlineAt(t model.Tariff, chargerPowerKW float64, currentType string, v Vehicle, at time.Time) (float64, bool) {
 	if chargerPowerKW <= 0 {
 		// No power info: fall back to a 30 kWh energy-only basket.
-		return Comparable(t, 0)
+		return Evaluate(t, Session{KWh: StandardKWh, Power: 0, At: at})
 	}
 	metered := socWindow(0.70)(v) / efficiency(currentType)
 	avg := chargerPowerKW
 	if currentType == model.CurrentDC {
 		avg = chargerPowerKW * 0.73 // representative 10–80% taper
 	}
-	return Evaluate(t, Session{KWh: metered, Power: chargerPowerKW, AvgPower: avg, At: referenceTime()})
+	return Evaluate(t, Session{KWh: metered, Power: chargerPowerKW, AvgPower: avg, At: at})
 }
 
 func round2(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }

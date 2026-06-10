@@ -3,6 +3,7 @@ package pricing
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/appmire/charging/internal/model"
 )
@@ -99,6 +100,69 @@ func TestAllPrices_DCFasterThanACOnTime(t *testing.T) {
 	acPrice, _ := Evaluate(acTar, Session{KWh: 44.68, Power: 11, AvgPower: 11, At: referenceTime()})
 	if !(dc < acPrice) {
 		t.Fatalf("DC (taper avg) should cost less on time than slow AC: dc=%v ac=%v", dc, acPrice)
+	}
+}
+
+// TestHeadlineAt_TimeOfDayChangesRanking is the core check behind time-aware
+// sorting: charger A is cheap by day / dear by night, charger B the reverse, so
+// the cheaper of the two flips between peak and off-peak. The API sorts on
+// exactly this HeadlineAt value, so the result order flips with it.
+func TestHeadlineAt_TimeOfDayChangesRanking(t *testing.T) {
+	// A: 0.25 day, 0.60 night (22:00–06:00).
+	a := model.Tariff{Currency: "EUR", Elements: []model.TariffElement{
+		{
+			PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.60}},
+			Restrictions:    &model.Restrictions{StartTime: "22:00", EndTime: "06:00"},
+		},
+		{PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.25}}},
+	}}
+	// B: 0.45 day, 0.20 night (cheap off-peak).
+	b := model.Tariff{Currency: "EUR", Elements: []model.TariffElement{
+		{
+			PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.20}},
+			Restrictions:    &model.Restrictions{StartTime: "22:00", EndTime: "06:00"},
+		},
+		{PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.45}}},
+	}}
+
+	noon := time.Date(2024, 1, 3, 12, 0, 0, 0, time.UTC)
+	night := time.Date(2024, 1, 3, 23, 0, 0, 0, time.UTC)
+
+	aDay, _ := HeadlineAt(a, 11, model.CurrentAC, DefaultVehicle, noon)
+	bDay, _ := HeadlineAt(b, 11, model.CurrentAC, DefaultVehicle, noon)
+	if !(aDay < bDay) {
+		t.Fatalf("by day A should be cheaper: a=%v b=%v", aDay, bDay)
+	}
+
+	aNight, _ := HeadlineAt(a, 11, model.CurrentAC, DefaultVehicle, night)
+	bNight, _ := HeadlineAt(b, 11, model.CurrentAC, DefaultVehicle, night)
+	if !(bNight < aNight) {
+		t.Fatalf("at night B should be cheaper (ranking flips): a=%v b=%v", aNight, bNight)
+	}
+}
+
+func TestSessionPriceAt_TimeOfDay(t *testing.T) {
+	tar := model.Tariff{Currency: "EUR", Elements: []model.TariffElement{
+		{
+			PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.20}},
+			Restrictions:    &model.Restrictions{StartTime: "22:00", EndTime: "06:00"},
+		},
+		{PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.50}}},
+	}}
+	noon := time.Date(2024, 1, 3, 12, 0, 0, 0, time.UTC)
+	night := time.Date(2024, 1, 3, 23, 0, 0, 0, time.UTC)
+
+	day, ok := SessionPriceAt(tar, 22, model.CurrentAC, "charge1080_ac22", DefaultVehicle, noon)
+	if !ok {
+		t.Fatal("AC22 charger should serve charge1080_ac22")
+	}
+	nite, _ := SessionPriceAt(tar, 22, model.CurrentAC, "charge1080_ac22", DefaultVehicle, night)
+	if !(nite < day) {
+		t.Fatalf("off-peak session should be cheaper: day=%v night=%v", day, nite)
+	}
+	// A charger that can't serve the session yields no price.
+	if _, ok := SessionPriceAt(tar, 11, model.CurrentAC, "charge1080_ac22", DefaultVehicle, noon); ok {
+		t.Fatal("11kW charger cannot serve a 22kW session")
 	}
 }
 

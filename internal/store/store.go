@@ -315,6 +315,7 @@ type NearbyCharger struct {
 	Currency     string             `json:"currency"`
 	StatusAt     *time.Time         `json:"status_updated_at"`
 	Stale        bool               `json:"availability_stale"` // status older than the freshness window
+	Components   json.RawMessage    `json:"-"`                  // structured tariff, for request-time (time-of-day) pricing
 }
 
 type NearbyQuery struct {
@@ -331,22 +332,16 @@ type NearbyQuery struct {
 	Limit      int           `json:"limit"`
 }
 
-// CheapestNearby returns chargers within radius, optionally only those with a
-// free connector whose availability is fresh, ordered by comparable price
-// (nulls last) then distance.
+// CheapestNearby returns candidate chargers within radius (and matching the
+// filters), ordered by distance, including the structured tariff so the caller
+// can compute a request-time (time-of-day-aware) price and re-rank. Limit caps
+// the candidate pool. Each result carries the stored noon comparable + the
+// per-session map as fallbacks.
 func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyCharger, error) {
-	if q.Limit <= 0 || q.Limit > 200 {
-		q.Limit = 50
+	if q.Limit <= 0 || q.Limit > 1000 {
+		q.Limit = 300
 	}
 	staleSecs := q.StaleAfter.Seconds() // 0 -> staleness checks are no-ops
-
-	// $1..$8 are fixed; an optional session key is $9.
-	args := []any{q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs}
-	orderExpr := "tv.comparable_price_eur"
-	if q.Session != "" {
-		args = append(args, q.Session)
-		orderExpr = "(tv.comparable_prices->>$9)::float8"
-	}
 
 	// A status is fresh when staleness is disabled ($8<=0) or it was updated
 	// within the window.
@@ -360,7 +355,8 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		       COALESCE(st.available_count,0),
 		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
 		       st.updated_at,
-		       (NOT %s) AS stale
+		       (NOT %s) AS stale,
+		       tv.price_components
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
@@ -368,10 +364,11 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
 		  AND ($5 = '' OR c.plug_type = $5)
 		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
-		ORDER BY %s ASC NULLS LAST, dist ASC
-		LIMIT $7`, freshExpr, freshExpr, orderExpr)
+		ORDER BY dist ASC
+		LIMIT $7`, freshExpr, freshExpr)
 
-	rows, err := s.Pool.Query(ctx, query, args...)
+	rows, err := s.Pool.Query(ctx, query,
+		q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs)
 	if err != nil {
 		return nil, err
 	}
@@ -379,13 +376,14 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 	var out []NearbyCharger
 	for rows.Next() {
 		var n NearbyCharger
-		var pricesJSON []byte
+		var pricesJSON, componentsJSON []byte
 		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
-			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale); err != nil {
+			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON); err != nil {
 			return nil, err
 		}
 		n.Prices = decodePrices(pricesJSON)
+		n.Components = json.RawMessage(componentsJSON)
 		if q.Session != "" {
 			if v, ok := n.Prices[q.Session]; ok {
 				n.SessionPrice = &v

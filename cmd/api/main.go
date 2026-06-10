@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/appmire/charging/internal/config"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
+	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
 )
@@ -257,6 +259,9 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 	}
 	minPower, _ := parseFloat(q.Get("min_power"))
 	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
 
 	session := q.Get("session")
 	if session != "" && !pricing.IsProfile(session) {
@@ -270,13 +275,27 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 		OnlyAvail:  q.Get("available") == "true" || q.Get("available") == "1",
 		Session:    session,
 		StaleAfter: s.staleAfter,
-		Limit:      limit,
+		Limit:      4 * limit, // candidate pool; re-ranked by current-time price below
 	}
 	res, err := s.st.CheapestNearby(r.Context(), nq)
 	if err != nil {
 		s.log.Error("cheapest query", "err", err)
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
+	}
+
+	// Re-price each candidate at the *current* local time so time-of-day tariffs
+	// rank correctly (the stored comparable uses a fixed reference time).
+	now := time.Now()
+	if brussels != nil {
+		now = now.In(brussels)
+	}
+	for i := range res {
+		s.repriceNow(&res[i], session, now)
+	}
+	sortByLivePrice(res, session)
+	if len(res) > limit {
+		res = res[:limit]
 	}
 	if res == nil {
 		res = []store.NearbyCharger{}
@@ -285,6 +304,51 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 		"query":   nq,
 		"count":   len(res),
 		"results": res,
+	})
+}
+
+var brussels, _ = time.LoadLocation("Europe/Brussels")
+
+// repriceNow overrides a candidate's headline (and selected-session) price with
+// the value evaluated at `now`, when the structured tariff is available.
+func (s *server) repriceNow(c *store.NearbyCharger, session string, now time.Time) {
+	if len(c.Components) == 0 {
+		return // no structured tariff (e.g. Monta snapshot) — keep stored value
+	}
+	var tar model.Tariff
+	if err := json.Unmarshal(c.Components, &tar); err != nil {
+		return
+	}
+	if p, ok := pricing.HeadlineAt(tar, c.PowerKW, c.CurrentType, s.vehicle, now); ok {
+		c.PriceEUR = &p
+	}
+	if session != "" {
+		if p, ok := pricing.SessionPriceAt(tar, c.PowerKW, c.CurrentType, session, s.vehicle, now); ok {
+			c.SessionPrice = &p
+		} else {
+			c.SessionPrice = nil
+		}
+	}
+}
+
+// sortByLivePrice ranks by the effective price (session price if a session is
+// selected, else headline), nulls last, then distance.
+func sortByLivePrice(res []store.NearbyCharger, session string) {
+	eff := func(c store.NearbyCharger) *float64 {
+		if session != "" {
+			return c.SessionPrice
+		}
+		return c.PriceEUR
+	}
+	sort.SliceStable(res, func(i, j int) bool {
+		pi, pj := eff(res[i]), eff(res[j])
+		if (pi == nil) != (pj == nil) {
+			return pi != nil // priced before unpriced
+		}
+		if pi != nil && *pi != *pj {
+			return *pi < *pj
+		}
+		return res[i].DistanceM < res[j].DistanceM
 	})
 }
 
