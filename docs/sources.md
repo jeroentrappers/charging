@@ -22,9 +22,24 @@ Last researched: 2026-06-09.
 **Conclusion:** **Road is the only fully-open (no-credential) source with ad-hoc
 price** — and it's already live. **Monta** is the best key-gated target: its AFIR
 endpoint carries **both ad-hoc price and availability** (richer than Road), free
-under AFIR but needs a `clientId`/`clientSecret` (request form). All other open
-feeds are location-only. Open Charge Map (global, free key) has only a sparse,
+under AFIR but needs a `clientId`/`clientSecret`. All other open feeds are
+location-only. Open Charge Map (global, free key) has only a sparse,
 unstructured `UsageCost` text field — not comparable tariffs.
+
+**Monta AFIR access (free, under AFIR):**
+1. Start at the access doc → [`docs.partner-api.monta.com/docs/afir-access`](https://docs.partner-api.monta.com/docs/afir-access)
+   (request form there; approval in a few business days; or email data@monta.com).
+2. You get a `clientId`/`clientSecret`; exchange them for a short-lived Bearer
+   token ([auth ref](https://docs.partner-api.monta.com/reference/ref-authentication)).
+3. Endpoint `get-afir-charge-points` (filterable by country); rate limit
+   100 req / 10 min. Includes location, connectors, power, **status & ad-hoc price**.
+   Wiring: this is OCPI-ish JSON, not our `ocpi_file`/`datex` shape — needs a small
+   Monta adapter (OAuth token + its JSON schema).
+
+**INDIGO note:** its open static file uses the **same DATEX II profile as
+Eco-Movement** (`maxPowerAtSocket`, `facilityLocation>address`, `refillPoint` …),
+so our `datex` reader already parses it — but it's **location-only (no price)**,
+verified against the actual 1.2 MB file (37 element types, none price-related).
 
 ## Feeds
 
