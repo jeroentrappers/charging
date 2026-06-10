@@ -3,33 +3,58 @@ package main
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/source"
 	"github.com/appmire/charging/internal/store"
 )
 
-// adminAuth gates the control plane with a static bearer token. If ADMIN_TOKEN
+// registerAdmin wires the control plane onto the OpenAPI document. Every
+// operation is gated by a static ADMIN_TOKEN bearer (the adminToken security
+// scheme) and consumed by the chargingctl CLI.
+func (s *server) registerAdmin(api huma.API) {
+	op := func(id, method, path, summary string) huma.Operation {
+		return huma.Operation{
+			OperationID: id, Method: method, Path: path, Summary: summary,
+			Tags:        []string{"Admin"},
+			Security:    []map[string][]string{{"adminToken": {}}},
+			Middlewares: huma.Middlewares{s.adminGuard(api)},
+		}
+	}
+
+	huma.Register(api, op("admin-list-sources", http.MethodGet, "/admin/sources", "List sources"), s.opAdminList)
+	huma.Register(api, op("admin-upsert-source", http.MethodPost, "/admin/sources", "Create or update a source"), s.opAdminUpsert)
+	huma.Register(api, op("admin-delete-source", http.MethodDelete, "/admin/sources/{id}", "Delete a source"), s.opAdminDelete)
+	huma.Register(api, op("admin-enable-source", http.MethodPost, "/admin/sources/{id}/enable", "Enable a source"), s.opAdminEnable(true))
+	huma.Register(api, op("admin-disable-source", http.MethodPost, "/admin/sources/{id}/disable", "Disable a source"), s.opAdminEnable(false))
+	huma.Register(api, op("admin-set-token", http.MethodPut, "/admin/sources/{id}/token", "Set a source's API token"), s.opAdminSetToken)
+
+	runOp := op("admin-run-ingest", http.MethodPost, "/admin/ingest/{id}/run", "Trigger an ingestion pass")
+	runOp.DefaultStatus = http.StatusAccepted
+	huma.Register(api, runOp, s.opAdminRun)
+
+	huma.Register(api, op("admin-list-runs", http.MethodGet, "/admin/runs", "Recent ingestion runs"), s.opAdminRuns)
+}
+
+// adminGuard gates the control plane with a static bearer token. If ADMIN_TOKEN
 // is unset, the admin surface is disabled entirely (503) rather than open.
-func (s *server) adminAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (s *server) adminGuard(api huma.API) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
 		if s.adminToken == "" {
-			writeErr(w, http.StatusServiceUnavailable, "admin disabled (set ADMIN_TOKEN)")
+			_ = huma.WriteErr(api, ctx, http.StatusServiceUnavailable, "admin disabled (set ADMIN_TOKEN)")
 			return
 		}
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		got := strings.TrimPrefix(ctx.Header("Authorization"), "Bearer ")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.adminToken)) != 1 {
-			writeErr(w, http.StatusUnauthorized, "invalid admin token")
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "invalid admin token")
 			return
 		}
-		next.ServeHTTP(w, r)
-	})
+		next(ctx)
+	}
 }
 
 // sourceView is the safe (token-free) representation of a source.
@@ -54,140 +79,208 @@ func toView(c store.CPO) sourceView {
 	}
 }
 
-func (s *server) adminListSources(w http.ResponseWriter, r *http.Request) {
-	cpos, err := s.st.ListAllCPOs(r.Context())
+type adminIDIn struct {
+	ID string `path:"id" doc:"Source (CPO) id"`
+}
+
+// ---- list ----
+
+type adminListOut struct {
+	Body struct {
+		Sources []sourceView `json:"sources"`
+	}
+}
+
+func (s *server) opAdminList(ctx context.Context, _ *struct{}) (*adminListOut, error) {
+	cpos, err := s.st.ListAllCPOs(ctx)
 	if err != nil {
 		s.log.Error("admin list sources", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
+		return nil, huma.Error500InternalServerError("query failed")
 	}
 	views := make([]sourceView, 0, len(cpos))
 	for _, c := range cpos {
 		views = append(views, toView(c))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sources": views})
+	out := &adminListOut{}
+	out.Body.Sources = views
+	return out, nil
 }
 
-func (s *server) adminUpsertSource(w http.ResponseWriter, r *http.Request) {
-	var in store.CPO
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid JSON body")
-		return
+// ---- upsert ----
+
+type adminUpsertIn struct {
+	Body store.CPO
+}
+
+type adminSourceOut struct {
+	Body sourceView
+}
+
+func (s *server) opAdminUpsert(ctx context.Context, in *adminUpsertIn) (*adminSourceOut, error) {
+	if in.Body.ID == "" || in.Body.OCPIBaseURL == "" {
+		return nil, huma.Error400BadRequest("id and ocpi_base_url are required")
 	}
-	if in.ID == "" || in.OCPIBaseURL == "" {
-		writeErr(w, http.StatusBadRequest, "id and ocpi_base_url are required")
-		return
-	}
-	if err := s.st.UpsertCPO(r.Context(), in); err != nil {
+	if err := s.st.UpsertCPO(ctx, in.Body); err != nil {
 		s.log.Error("admin upsert source", "err", err)
-		writeErr(w, http.StatusInternalServerError, "upsert failed")
-		return
+		return nil, huma.Error500InternalServerError("upsert failed")
 	}
-	c, _, _ := s.st.GetCPO(r.Context(), in.ID)
-	writeJSON(w, http.StatusOK, toView(c))
+	c, _, _ := s.st.GetCPO(ctx, in.Body.ID)
+	return &adminSourceOut{Body: toView(c)}, nil
 }
 
-func (s *server) adminDeleteSource(w http.ResponseWriter, r *http.Request) {
-	ok, err := s.st.DeleteCPO(r.Context(), chi.URLParam(r, "id"))
+// ---- delete ----
+
+type deletedOut struct {
+	Body struct {
+		Deleted bool `json:"deleted"`
+	}
+}
+
+func (s *server) opAdminDelete(ctx context.Context, in *adminIDIn) (*deletedOut, error) {
+	ok, err := s.st.DeleteCPO(ctx, in.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "delete failed")
-		return
+		return nil, huma.Error500InternalServerError("delete failed")
 	}
 	if !ok {
-		writeErr(w, http.StatusNotFound, "source not found")
-		return
+		return nil, huma.Error404NotFound("source not found")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+	out := &deletedOut{}
+	out.Body.Deleted = true
+	return out, nil
 }
 
-func (s *server) adminEnable(enabled bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ok, err := s.st.SetEnabled(r.Context(), chi.URLParam(r, "id"), enabled)
+// ---- enable / disable ----
+
+type enabledOut struct {
+	Body struct {
+		ID      string `json:"id"`
+		Enabled bool   `json:"enabled"`
+	}
+}
+
+func (s *server) opAdminEnable(enabled bool) func(context.Context, *adminIDIn) (*enabledOut, error) {
+	return func(ctx context.Context, in *adminIDIn) (*enabledOut, error) {
+		ok, err := s.st.SetEnabled(ctx, in.ID, enabled)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "update failed")
-			return
+			return nil, huma.Error500InternalServerError("update failed")
 		}
 		if !ok {
-			writeErr(w, http.StatusNotFound, "source not found")
-			return
+			return nil, huma.Error404NotFound("source not found")
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"id": chi.URLParam(r, "id"), "enabled": enabled})
+		out := &enabledOut{}
+		out.Body.ID = in.ID
+		out.Body.Enabled = enabled
+		return out, nil
 	}
 }
 
-func (s *server) adminSetToken(w http.ResponseWriter, r *http.Request) {
-	var body struct {
+// ---- set token ----
+
+type adminTokenIn struct {
+	ID   string `path:"id" doc:"Source (CPO) id"`
+	Body struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	ok, err := s.st.SetToken(r.Context(), chi.URLParam(r, "id"), body.Token)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "update failed")
-		return
-	}
-	if !ok {
-		writeErr(w, http.StatusNotFound, "source not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": chi.URLParam(r, "id"), "has_token": body.Token != ""})
 }
 
-// adminRunIngest triggers an ingestion pass asynchronously and returns 202.
-// kind=price (default) or availability. Result is observable via /admin/runs.
-func (s *server) adminRunIngest(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	kind := r.URL.Query().Get("kind")
+type tokenOut struct {
+	Body struct {
+		ID       string `json:"id"`
+		HasToken bool   `json:"has_token"`
+	}
+}
+
+func (s *server) opAdminSetToken(ctx context.Context, in *adminTokenIn) (*tokenOut, error) {
+	ok, err := s.st.SetToken(ctx, in.ID, in.Body.Token)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("update failed")
+	}
+	if !ok {
+		return nil, huma.Error404NotFound("source not found")
+	}
+	out := &tokenOut{}
+	out.Body.ID = in.ID
+	out.Body.HasToken = in.Body.Token != ""
+	return out, nil
+}
+
+// ---- trigger ingest ----
+
+type adminRunIn struct {
+	ID   string `path:"id" doc:"Source (CPO) id"`
+	Kind string `query:"kind" enum:"price,availability" default:"price" doc:"Ingestion pass to run"`
+}
+
+type runStartedOut struct {
+	Body struct {
+		ID     string `json:"id"`
+		Kind   string `json:"kind"`
+		Status string `json:"status"`
+	}
+}
+
+// opAdminRun triggers an ingestion pass asynchronously and returns 202. The
+// result is observable via GET /admin/runs.
+func (s *server) opAdminRun(ctx context.Context, in *adminRunIn) (*runStartedOut, error) {
+	kind := in.Kind
 	if kind == "" {
 		kind = ingest.KindPrice
 	}
-	if kind != ingest.KindPrice && kind != ingest.KindAvailability {
-		writeErr(w, http.StatusBadRequest, "kind must be 'price' or 'availability'")
-		return
-	}
-	c, found, err := s.st.GetCPO(r.Context(), id)
+	c, found, err := s.st.GetCPO(ctx, in.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "lookup failed")
-		return
+		return nil, huma.Error500InternalServerError("lookup failed")
 	}
 	if !found {
-		writeErr(w, http.StatusNotFound, "source not found")
-		return
+		return nil, huma.Error404NotFound("source not found")
 	}
 	src := source.Resolve([]store.CPO{c})[0]
 	if !src.Ready() {
-		writeErr(w, http.StatusBadRequest, "source needs a token; set one first")
-		return
+		return nil, huma.Error400BadRequest("source needs a token; set one first")
 	}
 
 	// Run detached from the request so it survives the response.
 	go func() {
-		ctx := context.Background()
+		bg := context.Background()
 		var err error
 		if kind == ingest.KindAvailability {
-			err = s.engine.RunAvailability(ctx, src)
+			err = s.engine.RunAvailability(bg, src)
 		} else {
-			err = s.engine.RunPrices(ctx, src)
+			err = s.engine.RunPrices(bg, src)
 		}
 		if err != nil {
-			s.log.Error("admin-triggered ingest", "cpo", id, "kind", kind, "err", err)
+			s.log.Error("admin-triggered ingest", "cpo", in.ID, "kind", kind, "err", err)
 		}
 	}()
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "kind": kind, "status": "started"})
+	out := &runStartedOut{}
+	out.Body.ID = in.ID
+	out.Body.Kind = kind
+	out.Body.Status = "started"
+	return out, nil
 }
 
-func (s *server) adminRuns(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	runs, err := s.st.RecentRuns(r.Context(), r.URL.Query().Get("cpo"), limit)
+// ---- runs ----
+
+type adminRunsIn struct {
+	CPO   string `query:"cpo" doc:"Filter by source id"`
+	Limit int    `query:"limit" doc:"Maximum runs to return"`
+}
+
+type runsOut struct {
+	Body struct {
+		Runs []store.Run `json:"runs"`
+	}
+}
+
+func (s *server) opAdminRuns(ctx context.Context, in *adminRunsIn) (*runsOut, error) {
+	runs, err := s.st.RecentRuns(ctx, in.CPO, in.Limit)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
+		return nil, huma.Error500InternalServerError("query failed")
 	}
 	if runs == nil {
 		runs = []store.Run{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+	out := &runsOut{}
+	out.Body.Runs = runs
+	return out, nil
 }

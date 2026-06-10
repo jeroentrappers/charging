@@ -61,7 +61,10 @@ func req(t *testing.T, method, url, token string, body any) *http.Response {
 func TestAdmin_AuthAndSourceLifecycle(t *testing.T) {
 	srv, st := newTestServer(t)
 	ctx := context.Background()
-	if err := st.SeedCPO(ctx, store.CPO{ID: "ev", Name: "EV", OCPIBaseURL: "http://x/", OCPIVersion: "2.1.1"}); err != nil {
+	// TokenEnv names an (unset) env var, so the source genuinely needs a token
+	// until one is set via the admin API — otherwise Ready() treats a tokenless
+	// source as an open feed and the "run without token" step below would succeed.
+	if err := st.SeedCPO(ctx, store.CPO{ID: "ev", Name: "EV", OCPIBaseURL: "http://x/", OCPIVersion: "2.1.1", TokenEnv: "EV_TEST_TOKEN_UNSET"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,8 +86,15 @@ func TestAdmin_AuthAndSourceLifecycle(t *testing.T) {
 		Sources []map[string]any `json:"sources"`
 	}
 	json.NewDecoder(r.Body).Decode(&listed)
-	if len(listed.Sources) != 1 || listed.Sources[0]["has_token"].(bool) {
-		t.Fatalf("unexpected list: %+v", listed.Sources)
+	// Assert on our own source; other packages may share the test DB.
+	var ev map[string]any
+	for _, src := range listed.Sources {
+		if src["id"] == "ev" {
+			ev = src
+		}
+	}
+	if ev == nil || ev["has_token"].(bool) {
+		t.Fatalf("expected source 'ev' with no token, got: %+v", listed.Sources)
 	}
 
 	// Trigger before token -> 400.

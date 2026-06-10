@@ -1,5 +1,8 @@
 // Command api serves the public-facing endpoints: find the cheapest available
-// charger nearby, and read a charger's ad-hoc price history.
+// charger nearby, read a charger's ad-hoc price history, and a small admin
+// control plane. The HTTP surface is described by an OpenAPI 3.1 document
+// generated from the typed handlers (huma) so the spec can never drift; an
+// interactive reference (Scalar) is served at /docs.
 package main
 
 import (
@@ -10,21 +13,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/appmire/charging/internal/config"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
-	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
 )
+
+const apiVersion = "1.0.0"
 
 type server struct {
 	st              *store.Store
@@ -80,34 +84,37 @@ func main() {
 	}
 }
 
-// routes builds the HTTP handler (read API + protected admin control plane).
+// routes builds the HTTP handler: infra endpoints (health/ready/metrics) on
+// plain chi, the documented API + admin control plane registered with huma so
+// they appear in the generated OpenAPI 3.1 spec, and a Scalar docs page.
 func (s *server) routes(corsOrigins string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Use(corsMiddleware(corsOrigins))
+
+	// Operational endpoints — deliberately outside the API contract.
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
 	r.Handle("/metrics", metrics.Handler())
-	r.Get("/sessions", s.sessions)
-	r.Get("/chargers/cheapest", s.cheapest)
-	r.Get("/chargers/{id}/price-history", s.priceHistory)
-	r.Get("/stats/overview", s.statsOverview)
-	r.Get("/stats/sessions", s.statsSessions)
-	r.Get("/stats/regions", s.statsRegions)
-	r.Get("/stats/price-trend", s.statsPriceTrend)
 
-	// Admin (control plane) — protected by ADMIN_TOKEN bearer.
-	r.Route("/admin", func(ar chi.Router) {
-		ar.Use(s.adminAuth)
-		ar.Get("/sources", s.adminListSources)
-		ar.Post("/sources", s.adminUpsertSource)
-		ar.Delete("/sources/{id}", s.adminDeleteSource)
-		ar.Post("/sources/{id}/enable", s.adminEnable(true))
-		ar.Post("/sources/{id}/disable", s.adminEnable(false))
-		ar.Put("/sources/{id}/token", s.adminSetToken)
-		ar.Post("/ingest/{id}/run", s.adminRunIngest)
-		ar.Get("/runs", s.adminRuns)
-	})
+	cfg := huma.DefaultConfig("Charging API", apiVersion)
+	cfg.Info.Description = "Compare ad-hoc public EV charging prices across Belgian " +
+		"operators: find the cheapest available charger nearby (with time-of-day and " +
+		"user-defined sessions), read a charger's versioned price history, and browse " +
+		"market statistics. Built on open AFIR/transportdata.be data."
+	cfg.DocsPath = "" // served below with Scalar instead of the bundled renderer
+	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"adminToken": {
+			Type:        "http",
+			Scheme:      "bearer",
+			Description: "Static ADMIN_TOKEN bearer for the control plane.",
+		},
+	}
+	api := humachi.New(r, cfg)
+	s.registerPublic(api)
+	s.registerAdmin(api)
+
+	r.Get("/docs", scalarDocs)
 	return r
 }
 
@@ -173,262 +180,6 @@ func (s *server) freshness(ctx context.Context, cpoID, kind string, window time.
 	return freshness{OK: ok, LastAt: &t}
 }
 
-// GET /stats/overview — market counts + headline-price aggregates by current type.
-func (s *server) statsOverview(w http.ResponseWriter, r *http.Request) {
-	o, err := s.st.Overview(r.Context())
-	if err != nil {
-		s.log.Error("stats overview", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	writeJSON(w, http.StatusOK, o)
-}
-
-// GET /stats/sessions — avg/min/max price per comparison-session profile.
-func (s *server) statsSessions(w http.ResponseWriter, r *http.Request) {
-	st, err := s.st.SessionStats(r.Context())
-	if err != nil {
-		s.log.Error("stats sessions", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	if st == nil {
-		st = []store.SessionStat{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": st})
-}
-
-// GET /stats/regions?by=city|postal&limit=
-func (s *server) statsRegions(w http.ResponseWriter, r *http.Request) {
-	by := r.URL.Query().Get("by")
-	if by == "" {
-		by = "city"
-	}
-	if by != "city" && by != "postal" {
-		writeErr(w, http.StatusBadRequest, "by must be 'city' or 'postal'")
-		return
-	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	res, err := s.st.RegionStats(r.Context(), by, limit)
-	if err != nil {
-		s.log.Error("stats regions", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	if res == nil {
-		res = []store.PriceAgg{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"by": by, "regions": res})
-}
-
-// GET /stats/price-trend?months=
-func (s *server) statsPriceTrend(w http.ResponseWriter, r *http.Request) {
-	months, _ := strconv.Atoi(r.URL.Query().Get("months"))
-	res, err := s.st.PriceTrend(r.Context(), months)
-	if err != nil {
-		s.log.Error("stats price-trend", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	if res == nil {
-		res = []store.TrendPoint{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"trend": res})
-}
-
-// GET /sessions — list the comparison session profiles for the reference vehicle.
-func (s *server) sessions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"vehicle":  s.vehicle,
-		"sessions": pricing.Profiles(s.vehicle),
-	})
-}
-
-// GET /chargers/cheapest?lat=&lon=&radius=&min_power=&plug=&available=&session=&limit=
-//
-// Pricing: pass session=<profile key> for a standard comparison, or define an
-// ad-hoc session with energy_kwh=<battery kWh>[&power_kw=<target kW>] — omit
-// power_kw for "as fast as the charger allows". A custom session overrides
-// session. Results are ranked by the chosen price evaluated at the current time.
-func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	lat, okLat := parseFloat(q.Get("lat"))
-	lon, okLon := parseFloat(q.Get("lon"))
-	if !okLat || !okLon {
-		writeErr(w, http.StatusBadRequest, "lat and lon are required floats")
-		return
-	}
-	radius, ok := parseFloat(q.Get("radius"))
-	if !ok || radius <= 0 {
-		radius = 5000 // default 5 km
-	}
-	minPower, _ := parseFloat(q.Get("min_power"))
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-
-	// Pricing mode. A user-defined session (energy_kwh, optional power_kw) takes
-	// precedence over a named comparison profile (session).
-	spec := priceSpec{session: q.Get("session")}
-	if energy, ok := parseFloat(q.Get("energy_kwh")); ok {
-		if energy <= 0 || energy > 250 {
-			writeErr(w, http.StatusBadRequest, "energy_kwh must be between 0 and 250")
-			return
-		}
-		power, _ := parseFloat(q.Get("power_kw")) // omitted/<=0 = as fast as possible
-		if power < 0 || power > 400 {
-			writeErr(w, http.StatusBadRequest, "power_kw must be between 0 and 400 (omit for as-fast-as-possible)")
-			return
-		}
-		spec.custom = &pricing.CustomSession{BatteryKWh: energy, PowerKW: power}
-		spec.session = "" // custom wins
-	} else if spec.session != "" && !pricing.IsProfile(spec.session) {
-		writeErr(w, http.StatusBadRequest, "unknown session profile; see GET /sessions")
-		return
-	}
-
-	nq := store.NearbyQuery{
-		Lat: lat, Lon: lon, RadiusM: radius,
-		MinPowerKW: minPower,
-		PlugType:   q.Get("plug"),
-		OnlyAvail:  q.Get("available") == "true" || q.Get("available") == "1",
-		Session:    spec.session,
-		StaleAfter: s.staleAfter,
-		Limit:      4 * limit, // candidate pool; re-ranked by current-time price below
-	}
-	res, err := s.st.CheapestNearby(r.Context(), nq)
-	if err != nil {
-		s.log.Error("cheapest query", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-
-	// Re-price each candidate at the *current* local time so time-of-day tariffs
-	// rank correctly (the stored comparable uses a fixed reference time).
-	now := time.Now()
-	if brussels != nil {
-		now = now.In(brussels)
-	}
-	for i := range res {
-		s.repriceNow(&res[i], spec, now)
-	}
-	sortByLivePrice(res, spec.selecting())
-	if len(res) > limit {
-		res = res[:limit]
-	}
-	if res == nil {
-		res = []store.NearbyCharger{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"query":   queryEcho(nq, limit, spec),
-		"count":   len(res),
-		"results": res,
-	})
-}
-
-// priceSpec selects how each candidate's effective price is computed: a named
-// comparison profile, a user-defined custom session (which takes precedence),
-// or neither (headline price for the default sort).
-type priceSpec struct {
-	session string                 // named profile key
-	custom  *pricing.CustomSession // ad-hoc session; wins over session
-}
-
-// selecting reports whether a specific session (named or custom) was requested,
-// i.e. whether the effective price lives in SessionPrice rather than PriceEUR.
-func (p priceSpec) selecting() bool { return p.custom != nil || p.session != "" }
-
-// queryEcho is the request summary returned to the client (with the user's
-// requested display limit, not the inflated candidate pool).
-func queryEcho(nq store.NearbyQuery, limit int, spec priceSpec) map[string]any {
-	q := map[string]any{
-		"lat": nq.Lat, "lon": nq.Lon, "radius": nq.RadiusM,
-		"min_power": nq.MinPowerKW, "plug": nq.PlugType,
-		"available": nq.OnlyAvail, "limit": limit,
-	}
-	if spec.custom != nil {
-		q["custom_session"] = spec.custom
-	} else if spec.session != "" {
-		q["session"] = spec.session
-	}
-	return q
-}
-
-var brussels, _ = time.LoadLocation("Europe/Brussels")
-
-// repriceNow overrides a candidate's headline (and selected-session) price with
-// the value evaluated at `now`, when the structured tariff is available.
-func (s *server) repriceNow(c *store.NearbyCharger, spec priceSpec, now time.Time) {
-	if len(c.Components) == 0 {
-		return // no structured tariff (e.g. Monta snapshot) — keep stored value
-	}
-	var tar model.Tariff
-	if err := json.Unmarshal(c.Components, &tar); err != nil {
-		return
-	}
-	if p, ok := pricing.HeadlineAt(tar, c.PowerKW, c.CurrentType, s.vehicle, now); ok {
-		c.PriceEUR = &p
-	}
-	switch {
-	case spec.custom != nil:
-		if p, ok := pricing.CustomPriceAt(tar, c.PowerKW, c.CurrentType, *spec.custom, s.vehicle, now); ok {
-			c.SessionPrice = &p
-		} else {
-			c.SessionPrice = nil
-		}
-	case spec.session != "":
-		if p, ok := pricing.SessionPriceAt(tar, c.PowerKW, c.CurrentType, spec.session, s.vehicle, now); ok {
-			c.SessionPrice = &p
-		} else {
-			c.SessionPrice = nil
-		}
-	}
-}
-
-// sortByLivePrice ranks by the effective price (session price when a session is
-// selected, else headline), nulls last, then distance.
-func sortByLivePrice(res []store.NearbyCharger, selecting bool) {
-	eff := func(c store.NearbyCharger) *float64 {
-		if selecting {
-			return c.SessionPrice
-		}
-		return c.PriceEUR
-	}
-	sort.SliceStable(res, func(i, j int) bool {
-		pi, pj := eff(res[i]), eff(res[j])
-		if (pi == nil) != (pj == nil) {
-			return pi != nil // priced before unpriced
-		}
-		if pi != nil && *pi != *pj {
-			return *pi < *pj
-		}
-		return res[i].DistanceM < res[j].DistanceM
-	})
-}
-
-// GET /chargers/{id}/price-history
-func (s *server) priceHistory(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid charger id")
-		return
-	}
-	hist, err := s.st.PriceHistory(r.Context(), id)
-	if err != nil {
-		s.log.Error("price history", "err", err)
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	if hist == nil {
-		hist = []store.PricePoint{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"charger_id": id,
-		"history":    hist,
-	})
-}
-
 // runHealthcheck probes the local /healthz endpoint; used by the container
 // healthcheck since the distroless image has no shell or curl.
 func runHealthcheck(addr string) int {
@@ -469,8 +220,8 @@ func corsMiddleware(origins string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Add("Vary", "Origin")
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Max-Age", "300")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
@@ -481,14 +232,6 @@ func corsMiddleware(origins string) func(http.Handler) http.Handler {
 	}
 }
 
-func parseFloat(s string) (float64, bool) {
-	if s == "" {
-		return 0, false
-	}
-	f, err := strconv.ParseFloat(s, 64)
-	return f, err == nil
-}
-
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -497,4 +240,22 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// scalarDocs serves the interactive API reference (Scalar), pointed at the
+// huma-generated OpenAPI document.
+func scalarDocs(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Charging API reference</title>
+  </head>
+  <body>
+    <script id="api-reference" data-url="/openapi.yaml"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`))
 }
