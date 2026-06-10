@@ -274,7 +274,13 @@ at **runtime** (not baked): on startup the container renders `/config.js` from
 
 ## Getting real data
 
-The EnergyVision feed needs a free OCPI key.
+**Real data already flows with no key**: the **Road** source (`source_type=ocpi_file`)
+is an open OCPI 2.2.1 static feed (~3,300 sites / 7,700 connectors across Belgium,
+*including ad-hoc prices*) and is **enabled by default**. `make run-ingest-once`
+populates the map immediately. (Its file path UUID may rotate; update it with
+`chargingctl sources add road --url <new-url>`.)
+
+The remaining (per-CPO) feeds need a free OCPI key.
 
 > **ACTION REQUIRED:** email **myevplatform@energyvision.be** to request an OCPI
 > API key (granted free / non-discriminatory under AFIR Article 20).

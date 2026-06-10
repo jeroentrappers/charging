@@ -24,6 +24,10 @@ func (s Source) Client() *ocpi.Client {
 // HasToken reports whether a usable token was resolved.
 func (s Source) HasToken() bool { return s.Token != "" }
 
+// Ready reports whether the source can be polled: it either has a token, or is
+// an open feed that declares no token (TokenEnv unset, e.g. Road's public file).
+func (s Source) Ready() bool { return s.Token != "" || s.CPO.TokenEnv == "" }
+
 // Resolve turns CPO registry rows into sources. The token is the DB-stored
 // value when set (managed via the admin API/CLI), otherwise the environment
 // variable named by CPO.TokenEnv.
@@ -65,6 +69,18 @@ func Seeds() []store.CPO {
 			PollCron:    "0 4 * * *",
 			StatusCron:  "*/5 * * * *", // Tesla refreshes every 5 min
 			Enabled:     false,
+		},
+		{
+			// Open static OCPI 2.2.1 files (no token) — real data available now.
+			// OCPIBaseURL is the directory hosting locations.json + tariffs.json.
+			ID:          "road",
+			Name:        "Road",
+			OCPIBaseURL: "https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305",
+			OCPIVersion: "2.2.1",
+			SourceType:  "ocpi_file",
+			PollCron:    "0 5 * * *",    // daily price refresh
+			StatusCron:  "*/15 * * * *", // availability every 15 min (5 MB file)
+			Enabled:     true,           // open data, no key required
 		},
 		{
 			// DATEX II aggregator (~20 networks). For DATEX sources OCPIBaseURL

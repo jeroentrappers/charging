@@ -72,8 +72,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 func (s *Scheduler) build(ctx context.Context, srcs []source.Source) *cron.Cron {
 	c := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DiscardLogger)))
 	for _, src := range srcs {
-		if !src.HasToken() {
-			s.log.Warn("source has no token; not scheduling", "cpo", src.CPO.ID)
+		if !src.Ready() {
+			s.log.Warn("source not ready (missing token); not scheduling", "cpo", src.CPO.ID)
 			continue
 		}
 		src := src

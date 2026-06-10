@@ -157,8 +157,8 @@ func (s *server) adminRunIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src := source.Resolve([]store.CPO{c})[0]
-	if !src.HasToken() {
-		writeErr(w, http.StatusBadRequest, "source has no token; set one first")
+	if !src.Ready() {
+		writeErr(w, http.StatusBadRequest, "source needs a token; set one first")
 		return
 	}
 

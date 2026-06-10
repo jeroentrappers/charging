@@ -60,7 +60,7 @@ func (e *Engine) RunAll(ctx context.Context, sources []source.Source) error {
 	g.SetLimit(limit)
 	for _, src := range sources {
 		g.Go(func() error {
-			if !src.HasToken() {
+			if !src.Ready() {
 				e.Log.Warn("skipping source without token", "cpo", src.CPO.ID)
 				return nil
 			}
