@@ -245,6 +245,11 @@ func (s *server) sessions(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /chargers/cheapest?lat=&lon=&radius=&min_power=&plug=&available=&session=&limit=
+//
+// Pricing: pass session=<profile key> for a standard comparison, or define an
+// ad-hoc session with energy_kwh=<battery kWh>[&power_kw=<target kW>] — omit
+// power_kw for "as fast as the charger allows". A custom session overrides
+// session. Results are ranked by the chosen price evaluated at the current time.
 func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	lat, okLat := parseFloat(q.Get("lat"))
@@ -263,17 +268,32 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
-	session := q.Get("session")
-	if session != "" && !pricing.IsProfile(session) {
+	// Pricing mode. A user-defined session (energy_kwh, optional power_kw) takes
+	// precedence over a named comparison profile (session).
+	spec := priceSpec{session: q.Get("session")}
+	if energy, ok := parseFloat(q.Get("energy_kwh")); ok {
+		if energy <= 0 || energy > 250 {
+			writeErr(w, http.StatusBadRequest, "energy_kwh must be between 0 and 250")
+			return
+		}
+		power, _ := parseFloat(q.Get("power_kw")) // omitted/<=0 = as fast as possible
+		if power < 0 || power > 400 {
+			writeErr(w, http.StatusBadRequest, "power_kw must be between 0 and 400 (omit for as-fast-as-possible)")
+			return
+		}
+		spec.custom = &pricing.CustomSession{BatteryKWh: energy, PowerKW: power}
+		spec.session = "" // custom wins
+	} else if spec.session != "" && !pricing.IsProfile(spec.session) {
 		writeErr(w, http.StatusBadRequest, "unknown session profile; see GET /sessions")
 		return
 	}
+
 	nq := store.NearbyQuery{
 		Lat: lat, Lon: lon, RadiusM: radius,
 		MinPowerKW: minPower,
 		PlugType:   q.Get("plug"),
 		OnlyAvail:  q.Get("available") == "true" || q.Get("available") == "1",
-		Session:    session,
+		Session:    spec.session,
 		StaleAfter: s.staleAfter,
 		Limit:      4 * limit, // candidate pool; re-ranked by current-time price below
 	}
@@ -291,9 +311,9 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 		now = now.In(brussels)
 	}
 	for i := range res {
-		s.repriceNow(&res[i], session, now)
+		s.repriceNow(&res[i], spec, now)
 	}
-	sortByLivePrice(res, session)
+	sortByLivePrice(res, spec.selecting())
 	if len(res) > limit {
 		res = res[:limit]
 	}
@@ -301,17 +321,45 @@ func (s *server) cheapest(w http.ResponseWriter, r *http.Request) {
 		res = []store.NearbyCharger{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"query":   nq,
+		"query":   queryEcho(nq, limit, spec),
 		"count":   len(res),
 		"results": res,
 	})
+}
+
+// priceSpec selects how each candidate's effective price is computed: a named
+// comparison profile, a user-defined custom session (which takes precedence),
+// or neither (headline price for the default sort).
+type priceSpec struct {
+	session string                 // named profile key
+	custom  *pricing.CustomSession // ad-hoc session; wins over session
+}
+
+// selecting reports whether a specific session (named or custom) was requested,
+// i.e. whether the effective price lives in SessionPrice rather than PriceEUR.
+func (p priceSpec) selecting() bool { return p.custom != nil || p.session != "" }
+
+// queryEcho is the request summary returned to the client (with the user's
+// requested display limit, not the inflated candidate pool).
+func queryEcho(nq store.NearbyQuery, limit int, spec priceSpec) map[string]any {
+	q := map[string]any{
+		"lat": nq.Lat, "lon": nq.Lon, "radius": nq.RadiusM,
+		"min_power": nq.MinPowerKW, "plug": nq.PlugType,
+		"available": nq.OnlyAvail, "limit": limit,
+	}
+	if spec.custom != nil {
+		q["custom_session"] = spec.custom
+	} else if spec.session != "" {
+		q["session"] = spec.session
+	}
+	return q
 }
 
 var brussels, _ = time.LoadLocation("Europe/Brussels")
 
 // repriceNow overrides a candidate's headline (and selected-session) price with
 // the value evaluated at `now`, when the structured tariff is available.
-func (s *server) repriceNow(c *store.NearbyCharger, session string, now time.Time) {
+func (s *server) repriceNow(c *store.NearbyCharger, spec priceSpec, now time.Time) {
 	if len(c.Components) == 0 {
 		return // no structured tariff (e.g. Monta snapshot) — keep stored value
 	}
@@ -322,8 +370,15 @@ func (s *server) repriceNow(c *store.NearbyCharger, session string, now time.Tim
 	if p, ok := pricing.HeadlineAt(tar, c.PowerKW, c.CurrentType, s.vehicle, now); ok {
 		c.PriceEUR = &p
 	}
-	if session != "" {
-		if p, ok := pricing.SessionPriceAt(tar, c.PowerKW, c.CurrentType, session, s.vehicle, now); ok {
+	switch {
+	case spec.custom != nil:
+		if p, ok := pricing.CustomPriceAt(tar, c.PowerKW, c.CurrentType, *spec.custom, s.vehicle, now); ok {
+			c.SessionPrice = &p
+		} else {
+			c.SessionPrice = nil
+		}
+	case spec.session != "":
+		if p, ok := pricing.SessionPriceAt(tar, c.PowerKW, c.CurrentType, spec.session, s.vehicle, now); ok {
 			c.SessionPrice = &p
 		} else {
 			c.SessionPrice = nil
@@ -331,11 +386,11 @@ func (s *server) repriceNow(c *store.NearbyCharger, session string, now time.Tim
 	}
 }
 
-// sortByLivePrice ranks by the effective price (session price if a session is
+// sortByLivePrice ranks by the effective price (session price when a session is
 // selected, else headline), nulls last, then distance.
-func sortByLivePrice(res []store.NearbyCharger, session string) {
+func sortByLivePrice(res []store.NearbyCharger, selecting bool) {
 	eff := func(c store.NearbyCharger) *float64 {
-		if session != "" {
+		if selecting {
 			return c.SessionPrice
 		}
 		return c.PriceEUR

@@ -45,11 +45,20 @@ export function AvailBadge({ a }: { a: Avail }) {
 
 // ---- session selector (the hero control) ----
 
-export const NEEDS = ['best', 'topup100', 'charge1080'] as const
+export const NEEDS = ['best', 'topup100', 'charge1080', 'custom'] as const
 export const SPEEDS = ['ac11', 'ac22', 'dc150', 'dc300'] as const
+export const CUSTOM_POWERS = [11, 22, 50, 150, 300] as const
+export const KWH_PRESETS = [20, 50, 75] as const
 
 export function sessionKey(need: string, speed: string): string | undefined {
-  return need === 'best' ? undefined : `${need}_${speed}`
+  return need === 'best' || need === 'custom' ? undefined : `${need}_${speed}`
+}
+
+// CustomSession is a user-defined session: energy to add to the battery, plus a
+// power cap (null = "as fast as the charger allows").
+export interface CustomSession {
+  kWh: number
+  powerKW: number | null
 }
 
 export function SessionBar(props: {
@@ -57,8 +66,11 @@ export function SessionBar(props: {
   speed: string
   onNeed: (n: string) => void
   onSpeed: (s: string) => void
+  custom: CustomSession
+  onCustom: (c: CustomSession) => void
 }) {
   const { t } = useTranslation()
+  const { custom, onCustom } = props
   return (
     <>
       <div className="seg-row">
@@ -71,7 +83,7 @@ export function SessionBar(props: {
           ))}
         </div>
       </div>
-      {props.need !== 'best' && (
+      {(props.need === 'topup100' || props.need === 'charge1080') && (
         <div className="seg-row">
           <span className="seg-label">{t('session.speed')}</span>
           <div className="segs">
@@ -82,6 +94,41 @@ export function SessionBar(props: {
             ))}
           </div>
         </div>
+      )}
+      {props.need === 'custom' && (
+        <>
+          <div className="seg-row">
+            <span className="seg-label">{t('session.energy')}</span>
+            <div className="segs">
+              {KWH_PRESETS.map((v) => (
+                <button key={v} className={`seg ${custom.kWh === v ? 'on' : ''}`} onClick={() => onCustom({ ...custom, kWh: v })}>
+                  {t('session.kwh', { n: v })}
+                </button>
+              ))}
+              <label className="seg seg-input">
+                <input
+                  type="number" min={1} max={250} step={5} inputMode="numeric"
+                  value={custom.kWh}
+                  onChange={(e) => onCustom({ ...custom, kWh: Math.max(1, Math.min(250, Number(e.target.value) || 0)) })}
+                />
+                <span>{t('session.kwhUnit')}</span>
+              </label>
+            </div>
+          </div>
+          <div className="seg-row">
+            <span className="seg-label">{t('session.power')}</span>
+            <div className="segs">
+              <button className={`seg ${custom.powerKW == null ? 'on' : ''}`} onClick={() => onCustom({ ...custom, powerKW: null })}>
+                {t('session.fastest')}
+              </button>
+              {CUSTOM_POWERS.map((p) => (
+                <button key={p} className={`seg ${custom.powerKW === p ? 'on' : ''}`} onClick={() => onCustom({ ...custom, powerKW: p })}>
+                  {t('session.kw', { n: p })}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </>
   )

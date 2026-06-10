@@ -166,6 +166,61 @@ func TestSessionPriceAt_TimeOfDay(t *testing.T) {
 	}
 }
 
+func TestCustomPriceAt_EnergyAndPower(t *testing.T) {
+	// Flat energy tariff: 0.30/kWh. "Charge 75 kWh at AC 11 kW" on a 22 kW AC
+	// charger -> metered 75/0.89 = 84.27 kWh * 0.30 = 25.28.
+	tar := model.Tariff{Currency: "EUR", Elements: []model.TariffElement{
+		{PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.30}}},
+	}}
+	got, ok := CustomPriceAt(tar, 22, model.CurrentAC, CustomSession{BatteryKWh: 75, PowerKW: 11}, DefaultVehicle, referenceTime())
+	if !ok || !approx(got, 25.28) {
+		t.Fatalf("75kWh @ AC11: want ~25.28, got %v ok=%v", got, ok)
+	}
+
+	// A charger slower than the requested power cannot serve the session.
+	if _, ok := CustomPriceAt(tar, 7.4, model.CurrentAC, CustomSession{BatteryKWh: 75, PowerKW: 11}, DefaultVehicle, referenceTime()); ok {
+		t.Fatal("7.4kW charger should not serve an 11kW session")
+	}
+}
+
+func TestCustomPriceAt_AsFastAsPossible(t *testing.T) {
+	// With a TIME component, "as fast as possible" (no power cap) should make a
+	// faster charger cheaper for the same energy, because it finishes sooner.
+	tar := model.Tariff{Currency: "EUR", Elements: []model.TariffElement{
+		{PriceComponents: []model.PriceComponent{
+			{Type: "ENERGY", Price: 0.30},
+			{Type: "TIME", Price: 9.00}, // per hour
+		}},
+	}}
+	c := CustomSession{BatteryKWh: 50} // PowerKW omitted -> charger's rated power
+	slow, ok1 := CustomPriceAt(tar, 50, model.CurrentDC, c, DefaultVehicle, referenceTime())
+	fast, ok2 := CustomPriceAt(tar, 250, model.CurrentDC, c, DefaultVehicle, referenceTime())
+	if !ok1 || !ok2 {
+		t.Fatalf("both should price: slow ok=%v fast ok=%v", ok1, ok2)
+	}
+	if !(fast < slow) {
+		t.Fatalf("as-fast-as-possible: faster charger should cost less on time: slow=%v fast=%v", slow, fast)
+	}
+}
+
+func TestCustomPriceAt_TimeOfDay(t *testing.T) {
+	tar := model.Tariff{Currency: "EUR", Elements: []model.TariffElement{
+		{
+			PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.18}},
+			Restrictions:    &model.Restrictions{StartTime: "22:00", EndTime: "06:00"},
+		},
+		{PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: 0.45}}},
+	}}
+	c := CustomSession{BatteryKWh: 75, PowerKW: 11}
+	noon := time.Date(2024, 1, 3, 12, 0, 0, 0, time.UTC)
+	night := time.Date(2024, 1, 3, 23, 0, 0, 0, time.UTC)
+	day, _ := CustomPriceAt(tar, 22, model.CurrentAC, c, DefaultVehicle, noon)
+	nite, _ := CustomPriceAt(tar, 22, model.CurrentAC, c, DefaultVehicle, night)
+	if !(nite < day) {
+		t.Fatalf("custom session should follow time-of-day: day=%v night=%v", day, nite)
+	}
+}
+
 func TestHeadline_AlwaysPricedWithPower(t *testing.T) {
 	tar := tariffEFT()
 	// A 50 kW DC charger matches no standard DC tier (lowest is 150) but must

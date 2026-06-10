@@ -10,10 +10,17 @@
   "session": {
     "charge": "Charge",
     "speed": "Vitesse",
+    "energy": "Énergie",
+    "power": "Puissance",
+    "fastest": "Le plus rapide",
+    "kwh": "{{n}} kWh",
+    "kwhUnit": "kWh",
+    "kw": "{{n}} kW",
     "need": {
       "best": "Le moins cher",
       "topup100": "Recharge rapide (≈100 km)",
-      "charge1080": "Charge complète (10→80%)"
+      "charge1080": "Charge complète (10→80%)",
+      "custom": "Personnalisé"
     },
     "speedOpt": {
       "ac11": "AC domestique (11 kW)",

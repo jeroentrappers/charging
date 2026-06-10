@@ -122,6 +122,10 @@ export interface CheapestParams {
   lon: number
   radius?: number
   session?: string
+  // Custom (user-defined) session — overrides `session` when energy_kwh is set.
+  // power_kw omitted/0 means "as fast as the charger allows".
+  energy_kwh?: number
+  power_kw?: number
   available?: boolean
   min_power?: number
   plug?: string

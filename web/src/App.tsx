@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FindPage } from './FindPage'
 import { LANGS } from './i18n'
-import { SessionBar, FilterBar, sessionKey, type Filters } from './ui'
+import { SessionBar, FilterBar, sessionKey, type Filters, type CustomSession } from './ui'
 
 // Insights pulls in the charting library; load it only when that tab is opened.
 const InsightsPage = lazy(() => import('./InsightsPage').then((m) => ({ default: m.InsightsPage })))
@@ -15,6 +15,7 @@ export default function App() {
   const [tab, setTab] = useState<'find' | 'insights'>('find')
   const [need, setNeed] = useState('best')
   const [speed, setSpeed] = useState('dc150')
+  const [custom, setCustom] = useState<CustomSession>({ kWh: 50, powerKW: null })
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '' })
   const [located, setLocated] = useState<[number, number] | null>(null)
   const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
@@ -88,7 +89,7 @@ export default function App() {
 
       {tab === 'find' && (
         <div className="controls">
-          <SessionBar need={need} speed={speed} onNeed={setNeed} onSpeed={setSpeed} />
+          <SessionBar need={need} speed={speed} onNeed={setNeed} onSpeed={setSpeed} custom={custom} onCustom={setCustom} />
           <div className="filters">
             <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
             <FilterBarInline filters={filters} setFilters={setFilters} />
@@ -103,7 +104,9 @@ export default function App() {
           located={located}
           accuracy={accuracy}
           geoNonce={geoNonce}
-          sessionKey={sessionKey(need, speed)}
+          sessionKey={need === 'custom' ? undefined : sessionKey(need, speed)}
+          energyKWh={need === 'custom' ? custom.kWh : undefined}
+          powerKW={need === 'custom' ? custom.powerKW ?? undefined : undefined}
           filters={filters}
         />
       ) : (

@@ -10,10 +10,17 @@
   "session": {
     "charge": "Opladen",
     "speed": "Snelheid",
+    "energy": "Energie",
+    "power": "Vermogen",
+    "fastest": "Snelst",
+    "kwh": "{{n}} kWh",
+    "kwhUnit": "kWh",
+    "kw": "{{n}} kW",
     "need": {
       "best": "Goedkoopste",
       "topup100": "Snel bijladen (≈100 km)",
-      "charge1080": "Vol opladen (10→80%)"
+      "charge1080": "Vol opladen (10→80%)",
+      "custom": "Aangepast"
     },
     "speedOpt": {
       "ac11": "Thuis AC (11 kW)",

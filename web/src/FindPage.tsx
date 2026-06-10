@@ -14,6 +14,8 @@ export function FindPage(props: {
   accuracy: number | null // GPS accuracy radius (m), for the geolocated pin
   geoNonce: number // bumps on each explicit "Locate me"
   sessionKey: string | undefined
+  energyKWh?: number // custom session: energy to add (overrides sessionKey)
+  powerKW?: number // custom session: power cap; undefined = as fast as possible
   filters: Filters
 }) {
   const { t } = useTranslation()
@@ -57,6 +59,8 @@ export function FindPage(props: {
           lon: oLon,
           radius,
           session: props.sessionKey,
+          energy_kwh: props.energyKWh,
+          power_kw: props.powerKW,
           available: props.filters.available,
           min_power: props.filters.minPower || undefined,
           plug: props.filters.plug || undefined,
@@ -70,7 +74,7 @@ export function FindPage(props: {
       }
     }, 300)
     return () => clearTimeout(t)
-  }, [oLat, oLon, radius, props.sessionKey, props.filters])
+  }, [oLat, oLon, radius, props.sessionKey, props.energyKWh, props.powerKW, props.filters])
 
   const detail = detailId != null ? chargers.find((c) => c.id === detailId) ?? null : null
 

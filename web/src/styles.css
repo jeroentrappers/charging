@@ -53,6 +53,14 @@ button { font: inherit; cursor: pointer; }
   color: var(--ink); padding: 7px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
 }
 .seg.on { background: var(--green); color: #fff; border-color: var(--green); }
+.seg-input { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; }
+.seg-input input {
+  width: 48px; border: none; background: transparent; color: inherit;
+  font: inherit; font-weight: 700; text-align: right; -moz-appearance: textfield;
+}
+.seg-input input::-webkit-outer-spin-button,
+.seg-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.seg-input span { font-size: 12px; color: var(--muted); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .geo-note { font-size: 12px; color: var(--amber); margin-top: 6px; }
 .chip {

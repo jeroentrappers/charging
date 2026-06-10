@@ -10,10 +10,17 @@
   "session": {
     "charge": "Charge",
     "speed": "Speed",
+    "energy": "Energy",
+    "power": "Power",
+    "fastest": "Fastest",
+    "kwh": "{{n}} kWh",
+    "kwhUnit": "kWh",
+    "kw": "{{n}} kW",
     "need": {
       "best": "Cheapest",
       "topup100": "Quick top-up (≈100 km)",
-      "charge1080": "Full charge (10→80%)"
+      "charge1080": "Full charge (10→80%)",
+      "custom": "Custom"
     },
     "speedOpt": {
       "ac11": "Home AC (11 kW)",

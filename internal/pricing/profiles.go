@@ -23,6 +23,11 @@ const (
 	effDC = 0.94
 )
 
+// dcTaper is the representative average-power fraction across a DC session: a
+// DC charger rarely holds its rated power, so duration (and thus TIME-based
+// cost) is computed at ~73% of the headline kW.
+const dcTaper = 0.73
+
 // profileDef is a session template, independent of the reference vehicle.
 type profileDef struct {
 	Key     string
@@ -161,9 +166,45 @@ func HeadlineAt(t model.Tariff, chargerPowerKW float64, currentType string, v Ve
 	metered := socWindow(0.70)(v) / efficiency(currentType)
 	avg := chargerPowerKW
 	if currentType == model.CurrentDC {
-		avg = chargerPowerKW * 0.73 // representative 10–80% taper
+		avg = chargerPowerKW * dcTaper
 	}
 	return Evaluate(t, Session{KWh: metered, Power: chargerPowerKW, AvgPower: avg, At: at})
+}
+
+// CustomSession is a session the user defines themselves instead of picking a
+// standard comparison profile: an amount of energy to add to the battery, with
+// either a target charging power or "as fast as the charger allows".
+//
+//	BatteryKWh: energy added to the battery (charging losses are applied on top
+//	            to get the metered/billed energy, like the standard profiles).
+//	PowerKW:    requested power; <= 0 means use the charger's rated power
+//	            ("as fast as possible").
+type CustomSession struct {
+	BatteryKWh float64 `json:"battery_kwh"`
+	PowerKW    float64 `json:"power_kw"`
+}
+
+// CustomPriceAt prices a user-defined session at a given time, if the charger
+// can serve it. With a power target, the charger must be able to deliver at
+// least that power (a slower charger is excluded); "as fast as possible" uses
+// the charger's rated power so every charger is comparable at its own speed.
+func CustomPriceAt(t model.Tariff, chargerPowerKW float64, currentType string, c CustomSession, v Vehicle, at time.Time) (float64, bool) {
+	if c.BatteryKWh <= 0 || chargerPowerKW <= 0 {
+		return 0, false
+	}
+	power := chargerPowerKW
+	if c.PowerKW > 0 {
+		if chargerPowerKW < c.PowerKW-0.5 {
+			return 0, false // charger can't deliver the requested power
+		}
+		power = c.PowerKW
+	}
+	metered := c.BatteryKWh / efficiency(currentType)
+	avg := power
+	if currentType == model.CurrentDC {
+		avg = power * dcTaper
+	}
+	return Evaluate(t, Session{KWh: metered, Power: power, AvgPower: avg, At: at})
 }
 
 func round2(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
