@@ -25,7 +25,15 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        // config.js is generated at container startup, so it must NOT be
+        // precached (its build-time bytes are a dev placeholder).
+        globIgnores: ['**/config.js'],
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname === '/config.js',
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'runtime-config' },
+          },
           {
             urlPattern: ({ url }) => /\/(chargers|sessions|stats)\b/.test(url.pathname),
             handler: 'NetworkFirst',

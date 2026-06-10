@@ -1,7 +1,13 @@
 // Typed client for the charging HTTP API (read endpoints only; admin is the
 // CLI's job). Base URL comes from VITE_API_BASE.
 
-const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8080').replace(/\/$/, '')
+// API base resolution order:
+//   1. window.__CONFIG__.apiBase — injected at container startup (/config.js,
+//      generated from VITE_API_BASE via envsubst). This is the production path.
+//   2. import.meta.env.VITE_API_BASE — build-time value, handy in `pnpm dev`.
+//   3. localhost default.
+const runtimeBase = typeof window !== 'undefined' ? window.__CONFIG__?.apiBase : ''
+const BASE = (runtimeBase || import.meta.env.VITE_API_BASE || 'http://localhost:8080').replace(/\/$/, '')
 
 export interface Charger {
   id: number

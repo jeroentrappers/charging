@@ -40,4 +40,9 @@ make run-api                                    # API on :8080
   ~95 KB gzip; map tiles and charts load on demand.
 - **Honest by design**: stale availability is shown as *Unknown* (never "free"),
   and a persistent caveat notes these are drive-up (ad-hoc) prices.
+- **Runtime-configurable API origin**: the Docker image is built once; on
+  startup it renders `/config.js` from the `VITE_API_BASE` env var (via
+  `envsubst`), which the app reads (`window.__CONFIG__.apiBase`). No rebuild per
+  environment. In `pnpm dev`, `config.js` is empty so it falls back to
+  `import.meta.env.VITE_API_BASE` from `.env`.
 - Deploy as static files to any host (separate origin from the API).

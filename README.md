@@ -257,8 +257,10 @@ make prod-backup TS=$(date +%F)   # gzip pg_dump into backups/
 
 Services after `prod-up`: **web → http://localhost:5173**, API → :8080,
 ingest metrics → :9090 (in-container). The browser calls the API directly, so
-`VITE_API_BASE` is baked into the web build — set `WEB_API_BASE` for non-local
-deployments (e.g. `WEB_API_BASE=https://api.example.com make prod-up`).
+the web container needs the API origin the **browser** can reach. It's injected
+at **runtime** (not baked): on startup the container renders `/config.js` from
+`VITE_API_BASE` via `envsubst`, so one image works across environments — set
+`WEB_API_BASE` per deploy (e.g. `WEB_API_BASE=https://api.example.com make prod-up`).
 
 - **Migrations** run automatically on each deploy (embedded in the `migrate`
   binary; api/ingest wait for it via `depends_on: service_completed_successfully`).

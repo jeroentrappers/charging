@@ -57,15 +57,15 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # PWA served by nginx. VITE_API_BASE is baked at build time and must be the
-  # API origin the *browser* can reach (the published api port, not the compose
-  # network name). Override with WEB_API_BASE for non-localhost deployments.
+  # PWA served by nginx. VITE_API_BASE is injected at *runtime* (envsubst into
+  # /config.js on startup) — must be the API origin the *browser* can reach (the
+  # published api port, not the compose network name). Set WEB_API_BASE per env.
   web:
     build:
       context: ./web
-      args:
-        VITE_API_BASE: ${WEB_API_BASE:-http://localhost:8080}
     image: charging-web:latest
+    environment:
+      VITE_API_BASE: ${WEB_API_BASE:-http://localhost:8080}
     ports:
       - "5173:80"
     depends_on:
