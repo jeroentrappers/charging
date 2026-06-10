@@ -1,0 +1,117 @@
+{
+  "nav": { "find": "Zoeken", "insights": "Inzichten" },
+  "geo": {
+    "locate": "Mijn locatie",
+    "locating": "Locatie bepalen…",
+    "notSupported": "Locatie niet ondersteund — tik op de kaart om je plek te kiezen",
+    "blocked": "Locatie geblokkeerd — tik op de kaart om je plek te kiezen",
+    "unavailable": "Locatie niet beschikbaar — tik op de kaart om je plek te kiezen"
+  },
+  "session": {
+    "charge": "Opladen",
+    "speed": "Snelheid",
+    "need": {
+      "best": "Goedkoopste",
+      "topup100": "Snel bijladen (≈100 km)",
+      "charge1080": "Vol opladen (10→80%)"
+    },
+    "speedOpt": {
+      "ac11": "Thuis AC (11 kW)",
+      "ac22": "Snel AC (22 kW)",
+      "dc150": "Snellader DC (150 kW)",
+      "dc300": "Ultrasnel DC (300 kW)"
+    },
+    "label": {
+      "topup100_ac11": "100 km bijladen · Thuis AC (11 kW)",
+      "topup100_ac22": "100 km bijladen · Snel AC (22 kW)",
+      "topup100_dc150": "100 km bijladen · Snellader DC (150 kW)",
+      "topup100_dc300": "100 km bijladen · Ultrasnel DC (300 kW)",
+      "charge1080_ac11": "10→80% · Thuis AC (11 kW)",
+      "charge1080_ac22": "10→80% · Snel AC (22 kW)",
+      "charge1080_dc150": "10→80% · Snellader DC (150 kW)",
+      "charge1080_dc300": "10→80% · Ultrasnel DC (300 kW)",
+      "urban_ac22": "Snelle stadsbeurt · Snel AC (22 kW)",
+      "overnight_ac11": "Nachtlading · Thuis AC (11 kW)"
+    }
+  },
+  "filters": {
+    "available": "Nu beschikbaar",
+    "anyPower": "Alle vermogens",
+    "minPower": "≥ {{kw}} kW",
+    "anyPlug": "Alle stekkers",
+    "plug": { "type2": "Type 2", "ccs": "CCS", "chademo": "CHAdeMO" }
+  },
+  "find": {
+    "searching": "Zoeken…",
+    "chargers_one": "{{count}} laadpunt",
+    "chargers_other": "{{count}} laadpunten",
+    "cheapestFirst": "goedkoopste eerst",
+    "tapHint": "Tik op de kaart om je locatie te kiezen",
+    "loadError": "Kon laadpunten niet laden. Controleer je verbinding.",
+    "emptyAvailable": "Hier zijn geen laadpunten die nu vrij zijn. Zoom uit of schakel \"Nu beschikbaar\" uit.",
+    "empty": "Hier zijn geen laadpunten. Zoom uit.",
+    "caveat": "Drive-up (ad-hoc) prijzen — je laadpas kan afwijken. Bron: transportdata.be / AFIR."
+  },
+  "avail": { "free": "Nu vrij", "busy": "Bezet", "unknown": "Onbekend" },
+  "detail": {
+    "close": "Sluiten",
+    "navigate": "Navigeer",
+    "updated": "bijgewerkt {{ago}}",
+    "priceThisSession": "Prijs (deze sessie)",
+    "power": "Vermogen",
+    "plug": "Stekker",
+    "distance": "Afstand",
+    "howBuilt": "Hoe de prijs is opgebouwd",
+    "combineNote": "Deze componenten vormen samen de vergelijkbare prijzen per sessie hieronder.",
+    "idleWarning": "Dit laadpunt rekent een blokkeertarief per minuut nadat het laden klaar is — koppel los en rijd snel weg. Niet inbegrepen in de prijzen hieronder (die ervan uitgaan dat je op tijd vertrekt).",
+    "priceHistory": "Prijsverloop",
+    "notEnoughHistory": "Nog niet genoeg historie — we leggen een punt vast telkens het tarief verandert.",
+    "allSessions": "Alle sessies",
+    "caveat": "Drive-up (ad-hoc) prijs — je laadpas kan afwijken.",
+    "when": "indien"
+  },
+  "comp": {
+    "ENERGY": "Energie",
+    "FLAT": "Sessiekost",
+    "TIME": "Tijd (tijdens laden)",
+    "PARKING_TIME": "Blokkeertarief (na het laden)"
+  },
+  "unit": { "kwh": "/ kWh", "session": "/ sessie", "hour": "/ u", "min": "/min" },
+  "restr": {
+    "afterMin": "na {{n}} min",
+    "uptoMin": "tot {{n}} min",
+    "fromKwh": "vanaf {{n}} kWh",
+    "uptoKwh": "tot {{n}} kWh",
+    "kwhRange": "{{min}}–{{max}} kWh",
+    "minPower": "≥{{n}} kW",
+    "maxPower": "≤{{n}} kW",
+    "powerRange": "{{min}}–{{max}} kW"
+  },
+  "time": {
+    "unknown": "onbekend",
+    "justNow": "zonet",
+    "minAgo": "{{n}} min geleden",
+    "hAgo": "{{n}} u geleden",
+    "dAgo": "{{n}} d geleden"
+  },
+  "insights": {
+    "loading": "laden…",
+    "error": "Kon inzichten niet laden.",
+    "chargers": "Laadpunten",
+    "withPrice": "{{n}} met prijs",
+    "avgAc": "Gem. AC (10→80%)",
+    "avgDc": "Gem. DC (10→80%)",
+    "median": "Mediaan totaal",
+    "trendTitle": "Gemiddeld prijsverloop (12 maanden)",
+    "noHistory": "Nog geen historie — groeit naarmate ingestie draait.",
+    "regionsTitle": "Goedkoopste regio's",
+    "region": "Regio",
+    "avg": "Gem.",
+    "count": "Laadpunten",
+    "bySession": "Per sessie",
+    "session": "Sessie",
+    "min": "Min",
+    "max": "Max"
+  },
+  "lang": { "label": "Taal" }
+}

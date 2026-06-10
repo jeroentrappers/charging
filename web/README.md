@@ -32,6 +32,17 @@ make run-api                                    # API on :8080
 - **Insights** — market overview (AC vs DC), price trend, cheapest regions,
   per-session averages.
 
+## Translations (i18n)
+
+UI strings live in `src/locales/<lang>.json` (**i18next JSON** — a Weblate
+format). **English (`en.json`) is the source language**; `nl` and `fr` are
+translations. The app uses `react-i18next` with browser-language detection
+(persisted in `localStorage`) and a language switcher in the header.
+
+To wire up Weblate: point a component at this repo, format **i18next JSON v4**,
+file mask `web/src/locales/*.json`, source language `en`. Add a locale by
+dropping a new `<lang>.json` and registering it in `src/i18n.ts`.
+
 ## Notes
 
 - **PWA**: installable, offline app shell; API + OSM tiles are runtime-cached

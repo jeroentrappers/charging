@@ -1,0 +1,117 @@
+{
+  "nav": { "find": "Find", "insights": "Insights" },
+  "geo": {
+    "locate": "Locate me",
+    "locating": "Locating…",
+    "notSupported": "Location not supported — tap the map to set your spot",
+    "blocked": "Location blocked — tap the map to set your spot",
+    "unavailable": "Location unavailable — tap the map to set your spot"
+  },
+  "session": {
+    "charge": "Charge",
+    "speed": "Speed",
+    "need": {
+      "best": "Cheapest",
+      "topup100": "Quick top-up (≈100 km)",
+      "charge1080": "Full charge (10→80%)"
+    },
+    "speedOpt": {
+      "ac11": "Home AC (11 kW)",
+      "ac22": "Fast AC (22 kW)",
+      "dc150": "Rapid DC (150 kW)",
+      "dc300": "Ultra-fast DC (300 kW)"
+    },
+    "label": {
+      "topup100_ac11": "100 km top-up · Home AC (11 kW)",
+      "topup100_ac22": "100 km top-up · Fast AC (22 kW)",
+      "topup100_dc150": "100 km top-up · Rapid DC (150 kW)",
+      "topup100_dc300": "100 km top-up · Ultra DC (300 kW)",
+      "charge1080_ac11": "10→80% · Home AC (11 kW)",
+      "charge1080_ac22": "10→80% · Fast AC (22 kW)",
+      "charge1080_dc150": "10→80% · Rapid DC (150 kW)",
+      "charge1080_dc300": "10→80% · Ultra DC (300 kW)",
+      "urban_ac22": "Quick urban top-up · Fast AC (22 kW)",
+      "overnight_ac11": "Overnight charge · Home AC (11 kW)"
+    }
+  },
+  "filters": {
+    "available": "Available now",
+    "anyPower": "Any power",
+    "minPower": "≥ {{kw}} kW",
+    "anyPlug": "Any plug",
+    "plug": { "type2": "Type 2", "ccs": "CCS", "chademo": "CHAdeMO" }
+  },
+  "find": {
+    "searching": "Searching…",
+    "chargers_one": "{{count}} charger",
+    "chargers_other": "{{count}} chargers",
+    "cheapestFirst": "cheapest first",
+    "tapHint": "Tap the map to set your location",
+    "loadError": "Couldn't load chargers. Check your connection.",
+    "emptyAvailable": "No chargers here that are free right now. Try zooming out or turning off \"Available now\".",
+    "empty": "No chargers here. Try zooming out.",
+    "caveat": "Drive-up (ad-hoc) prices — your charge card may differ. Data: transportdata.be / AFIR."
+  },
+  "avail": { "free": "Free now", "busy": "In use", "unknown": "Unknown" },
+  "detail": {
+    "close": "Close",
+    "navigate": "Navigate",
+    "updated": "updated {{ago}}",
+    "priceThisSession": "Price (this session)",
+    "power": "Power",
+    "plug": "Plug",
+    "distance": "Distance",
+    "howBuilt": "How the price is built",
+    "combineNote": "These components combine into the comparable per-session prices below.",
+    "idleWarning": "This charger charges an idle fee per minute after charging finishes — unplug and move promptly. It's not included in the prices below (which assume you leave on time).",
+    "priceHistory": "Price history",
+    "notEnoughHistory": "Not enough history yet — we record a point whenever the tariff changes.",
+    "allSessions": "All sessions",
+    "caveat": "Drive-up (ad-hoc) price — your charge card may differ.",
+    "when": "when"
+  },
+  "comp": {
+    "ENERGY": "Energy",
+    "FLAT": "Session fee",
+    "TIME": "Time (while charging)",
+    "PARKING_TIME": "Idle fee (after charging)"
+  },
+  "unit": { "kwh": "/ kWh", "session": "/ session", "hour": "/ h", "min": "/min" },
+  "restr": {
+    "afterMin": "after {{n}} min",
+    "uptoMin": "up to {{n}} min",
+    "fromKwh": "from {{n}} kWh",
+    "uptoKwh": "up to {{n}} kWh",
+    "kwhRange": "{{min}}–{{max}} kWh",
+    "minPower": "≥{{n}} kW",
+    "maxPower": "≤{{n}} kW",
+    "powerRange": "{{min}}–{{max}} kW"
+  },
+  "time": {
+    "unknown": "unknown",
+    "justNow": "just now",
+    "minAgo": "{{n}} min ago",
+    "hAgo": "{{n}} h ago",
+    "dAgo": "{{n}} d ago"
+  },
+  "insights": {
+    "loading": "loading…",
+    "error": "Couldn't load insights.",
+    "chargers": "Chargers",
+    "withPrice": "{{n}} with a price",
+    "avgAc": "Avg AC (10→80%)",
+    "avgDc": "Avg DC (10→80%)",
+    "median": "Median overall",
+    "trendTitle": "Average price trend (12 months)",
+    "noHistory": "No history yet — builds up as ingestion runs.",
+    "regionsTitle": "Cheapest regions",
+    "region": "Region",
+    "avg": "Avg",
+    "count": "Chargers",
+    "bySession": "By session",
+    "session": "Session",
+    "min": "Min",
+    "max": "Max"
+  },
+  "lang": { "label": "Language" }
+}

@@ -39,6 +39,8 @@ button { font: inherit; cursor: pointer; }
   padding: 8px 12px; border-radius: 10px; font-weight: 600;
 }
 .tabs button.active { background: #ecfdf5; color: var(--green); }
+.lang { margin-left: auto; }
+.lang select { font: inherit; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: var(--surface); color: var(--ink); }
 
 /* ---- session selector (hero control) ---- */
 .controls { background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 14px; z-index: 19; }

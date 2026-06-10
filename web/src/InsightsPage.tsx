@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api, type Overview, type TrendPoint, type PriceAgg, type SessionStat } from './api'
 import { eur } from './ui'
 
 export function InsightsPage() {
+  const { t } = useTranslation()
   const [ov, setOv] = useState<Overview | null>(null)
   const [trend, setTrend] = useState<TrendPoint[]>([])
   const [regions, setRegions] = useState<PriceAgg[]>([])
@@ -21,8 +23,8 @@ export function InsightsPage() {
       .catch(() => setErr(true))
   }, [])
 
-  if (err) return <div className="insights"><div className="state">Couldn't load insights.</div></div>
-  if (!ov) return <div className="insights"><div className="state"><div className="spinner" />loading…</div></div>
+  if (err) return <div className="insights"><div className="state">{t('insights.error')}</div></div>
+  if (!ov) return <div className="insights"><div className="state"><div className="spinner" />{t('insights.loading')}</div></div>
 
   const byType = Object.fromEntries(ov.by_current_type.map((a) => [a.group, a]))
   const chart = trend.map((p) => ({ month: p.month.slice(2), price: p.avg_eur }))
@@ -31,14 +33,14 @@ export function InsightsPage() {
     <div className="insights">
       <div className="insights-wrap">
         <div className="cards">
-          <div className="card"><h3>Chargers</h3><div className="big">{ov.chargers}</div><div className="muted">{ov.priced_chargers} with a price</div></div>
-          <div className="card"><h3>Avg AC (10→80%)</h3><div className="big">{eur(byType['AC']?.avg_eur)}</div></div>
-          <div className="card"><h3>Avg DC (10→80%)</h3><div className="big">{eur(byType['DC']?.avg_eur)}</div></div>
-          <div className="card"><h3>Median overall</h3><div className="big">{eur(byType['all']?.median_eur)}</div></div>
+          <div className="card"><h3>{t('insights.chargers')}</h3><div className="big">{ov.chargers}</div><div className="muted">{t('insights.withPrice', { n: ov.priced_chargers })}</div></div>
+          <div className="card"><h3>{t('insights.avgAc')}</h3><div className="big">{eur(byType['AC']?.avg_eur)}</div></div>
+          <div className="card"><h3>{t('insights.avgDc')}</h3><div className="big">{eur(byType['DC']?.avg_eur)}</div></div>
+          <div className="card"><h3>{t('insights.median')}</h3><div className="big">{eur(byType['all']?.median_eur)}</div></div>
         </div>
 
         <div className="section">
-          <h3>Average price trend (12 months)</h3>
+          <h3>{t('insights.trendTitle')}</h3>
           {chart.some((c) => c.price != null) ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={chart} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
@@ -49,14 +51,14 @@ export function InsightsPage() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="muted" style={{ fontSize: 13 }}>No history yet — builds up as ingestion runs.</div>
+            <div className="muted" style={{ fontSize: 13 }}>{t('insights.noHistory')}</div>
           )}
         </div>
 
         <div className="section">
-          <h3>Cheapest regions</h3>
+          <h3>{t('insights.regionsTitle')}</h3>
           <table className="matrix">
-            <thead><tr><th>Region</th><th className="num">Avg</th><th className="num">Chargers</th></tr></thead>
+            <thead><tr><th>{t('insights.region')}</th><th className="num">{t('insights.avg')}</th><th className="num">{t('insights.count')}</th></tr></thead>
             <tbody>
               {regions.slice(0, 12).map((r) => (
                 <tr key={r.group}>
@@ -70,13 +72,13 @@ export function InsightsPage() {
         </div>
 
         <div className="section">
-          <h3>By session</h3>
+          <h3>{t('insights.bySession')}</h3>
           <table className="matrix">
-            <thead><tr><th>Session</th><th className="num">Avg</th><th className="num">Min</th><th className="num">Max</th></tr></thead>
+            <thead><tr><th>{t('insights.session')}</th><th className="num">{t('insights.avg')}</th><th className="num">{t('insights.min')}</th><th className="num">{t('insights.max')}</th></tr></thead>
             <tbody>
               {sessions.map((s) => (
                 <tr key={s.session}>
-                  <td>{s.session}</td>
+                  <td>{t(`session.label.${s.session}`, s.session)}</td>
                   <td className="num">{eur(s.avg_eur)}</td>
                   <td className="num">{eur(s.min_eur)}</td>
                   <td className="num">{eur(s.max_eur)}</td>

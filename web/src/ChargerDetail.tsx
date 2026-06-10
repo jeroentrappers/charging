@@ -1,57 +1,49 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api, type Charger, type PricePoint, type TariffComponent, type TariffRestrictions } from './api'
 import { AvailBadge, availOf, ago, eur } from './ui'
 
-// Human label for an OCPI price component.
-function compName(type: string): string {
-  switch (type) {
-    case 'ENERGY': return 'Energy'
-    case 'FLAT': return 'Session fee'
-    case 'TIME': return 'Time (while charging)'
-    case 'PARKING_TIME': return 'Idle fee (after charging)'
-    default: return type
-  }
-}
-// OCPI prices TIME/PARKING_TIME per hour; drivers think in €/min, so show both.
-function valueText(c: TariffComponent): string {
-  switch (c.type) {
-    case 'ENERGY': return `${eur(c.price)} / kWh`
-    case 'FLAT': return `${eur(c.price)} / session`
-    case 'TIME':
-    case 'PARKING_TIME': {
-      const perMin = c.price > 0 ? ` (€${(c.price / 60).toFixed(2)}/min)` : ''
-      return `${eur(c.price)} / h${perMin}`
-    }
-    default: return eur(c.price)
-  }
-}
 function isIdle(type: string): boolean {
   return type === 'PARKING_TIME'
 }
 function mins(seconds: number): number {
   return Math.round(seconds / 60)
 }
-// When an element only applies under certain conditions, summarise them.
-function restrictionText(r?: TariffRestrictions): string {
+// OCPI prices TIME/PARKING_TIME per hour; drivers think in €/min, so show both.
+function valueText(c: TariffComponent, t: TFunction): string {
+  switch (c.type) {
+    case 'ENERGY': return `${eur(c.price)} ${t('unit.kwh')}`
+    case 'FLAT': return `${eur(c.price)} ${t('unit.session')}`
+    case 'TIME':
+    case 'PARKING_TIME': {
+      const perMin = c.price > 0 ? ` (€${(c.price / 60).toFixed(2)}${t('unit.min')})` : ''
+      return `${eur(c.price)} ${t('unit.hour')}${perMin}`
+    }
+    default: return eur(c.price)
+  }
+}
+function restrictionText(r: TariffRestrictions | undefined, t: TFunction): string {
   if (!r) return ''
   const parts: string[] = []
   if (r.start_time || r.end_time) parts.push(`${r.start_time ?? '00:00'}–${r.end_time ?? '24:00'}`)
   if (r.day_of_week?.length) parts.push(r.day_of_week.map((d) => d.slice(0, 3).toLowerCase()).join(', '))
-  if (r.min_duration != null) parts.push(`after ${mins(r.min_duration)} min`)
-  if (r.max_duration != null) parts.push(`up to ${mins(r.max_duration)} min`)
+  if (r.min_duration != null) parts.push(t('restr.afterMin', { n: mins(r.min_duration) }))
+  if (r.max_duration != null) parts.push(t('restr.uptoMin', { n: mins(r.max_duration) }))
   if (r.min_power != null || r.max_power != null) {
-    parts.push(r.min_power != null && r.max_power != null ? `${r.min_power}–${r.max_power} kW`
-      : r.min_power != null ? `≥${r.min_power} kW` : `≤${r.max_power} kW`)
+    parts.push(r.min_power != null && r.max_power != null ? t('restr.powerRange', { min: r.min_power, max: r.max_power })
+      : r.min_power != null ? t('restr.minPower', { n: r.min_power }) : t('restr.maxPower', { n: r.max_power }))
   }
   if (r.min_kwh != null || r.max_kwh != null) {
-    parts.push(r.min_kwh != null && r.max_kwh != null ? `${r.min_kwh}–${r.max_kwh} kWh`
-      : r.min_kwh != null ? `from ${r.min_kwh} kWh` : `up to ${r.max_kwh} kWh`)
+    parts.push(r.min_kwh != null && r.max_kwh != null ? t('restr.kwhRange', { min: r.min_kwh, max: r.max_kwh })
+      : r.min_kwh != null ? t('restr.fromKwh', { n: r.min_kwh }) : t('restr.uptoKwh', { n: r.max_kwh }))
   }
   return parts.join(' · ')
 }
 
 export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose: () => void }) {
+  const { t } = useTranslation()
   const [history, setHistory] = useState<PricePoint[] | null>(null)
 
   useEffect(() => {
@@ -69,7 +61,6 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
     .map((h) => ({ t: h.observed_from.slice(0, 10), price: h.comparable_price_eur as number }))
 
   const matrix = Object.entries(charger.comparable_prices).sort(([a], [b]) => a.localeCompare(b))
-  // Current (open) tariff = the structured components to break down.
   const current = (history ?? []).find((h) => h.observed_to == null) ?? (history ?? [])[0] ?? null
   const elements = current?.price_components?.elements ?? []
   const hasIdle = elements.some((el) => el.price_components.some((c) => isIdle(c.type) && c.price > 0))
@@ -83,52 +74,50 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
             <h2>{charger.name || 'Charger'}</h2>
             <div className="muted">{charger.address || `${charger.cpo_id}`}</div>
           </div>
-          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" onClick={onClose}>{t('detail.close')}</button>
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <AvailBadge a={availOf(charger)} /> <span className="muted">· updated {ago(charger.status_updated_at)}</span>
+          <AvailBadge a={availOf(charger)} /> <span className="muted">· {t('detail.updated', { ago: ago(charger.status_updated_at, t) })}</span>
         </div>
 
         <div className="kv">
-          <div className="cell"><div className="k">Price (this session)</div><div className="v">{eur(charger.session_price_eur ?? charger.comparable_price_eur)}</div></div>
-          <div className="cell"><div className="k">Power</div><div className="v">{charger.power_kw} kW {charger.current_type}</div></div>
-          <div className="cell"><div className="k">Plug</div><div className="v">{charger.plug_type || '—'}</div></div>
-          <div className="cell"><div className="k">Distance</div><div className="v">{Math.round(charger.distance_m)} m</div></div>
+          <div className="cell"><div className="k">{t('detail.priceThisSession')}</div><div className="v">{eur(charger.session_price_eur ?? charger.comparable_price_eur)}</div></div>
+          <div className="cell"><div className="k">{t('detail.power')}</div><div className="v">{charger.power_kw} kW {charger.current_type}</div></div>
+          <div className="cell"><div className="k">{t('detail.plug')}</div><div className="v">{charger.plug_type || '—'}</div></div>
+          <div className="cell"><div className="k">{t('detail.distance')}</div><div className="v">{Math.round(charger.distance_m)} m</div></div>
         </div>
 
         {elements.length > 0 && (
           <>
-            <h3 style={{ margin: '12px 0 6px' }}>How the price is built</h3>
+            <h3 style={{ margin: '12px 0 6px' }}>{t('detail.howBuilt')}</h3>
             {elements.map((el, i) => (
               <div key={i} className="tariff-el">
-                {el.restrictions && restrictionText(el.restrictions) && (
-                  <div className="muted tariff-when">when {restrictionText(el.restrictions)}</div>
+                {el.restrictions && restrictionText(el.restrictions, t) && (
+                  <div className="muted tariff-when">{t('detail.when')} {restrictionText(el.restrictions, t)}</div>
                 )}
                 <table className="matrix">
                   <tbody>
                     {el.price_components.map((c, j) => (
                       <tr key={j} className={isIdle(c.type) && c.price > 0 ? 'warn' : ''}>
-                        <td>{compName(c.type)}</td>
-                        <td className="num">{valueText(c)}</td>
+                        <td>{t(`comp.${c.type}`, c.type)}</td>
+                        <td className="num">{valueText(c, t)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ))}
-            {hasIdle && (
-              <p className="warn-note">⚠ This charger charges an idle fee per minute after charging finishes — unplug and move promptly. It's not included in the prices below (which assume you leave on time).</p>
-            )}
-            <p className="caveat">These components combine into the comparable per-session prices below.</p>
+            {hasIdle && <p className="warn-note">⚠ {t('detail.idleWarning')}</p>}
+            <p className="caveat">{t('detail.combineNote')}</p>
           </>
         )}
 
-        <h3 style={{ margin: '6px 0' }}>Price history</h3>
+        <h3 style={{ margin: '6px 0' }}>{t('detail.priceHistory')}</h3>
         {history == null ? (
-          <div className="state"><div className="spinner" />loading…</div>
+          <div className="state"><div className="spinner" />{t('insights.loading')}</div>
         ) : chart.length < 2 ? (
-          <div className="muted" style={{ fontSize: 13 }}>Not enough history yet — we record a point whenever the tariff changes.</div>
+          <div className="muted" style={{ fontSize: 13 }}>{t('detail.notEnoughHistory')}</div>
         ) : (
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={chart} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
@@ -142,12 +131,12 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
 
         {matrix.length > 0 && (
           <>
-            <h3 style={{ margin: '12px 0 6px' }}>All sessions</h3>
+            <h3 style={{ margin: '12px 0 6px' }}>{t('detail.allSessions')}</h3>
             <table className="matrix">
               <tbody>
                 {matrix.map(([k, v]) => (
                   <tr key={k}>
-                    <td>{k}</td>
+                    <td>{t(`session.label.${k}`, k)}</td>
                     <td className="num">{eur(v)}</td>
                   </tr>
                 ))}
@@ -156,9 +145,9 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
           </>
         )}
 
-        <p className="caveat">Drive-up (ad-hoc) price — your charge card may differ.</p>
+        <p className="caveat">{t('detail.caveat')}</p>
         <a className="btn primary" href={nav} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 6 }}>
-          Navigate
+          {t('detail.navigate')}
         </a>
       </div>
     </div>

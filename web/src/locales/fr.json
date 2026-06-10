@@ -1,0 +1,117 @@
+{
+  "nav": { "find": "Rechercher", "insights": "Analyses" },
+  "geo": {
+    "locate": "Me localiser",
+    "locating": "Localisation…",
+    "notSupported": "Localisation non prise en charge — touchez la carte pour définir votre position",
+    "blocked": "Localisation bloquée — touchez la carte pour définir votre position",
+    "unavailable": "Localisation indisponible — touchez la carte pour définir votre position"
+  },
+  "session": {
+    "charge": "Charge",
+    "speed": "Vitesse",
+    "need": {
+      "best": "Le moins cher",
+      "topup100": "Recharge rapide (≈100 km)",
+      "charge1080": "Charge complète (10→80%)"
+    },
+    "speedOpt": {
+      "ac11": "AC domestique (11 kW)",
+      "ac22": "AC rapide (22 kW)",
+      "dc150": "DC rapide (150 kW)",
+      "dc300": "DC ultra-rapide (300 kW)"
+    },
+    "label": {
+      "topup100_ac11": "Recharge 100 km · AC domestique (11 kW)",
+      "topup100_ac22": "Recharge 100 km · AC rapide (22 kW)",
+      "topup100_dc150": "Recharge 100 km · DC rapide (150 kW)",
+      "topup100_dc300": "Recharge 100 km · DC ultra-rapide (300 kW)",
+      "charge1080_ac11": "10→80% · AC domestique (11 kW)",
+      "charge1080_ac22": "10→80% · AC rapide (22 kW)",
+      "charge1080_dc150": "10→80% · DC rapide (150 kW)",
+      "charge1080_dc300": "10→80% · DC ultra-rapide (300 kW)",
+      "urban_ac22": "Recharge urbaine rapide · AC rapide (22 kW)",
+      "overnight_ac11": "Charge de nuit · AC domestique (11 kW)"
+    }
+  },
+  "filters": {
+    "available": "Disponible maintenant",
+    "anyPower": "Toutes puissances",
+    "minPower": "≥ {{kw}} kW",
+    "anyPlug": "Toutes prises",
+    "plug": { "type2": "Type 2", "ccs": "CCS", "chademo": "CHAdeMO" }
+  },
+  "find": {
+    "searching": "Recherche…",
+    "chargers_one": "{{count}} borne",
+    "chargers_other": "{{count}} bornes",
+    "cheapestFirst": "moins cher d'abord",
+    "tapHint": "Touchez la carte pour définir votre position",
+    "loadError": "Impossible de charger les bornes. Vérifiez votre connexion.",
+    "emptyAvailable": "Aucune borne libre ici pour le moment. Dézoomez ou désactivez « Disponible maintenant ».",
+    "empty": "Aucune borne ici. Dézoomez.",
+    "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer. Données : transportdata.be / AFIR."
+  },
+  "avail": { "free": "Libre", "busy": "Occupée", "unknown": "Inconnu" },
+  "detail": {
+    "close": "Fermer",
+    "navigate": "Itinéraire",
+    "updated": "mis à jour {{ago}}",
+    "priceThisSession": "Prix (cette session)",
+    "power": "Puissance",
+    "plug": "Prise",
+    "distance": "Distance",
+    "howBuilt": "Comment le prix est calculé",
+    "combineNote": "Ces composants forment les prix comparables par session ci-dessous.",
+    "idleWarning": "Cette borne facture des frais d'occupation à la minute une fois la charge terminée — débranchez et partez rapidement. Non inclus dans les prix ci-dessous (qui supposent un départ à temps).",
+    "priceHistory": "Historique des prix",
+    "notEnoughHistory": "Pas encore assez d'historique — un point est enregistré à chaque changement de tarif.",
+    "allSessions": "Toutes les sessions",
+    "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer.",
+    "when": "si"
+  },
+  "comp": {
+    "ENERGY": "Énergie",
+    "FLAT": "Frais de session",
+    "TIME": "Temps (pendant la charge)",
+    "PARKING_TIME": "Frais d'occupation (après la charge)"
+  },
+  "unit": { "kwh": "/ kWh", "session": "/ session", "hour": "/ h", "min": "/min" },
+  "restr": {
+    "afterMin": "après {{n}} min",
+    "uptoMin": "jusqu'à {{n}} min",
+    "fromKwh": "à partir de {{n}} kWh",
+    "uptoKwh": "jusqu'à {{n}} kWh",
+    "kwhRange": "{{min}}–{{max}} kWh",
+    "minPower": "≥{{n}} kW",
+    "maxPower": "≤{{n}} kW",
+    "powerRange": "{{min}}–{{max}} kW"
+  },
+  "time": {
+    "unknown": "inconnu",
+    "justNow": "à l'instant",
+    "minAgo": "il y a {{n}} min",
+    "hAgo": "il y a {{n}} h",
+    "dAgo": "il y a {{n}} j"
+  },
+  "insights": {
+    "loading": "chargement…",
+    "error": "Impossible de charger les analyses.",
+    "chargers": "Bornes",
+    "withPrice": "{{n}} avec un prix",
+    "avgAc": "Moy. AC (10→80%)",
+    "avgDc": "Moy. DC (10→80%)",
+    "median": "Médiane globale",
+    "trendTitle": "Évolution moyenne des prix (12 mois)",
+    "noHistory": "Pas encore d'historique — se construit au fil des collectes.",
+    "regionsTitle": "Régions les moins chères",
+    "region": "Région",
+    "avg": "Moy.",
+    "count": "Bornes",
+    "bySession": "Par session",
+    "session": "Session",
+    "min": "Min",
+    "max": "Max"
+  },
+  "lang": { "label": "Langue" }
+}

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, type Charger } from './api'
 import { MapView } from './MapView'
 import { AvailBadge, availOf, eur, km, priceOf, type Filters } from './ui'
@@ -15,6 +16,7 @@ export function FindPage(props: {
   sessionKey: string | undefined
   filters: Filters
 }) {
+  const { t } = useTranslation()
   const [vp, setVp] = useState<Viewport | null>(null)
   const [manualOrigin, setManualOrigin] = useState<[number, number] | null>(null)
   const [chargers, setChargers] = useState<Charger[]>([])
@@ -99,21 +101,18 @@ export function FindPage(props: {
         onPick={(lat, lon) => setManualOrigin([lat, lon])}
       />
 
-      {!hasFix && <div className="map-hint">Tap the map to set your location</div>}
+      {!hasFix && <div className="map-hint">{t('find.tapHint')}</div>}
 
       <div className={`sheet ${expanded ? 'expanded' : ''}`}>
         <div className="handle"><button aria-label="toggle list" onClick={() => setExpanded((e) => !e)} /></div>
         <div className="sheet-head">
-          <h2>{loading ? 'Searching…' : `${chargers.length} chargers`}</h2>
-          <span className="muted">cheapest first</span>
+          <h2>{loading ? t('find.searching') : t('find.chargers', { count: chargers.length })}</h2>
+          <span className="muted">{t('find.cheapestFirst')}</span>
         </div>
         <div className="list">
-          {error && <div className="state">Couldn't load chargers. Check your connection.</div>}
+          {error && <div className="state">{t('find.loadError')}</div>}
           {!error && !loading && chargers.length === 0 && (
-            <div className="state">
-              No chargers here{props.filters.available ? ' that are free right now' : ''}.<br />
-              Try zooming out{props.filters.available ? ' or turning off "Available now"' : ''}.
-            </div>
+            <div className="state">{props.filters.available ? t('find.emptyAvailable') : t('find.empty')}</div>
           )}
           {chargers.map((c) => (
             <button key={c.id} className={`row ${c.id === selectedId ? 'sel' : ''}`} onClick={() => select(c.id)}>
@@ -125,7 +124,7 @@ export function FindPage(props: {
               <span className="right"><AvailBadge a={availOf(c)} /></span>
             </button>
           ))}
-          {chargers.length > 0 && <p className="caveat">Drive-up (ad-hoc) prices — your charge card may differ. Data: transportdata.be / AFIR.</p>}
+          {chargers.length > 0 && <p className="caveat">{t('find.caveat')}</p>}
         </div>
       </div>
 

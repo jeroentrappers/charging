@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { FindPage } from './FindPage'
+import { LANGS } from './i18n'
 import { SessionBar, FilterBar, sessionKey, type Filters } from './ui'
 
 // Insights pulls in the charting library; load it only when that tab is opened.
@@ -9,6 +11,7 @@ const InsightsPage = lazy(() => import('./InsightsPage').then((m) => ({ default:
 const DEFAULT_CENTER: [number, number] = [51.0543, 3.725]
 
 export default function App() {
+  const { t, i18n } = useTranslation()
   const [tab, setTab] = useState<'find' | 'insights'>('find')
   const [need, setNeed] = useState('best')
   const [speed, setSpeed] = useState('dc150')
@@ -35,10 +38,10 @@ export default function App() {
   // Explicit locate: get a fix now, recenter the map, and start following.
   function locate() {
     if (!navigator.geolocation) {
-      setGeoNote('Location not supported — tap the map to set your spot')
+      setGeoNote('geo.notSupported')
       return
     }
-    setGeoNote('Locating…')
+    setGeoNote('geo.locating')
     navigator.geolocation.getCurrentPosition(
       (p) => {
         setLocated([p.coords.latitude, p.coords.longitude])
@@ -50,11 +53,7 @@ export default function App() {
       (err) => {
         // Geolocation needs a secure context (HTTPS or localhost); a non-secure
         // origin or a denial both land here.
-        setGeoNote(
-          err.code === err.PERMISSION_DENIED
-            ? 'Location blocked — tap the map to set your spot'
-            : 'Location unavailable — tap the map to set your spot',
-        )
+        setGeoNote(err.code === err.PERMISSION_DENIED ? 'geo.blocked' : 'geo.unavailable')
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
     )
@@ -75,19 +74,26 @@ export default function App() {
           Charging
         </span>
         <nav className="tabs">
-          <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>Find</button>
-          <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>Insights</button>
+          <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>{t('nav.find')}</button>
+          <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
         </nav>
+        <label className="lang" aria-label={t('lang.label')}>
+          <select value={i18n.resolvedLanguage} onChange={(e) => i18n.changeLanguage(e.target.value)}>
+            {LANGS.map((l) => (
+              <option key={l.code} value={l.code}>{l.label}</option>
+            ))}
+          </select>
+        </label>
       </header>
 
       {tab === 'find' && (
         <div className="controls">
           <SessionBar need={need} speed={speed} onNeed={setNeed} onSpeed={setSpeed} />
           <div className="filters">
-            <button className="chip" onClick={locate}>📍 Locate me</button>
+            <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
             <FilterBarInline filters={filters} setFilters={setFilters} />
           </div>
-          {geoNote && <div className="geo-note">{geoNote}</div>}
+          {geoNote && <div className="geo-note">{t(geoNote)}</div>}
         </div>
       )}
 
@@ -101,14 +107,14 @@ export default function App() {
           filters={filters}
         />
       ) : (
-        <Suspense fallback={<div className="insights"><div className="state"><div className="spinner" />loading…</div></div>}>
+        <Suspense fallback={<div className="insights"><div className="state"><div className="spinner" />{t('insights.loading')}</div></div>}>
           <InsightsPage />
         </Suspense>
       )}
 
       <nav className="bottomnav">
-        <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>Find</button>
-        <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>Insights</button>
+        <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>{t('nav.find')}</button>
+        <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
       </nav>
     </div>
   )
