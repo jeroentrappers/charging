@@ -38,12 +38,17 @@ tariffs.
   **availability + ad-hoc price**, but **Bearer auth required** and **one call
   per EVSE** (rate limit 100 req / 10 min). Verified: 400 "upstream" without a
   token even for valid BE EVSE ids.
-- **So Monta gives no open *bulk* price.** Its price is key-gated + per-EVSE →
-  only practical as an **on-demand "live price for the tapped charger"** lookup
-  (needs a Monta key, covers Monta's network only), not bulk ingestion/history.
-- Access (free under AFIR): [`docs.public-api.monta.com`](https://docs.public-api.monta.com/) →
-  request form / data@monta.com. The bulk list (locations) is JSON-DATEX → needs
-  a small JSON adapter (distinct from our XML `datex` reader); status needs OAuth.
+- **So Monta gives no open *bulk* price.** Its price is key-gated + per-EVSE.
+- **Adapter built** (`internal/monta`, `source_type='monta'`): OAuth token cache,
+  paginated list → connectors, per-EVSE `Status` → availability + ad-hoc tariff
+  (dedup tax-incl/excl). **Verified live**: BE = 3,223 connectors (2,548
+  Monta-party); status returns e.g. €0.56/kWh, €0.54/kWh + €1 session,
+  €0.70/kWh + €48/h. Creds via `MONTA_CREDS="clientId:clientSecret"`.
+- **Rate-limit reality:** status is per-EVSE at 100 req/10 min → a full price
+  pass over 2,548 EVSEs ≈ **4 hours**. So the bulk feed is **locations-only**;
+  **price/availability are fetched on demand** (`monta.Client.Status`) for the
+  charger a user opens — the scalable shape. (A slow background price crawl is
+  possible but deferred.)
 
 **INDIGO note:** its open static file uses the **same DATEX II profile as
 Eco-Movement** (`maxPowerAtSocket`, `facilityLocation>address`, `refillPoint` …),

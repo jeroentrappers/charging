@@ -6,6 +6,7 @@ import (
 
 	"github.com/appmire/charging/internal/datex"
 	"github.com/appmire/charging/internal/model"
+	"github.com/appmire/charging/internal/monta"
 	"github.com/appmire/charging/internal/normalize"
 	"github.com/appmire/charging/internal/ocpi"
 	"github.com/appmire/charging/internal/source"
@@ -27,6 +28,10 @@ func feedFor(src source.Source) feed {
 		return datexFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token}
 	case "ocpi_file":
 		return fileFeed{cpoID: src.CPO.ID, base: src.CPO.OCPIBaseURL, token: src.Token}
+	case "monta":
+		// src.Token holds "clientId:clientSecret".
+		id, secret, _ := strings.Cut(src.Token, ":")
+		return montaFeed{cpoID: src.CPO.ID, country: "BE", client: monta.New(id, secret)}
 	default:
 		return ocpiFeed{cpoID: src.CPO.ID, client: src.Client()}
 	}
@@ -113,4 +118,27 @@ func (f fileFeed) Full(ctx context.Context) ([]model.Connector, map[string]model
 	}
 	r := normalize.FromOCPI(f.cpoID, locs, tars)
 	return r.Connectors, r.Tariffs, nil
+}
+
+// ---- Monta Public API (open list + authed per-EVSE status) ----
+// Locations come from the open list; live availability + ad-hoc price come from
+// the per-EVSE status endpoint (Monta-party EVSEs only, rate-limited).
+
+type montaFeed struct {
+	cpoID   string
+	country string
+	client  *monta.Client
+}
+
+// Bulk ingestion is LOCATIONS ONLY: price + availability are per-EVSE and
+// rate-limited (100 req/10 min), so fetching them for every Monta EVSE in a
+// scheduled pass is infeasible (thousands of EVSEs ≈ hours). Live price comes
+// from client.Status on demand (e.g. when a user opens a Monta charger).
+func (f montaFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	return f.client.Locations(ctx, f.cpoID, f.country)
+}
+
+func (f montaFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	conns, err := f.client.Locations(ctx, f.cpoID, f.country)
+	return conns, map[string]model.Tariff{}, err
 }

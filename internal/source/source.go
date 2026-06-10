@@ -71,6 +71,20 @@ func Seeds() []store.CPO {
 			Enabled:     false,
 		},
 		{
+			// Monta Public API: open AFIR list (locations) + authed per-EVSE
+			// status (availability + ad-hoc price, Monta-party EVSEs only).
+			// Token = "clientId:clientSecret" via env MONTA_CREDS. Per-EVSE +
+			// rate-limited, so poll daily. Enable once creds are set.
+			ID:          "monta",
+			Name:        "Monta",
+			OCPIBaseURL: "https://public-api.monta.com",
+			SourceType:  "monta",
+			TokenEnv:    "MONTA_CREDS",
+			PollCron:    "0 3 * * *",
+			StatusCron:  "0 3 * * *", // per-EVSE + rate-limited -> daily
+			Enabled:     false,
+		},
+		{
 			// Open static OCPI 2.2.1 files (no token) — real data available now.
 			// OCPIBaseURL is the directory hosting locations.json + tariffs.json.
 			ID:          "road",
