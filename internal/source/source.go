@@ -74,7 +74,8 @@ func Seeds() []store.CPO {
 			// Monta Public API: open AFIR list (locations) + authed per-EVSE
 			// status (availability + ad-hoc price, Monta-party EVSEs only).
 			// Token = "clientId:clientSecret" via env MONTA_CREDS. Per-EVSE +
-			// rate-limited, so poll daily. Enable once creds are set.
+			// rate-limited, so the bulk location poll is daily and a continuous
+			// background crawl cycles per-EVSE status+price under the throttle.
 			ID:          "monta",
 			Name:        "Monta",
 			OCPIBaseURL: "https://public-api.monta.com",
@@ -82,7 +83,9 @@ func Seeds() []store.CPO {
 			TokenEnv:    "MONTA_CREDS",
 			PollCron:    "0 3 * * *",
 			StatusCron:  "0 3 * * *", // per-EVSE + rate-limited -> daily
-			Enabled:     false,
+			// Enabled, but only actually polled/crawled once MONTA_CREDS is set
+			// (Ready() requires the token); without creds the scheduler skips it.
+			Enabled: true,
 		},
 		{
 			// Open static OCPI 2.2.1 files (no token) — real data available now.
