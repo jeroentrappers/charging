@@ -7,6 +7,25 @@ running system = insert a `cpo` row (+ token env) — the scheduler hot-reloads 
 
 Last researched: 2026-06-09.
 
+## Which sources expose ad-hoc PRICE? (open-pricing sweep, 2026-06-10)
+
+| Source | Open (no key)? | Ad-hoc price? | Availability? |
+|---|---|---|---|
+| **Road** | ✅ yes | ✅ **yes** | ✅ yes (status) |
+| **Monta** | ⚠️ free creds (clientId/secret via form) | ✅ **yes** | ✅ yes |
+| EnergyVision | ⚠️ free key (email) | likely (OCPI Tariffs) | ✅ |
+| Tesla | ⚠️ key (401 without) | likely (OCPI Tariffs) | ✅ |
+| Eco-Movement (NAP feed) | ✅ yes | ❌ no | ❌ no |
+| INDIGO | ✅ yes | ❌ no (static) | ❌ no |
+| Gireve (EVCI) | ❌ fee-based license | ❌ not in open set | — |
+
+**Conclusion:** **Road is the only fully-open (no-credential) source with ad-hoc
+price** — and it's already live. **Monta** is the best key-gated target: its AFIR
+endpoint carries **both ad-hoc price and availability** (richer than Road), free
+under AFIR but needs a `clientId`/`clientSecret` (request form). All other open
+feeds are location-only. Open Charge Map (global, free key) has only a sparse,
+unstructured `UsageCost` text field — not comparable tariffs.
+
 ## Feeds
 
 | Provider | Coverage | Format | Endpoint | Consumable now? | Access contact |

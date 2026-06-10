@@ -73,13 +73,13 @@ I found your public charging infrastructure dataset on Belgium's National Access
 Point (transportdata.be), referencing your AFIR charge-points API.
 
 We're building an app, comparing public EV-charging price and availability in
-Belgium. We'd like programmatic access to your Belgian public
-charging data — ideally the **OCPI Locations (with live status) and Tariffs**
-modules so we can include ad-hoc pricing and real-time availability.
+Belgium. Your **AFIR charge-points endpoint** (Partner API) looks ideal — it
+exposes location, connectors, power, status/availability **and ad-hoc pricing**.
 
-Could you let us know the endpoint base URL, OCPI version, how to authenticate
-(token), and any usage terms? Per AFIR Article 20 this data should be available
-free of charge and without discrimination.
+Per AFIR Article 20 this data is available free of charge and without
+discrimination. Could you grant us access — i.e. provision a `clientId` /
+`clientSecret` for the AFIR endpoint (we understand there's a request form) — and
+point us at the base URL and any rate-limit guidance?
 
 Thanks in advance,
 Jeroen Trappers
