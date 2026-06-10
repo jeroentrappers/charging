@@ -20,3 +20,8 @@ coverage.*
 
 # Generated bulk dataset dumps
 /export/
+
+# Server-local docker compose overrides (e.g. arm64 db image, loopback ports)
+docker-compose.override.yml
+docker-compose.*.local.yml
+docker-compose.appmire.yml
