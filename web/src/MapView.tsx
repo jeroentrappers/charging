@@ -36,9 +36,25 @@ function Recenter({ to }: { to: [number, number] | null }) {
   return null
 }
 
+// Flies to the selected charger so it's centred and visible even if it was
+// off-screen (e.g. picked from the list). `nonce` lets re-selecting the same
+// charger re-trigger the fly.
+function FocusOn({ to, nonce }: { to: [number, number] | null; nonce: number }) {
+  const map = useMap()
+  const last = useRef<number>(-1)
+  useEffect(() => {
+    if (!to || nonce === last.current) return
+    last.current = nonce
+    map.flyTo(to, Math.max(map.getZoom(), 15), { duration: 0.4 })
+  }, [to, nonce, map])
+  return null
+}
+
 export function MapView(props: {
   initial: [number, number]
   recenterTo: [number, number] | null
+  focus: [number, number] | null
+  focusNonce: number
   chargers: Charger[]
   selectedId: number | null
   onSelect: (id: number) => void
@@ -57,6 +73,7 @@ export function MapView(props: {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <Recenter to={props.recenterTo} />
+        <FocusOn to={props.focus} nonce={props.focusNonce} />
         <Viewport onChange={props.onViewport} />
         {props.chargers.map((c) => {
           const sel = c.id === props.selectedId

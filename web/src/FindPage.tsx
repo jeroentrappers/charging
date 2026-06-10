@@ -20,6 +20,7 @@ export function FindPage(props: {
   const [error, setError] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [focusNonce, setFocusNonce] = useState(0)
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
@@ -49,10 +50,15 @@ export function FindPage(props: {
   }, [vp, props.sessionKey, props.filters])
 
   const detail = detailId != null ? chargers.find((c) => c.id === detailId) ?? null : null
+  const selected = selectedId != null ? chargers.find((c) => c.id === selectedId) ?? null : null
+  const focus: [number, number] | null = selected ? [selected.lat, selected.lon] : null
 
+  // Selecting (from the list or the map) both flies the map to the charger and
+  // opens its detail panel.
   function select(id: number) {
     setSelectedId(id)
     setDetailId(id)
+    setFocusNonce((n) => n + 1)
   }
 
   return (
@@ -60,6 +66,8 @@ export function FindPage(props: {
       <MapView
         initial={props.initial}
         recenterTo={props.recenterTo}
+        focus={focus}
+        focusNonce={focusNonce}
         chargers={chargers}
         selectedId={selectedId}
         onSelect={select}
