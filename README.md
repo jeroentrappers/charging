@@ -242,17 +242,23 @@ curl 'localhost:8080/chargers/cheapest?lat=51.0548&lon=3.7260&radius=5000&sessio
 
 ## Deploy (single VM)
 
-Everything ships as one image (`api`, `ingest`, `migrate` binaries on a
-distroless base). `docker-compose.prod.yml` runs PostGIS + a one-shot migration
-step + the API and ingest services:
+`docker-compose.prod.yml` runs the **whole stack**: PostGIS + a one-shot
+migration step + the API + ingest scheduler + the **web PWA** (nginx). The Go
+binaries (`api`, `ingest`, `migrate`) ship from one distroless image; the web
+app is built and served by its own nginx image.
 
 ```bash
 cp .env.example .env        # set source tokens; DATABASE_URL is overridden to the compose DB
-make prod-up                # build image, start db -> migrate -> api + ingest
+make prod-up                # build images, start db -> migrate -> api + ingest + web
 make prod-ps                # status
 make prod-logs              # tail
 make prod-backup TS=$(date +%F)   # gzip pg_dump into backups/
 ```
+
+Services after `prod-up`: **web → http://localhost:5173**, API → :8080,
+ingest metrics → :9090 (in-container). The browser calls the API directly, so
+`VITE_API_BASE` is baked into the web build — set `WEB_API_BASE` for non-local
+deployments (e.g. `WEB_API_BASE=https://api.example.com make prod-up`).
 
 - **Migrations** run automatically on each deploy (embedded in the `migrate`
   binary; api/ingest wait for it via `depends_on: service_completed_successfully`).
