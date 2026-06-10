@@ -36,9 +36,9 @@ func main() {
 	}
 	defer st.Close()
 
-	// Register the known sources (idempotent).
+	// Register the known sources without clobbering operator changes.
 	for _, c := range source.Seeds() {
-		if err := st.UpsertCPO(ctx, c); err != nil {
+		if err := st.SeedCPO(ctx, c); err != nil {
 			log.Error("seed cpo", "cpo", c.ID, "err", err)
 			os.Exit(1)
 		}

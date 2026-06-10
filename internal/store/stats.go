@@ -3,7 +3,46 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 )
+
+// Run is an ingestion-run record (admin view).
+type Run struct {
+	ID         int64      `json:"id"`
+	CPOID      string     `json:"cpo_id"`
+	Kind       string     `json:"kind"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	RowsSeen   int        `json:"rows_seen"`
+	Changes    int        `json:"changes"`
+	Error      *string    `json:"error"`
+}
+
+// RecentRuns returns recent ingestion runs, optionally filtered to one CPO.
+func (s *Store) RecentRuns(ctx context.Context, cpoID string, limit int) ([]Run, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, cpo_id, kind, started_at, finished_at, rows_seen, changes, error
+		FROM ingest_run
+		WHERE ($1 = '' OR cpo_id = $1)
+		ORDER BY started_at DESC
+		LIMIT $2`, cpoID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(&r.ID, &r.CPOID, &r.Kind, &r.StartedAt, &r.FinishedAt, &r.RowsSeen, &r.Changes, &r.Error); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
 
 // PriceAgg is an aggregate of headline comparable prices for a group.
 type PriceAgg struct {

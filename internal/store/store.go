@@ -40,19 +40,37 @@ type CPO struct {
 	OCPIBaseURL string
 	OCPIVersion string
 	TokenEnv    string
+	Token       string // DB-stored token (secret); preferred over TokenEnv. Never serialized.
 	PollCron    string // price (tariff) poll schedule
 	StatusCron  string // availability poll schedule
 	SourceType  string // "ocpi" (default) | "datex"
 	Enabled     bool
 }
 
+const cpoCols = `id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), COALESCE(token,''), poll_cron, status_cron, source_type, enabled`
+
+func scanCPO(row interface{ Scan(...any) error }) (CPO, error) {
+	var c CPO
+	err := row.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.Token, &c.PollCron, &c.StatusCron, &c.SourceType, &c.Enabled)
+	return c, err
+}
+
+// SeedCPO inserts a source only if it does not already exist, so restarts never
+// clobber operator-managed fields (enabled, token, schedules).
+func (s *Store) SeedCPO(ctx context.Context, c CPO) error {
+	c.defaults()
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (id) DO NOTHING`,
+		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.SourceType, c.Enabled)
+	return err
+}
+
+// UpsertCPO fully creates or replaces a source (admin "add/replace"). It does
+// not touch the token (use SetToken) so callers can't accidentally wipe it.
 func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
-	if c.StatusCron == "" {
-		c.StatusCron = "*/3 * * * *"
-	}
-	if c.SourceType == "" {
-		c.SourceType = "ocpi"
-	}
+	c.defaults()
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -65,23 +83,64 @@ func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
 	return err
 }
 
+func (c *CPO) defaults() {
+	if c.StatusCron == "" {
+		c.StatusCron = "*/3 * * * *"
+	}
+	if c.PollCron == "" {
+		c.PollCron = "0 4 * * *"
+	}
+	if c.SourceType == "" {
+		c.SourceType = "ocpi"
+	}
+}
+
 func (s *Store) ListEnabledCPOs(ctx context.Context) ([]CPO, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), poll_cron, status_cron, source_type, enabled
-		FROM cpo WHERE enabled ORDER BY id`)
+	return s.listCPOs(ctx, "WHERE enabled")
+}
+
+func (s *Store) ListAllCPOs(ctx context.Context) ([]CPO, error) {
+	return s.listCPOs(ctx, "")
+}
+
+func (s *Store) listCPOs(ctx context.Context, where string) ([]CPO, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+cpoCols+` FROM cpo `+where+` ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []CPO
 	for rows.Next() {
-		var c CPO
-		if err := rows.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.PollCron, &c.StatusCron, &c.SourceType, &c.Enabled); err != nil {
+		c, err := scanCPO(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) GetCPO(ctx context.Context, id string) (CPO, bool, error) {
+	c, err := scanCPO(s.Pool.QueryRow(ctx, `SELECT `+cpoCols+` FROM cpo WHERE id=$1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CPO{}, false, nil
+	}
+	return c, err == nil, err
+}
+
+func (s *Store) SetEnabled(ctx context.Context, id string, enabled bool) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE cpo SET enabled=$2 WHERE id=$1`, id, enabled)
+	return tag.RowsAffected() > 0, err
+}
+
+func (s *Store) SetToken(ctx context.Context, id, token string) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE cpo SET token=NULLIF($2,'') WHERE id=$1`, id, token)
+	return tag.RowsAffected() > 0, err
+}
+
+func (s *Store) DeleteCPO(ctx context.Context, id string) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM cpo WHERE id=$1`, id)
+	return tag.RowsAffected() > 0, err
 }
 
 // ---- Chargers + status ----

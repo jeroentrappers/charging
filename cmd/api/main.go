@@ -30,6 +30,8 @@ type server struct {
 	vehicle         pricing.Vehicle
 	staleAfter      time.Duration
 	priceStaleAfter time.Duration
+	adminToken      string
+	engine          *ingest.Engine
 }
 
 func main() {
@@ -59,11 +61,28 @@ func main() {
 		},
 		staleAfter:      cfg.AvailabilityStaleAfter,
 		priceStaleAfter: cfg.PriceStaleAfter,
+		adminToken:      cfg.AdminToken,
 	}
+	s.engine = ingest.NewEngine(st, log)
+	s.engine.Vehicle = s.vehicle
 
+	srv := &http.Server{
+		Addr:              cfg.APIAddr,
+		Handler:           s.routes(cfg.CORSOrigins),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	log.Info("api listening", "addr", cfg.APIAddr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error("server", "err", err)
+		os.Exit(1)
+	}
+}
+
+// routes builds the HTTP handler (read API + protected admin control plane).
+func (s *server) routes(corsOrigins string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
-	r.Use(corsMiddleware(cfg.CORSOrigins))
+	r.Use(corsMiddleware(corsOrigins))
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
 	r.Handle("/metrics", metrics.Handler())
@@ -75,16 +94,19 @@ func main() {
 	r.Get("/stats/regions", s.statsRegions)
 	r.Get("/stats/price-trend", s.statsPriceTrend)
 
-	srv := &http.Server{
-		Addr:              cfg.APIAddr,
-		Handler:           r,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	log.Info("api listening", "addr", cfg.APIAddr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("server", "err", err)
-		os.Exit(1)
-	}
+	// Admin (control plane) — protected by ADMIN_TOKEN bearer.
+	r.Route("/admin", func(ar chi.Router) {
+		ar.Use(s.adminAuth)
+		ar.Get("/sources", s.adminListSources)
+		ar.Post("/sources", s.adminUpsertSource)
+		ar.Delete("/sources/{id}", s.adminDeleteSource)
+		ar.Post("/sources/{id}/enable", s.adminEnable(true))
+		ar.Post("/sources/{id}/disable", s.adminEnable(false))
+		ar.Put("/sources/{id}/token", s.adminSetToken)
+		ar.Post("/ingest/{id}/run", s.adminRunIngest)
+		ar.Get("/runs", s.adminRuns)
+	})
+	return r
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {

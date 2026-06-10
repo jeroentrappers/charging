@@ -23,6 +23,8 @@ type Config struct {
 	MetricsAddr string
 	// Comma-separated allowed CORS origins for the API ("*" = any).
 	CORSOrigins string
+	// Bearer token protecting the admin endpoints; empty disables them.
+	AdminToken string
 }
 
 func Load() Config {
@@ -35,6 +37,7 @@ func Load() Config {
 		PriceStaleAfter:        envDuration("PRICE_STALE_AFTER", 48*time.Hour),
 		MetricsAddr:            env("METRICS_ADDR", ":9090"),
 		CORSOrigins:            env("CORS_ORIGINS", "*"),
+		AdminToken:             os.Getenv("ADMIN_TOKEN"),
 	}
 }
 

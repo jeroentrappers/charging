@@ -24,13 +24,14 @@ func (s Source) Client() *ocpi.Client {
 // HasToken reports whether a usable token was resolved.
 func (s Source) HasToken() bool { return s.Token != "" }
 
-// Resolve turns CPO registry rows into sources, reading each one's token from
-// the environment variable named by CPO.TokenEnv.
+// Resolve turns CPO registry rows into sources. The token is the DB-stored
+// value when set (managed via the admin API/CLI), otherwise the environment
+// variable named by CPO.TokenEnv.
 func Resolve(cpos []store.CPO) []Source {
 	out := make([]Source, 0, len(cpos))
 	for _, c := range cpos {
-		tok := ""
-		if c.TokenEnv != "" {
+		tok := c.Token
+		if tok == "" && c.TokenEnv != "" {
 			tok = os.Getenv(c.TokenEnv)
 		}
 		out = append(out, Source{CPO: c, Token: tok})
