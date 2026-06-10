@@ -3,24 +3,34 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { api, type Charger, type PricePoint, type TariffComponent, type TariffRestrictions } from './api'
 import { AvailBadge, availOf, ago, eur } from './ui'
 
-// Human label + unit for an OCPI price component.
+// Human label for an OCPI price component.
 function compName(type: string): string {
   switch (type) {
     case 'ENERGY': return 'Energy'
     case 'FLAT': return 'Session fee'
-    case 'TIME': return 'Time (charging)'
-    case 'PARKING_TIME': return 'Parking'
+    case 'TIME': return 'Time (while charging)'
+    case 'PARKING_TIME': return 'Idle fee (after charging)'
     default: return type
   }
 }
-function compUnit(type: string): string {
-  switch (type) {
-    case 'ENERGY': return '/ kWh'
-    case 'FLAT': return '/ session'
-    case 'TIME': return '/ hour'
-    case 'PARKING_TIME': return '/ hour parked'
-    default: return ''
+// OCPI prices TIME/PARKING_TIME per hour; drivers think in €/min, so show both.
+function valueText(c: TariffComponent): string {
+  switch (c.type) {
+    case 'ENERGY': return `${eur(c.price)} / kWh`
+    case 'FLAT': return `${eur(c.price)} / session`
+    case 'TIME':
+    case 'PARKING_TIME': {
+      const perMin = c.price > 0 ? ` (€${(c.price / 60).toFixed(2)}/min)` : ''
+      return `${eur(c.price)} / h${perMin}`
+    }
+    default: return eur(c.price)
   }
+}
+function isIdle(type: string): boolean {
+  return type === 'PARKING_TIME'
+}
+function mins(seconds: number): number {
+  return Math.round(seconds / 60)
 }
 // When an element only applies under certain conditions, summarise them.
 function restrictionText(r?: TariffRestrictions): string {
@@ -28,6 +38,8 @@ function restrictionText(r?: TariffRestrictions): string {
   const parts: string[] = []
   if (r.start_time || r.end_time) parts.push(`${r.start_time ?? '00:00'}–${r.end_time ?? '24:00'}`)
   if (r.day_of_week?.length) parts.push(r.day_of_week.map((d) => d.slice(0, 3).toLowerCase()).join(', '))
+  if (r.min_duration != null) parts.push(`after ${mins(r.min_duration)} min`)
+  if (r.max_duration != null) parts.push(`up to ${mins(r.max_duration)} min`)
   if (r.min_power != null || r.max_power != null) {
     parts.push(r.min_power != null && r.max_power != null ? `${r.min_power}–${r.max_power} kW`
       : r.min_power != null ? `≥${r.min_power} kW` : `≤${r.max_power} kW`)
@@ -37,9 +49,6 @@ function restrictionText(r?: TariffRestrictions): string {
       : r.min_kwh != null ? `from ${r.min_kwh} kWh` : `up to ${r.max_kwh} kWh`)
   }
   return parts.join(' · ')
-}
-function compLine(c: TariffComponent): string {
-  return `${eur(c.price)} ${compUnit(c.type)}`.trim()
 }
 
 export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose: () => void }) {
@@ -63,6 +72,7 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
   // Current (open) tariff = the structured components to break down.
   const current = (history ?? []).find((h) => h.observed_to == null) ?? (history ?? [])[0] ?? null
   const elements = current?.price_components?.elements ?? []
+  const hasIdle = elements.some((el) => el.price_components.some((c) => isIdle(c.type) && c.price > 0))
   const nav = `https://www.openstreetmap.org/directions?to=${charger.lat},${charger.lon}`
 
   return (
@@ -98,15 +108,18 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
                 <table className="matrix">
                   <tbody>
                     {el.price_components.map((c, j) => (
-                      <tr key={j}>
+                      <tr key={j} className={isIdle(c.type) && c.price > 0 ? 'warn' : ''}>
                         <td>{compName(c.type)}</td>
-                        <td className="num">{compLine(c)}</td>
+                        <td className="num">{valueText(c)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ))}
+            {hasIdle && (
+              <p className="warn-note">⚠ This charger charges an idle fee per minute after charging finishes — unplug and move promptly. It's not included in the prices below (which assume you leave on time).</p>
+            )}
             <p className="caveat">These components combine into the comparable per-session prices below.</p>
           </>
         )}
