@@ -17,3 +17,6 @@ coverage.*
 .DS_Store
 .idea/
 .vscode/
+
+# Generated bulk dataset dumps
+/export/

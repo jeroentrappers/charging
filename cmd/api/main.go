@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/appmire/charging/internal/config"
+	"github.com/appmire/charging/internal/export"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
 	"github.com/appmire/charging/internal/pricing"
@@ -37,6 +38,7 @@ type server struct {
 	staleAfter      time.Duration
 	priceStaleAfter time.Duration
 	adminToken      string
+	exportDir       string
 	engine          *ingest.Engine
 }
 
@@ -68,9 +70,20 @@ func main() {
 		staleAfter:      cfg.AvailabilityStaleAfter,
 		priceStaleAfter: cfg.PriceStaleAfter,
 		adminToken:      cfg.AdminToken,
+		exportDir:       cfg.ExportDir,
 	}
 	s.engine = ingest.NewEngine(st, log)
 	s.engine.Vehicle = s.vehicle
+
+	// Bulk dataset export: regenerate the open static dumps on a schedule and
+	// serve them from exportDir (see routes()).
+	if cfg.ExportDir != "" {
+		snap := &export.Snapshotter{
+			Store: st, Dir: cfg.ExportDir, Log: log,
+			FullEvery: cfg.ExportFullEvery, AvailEvery: cfg.ExportAvailEvery,
+		}
+		go snap.Run(context.Background())
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,
@@ -101,7 +114,10 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	cfg.Info.Description = "Compare ad-hoc public EV charging prices across Belgian " +
 		"operators: find the cheapest available charger nearby (with time-of-day and " +
 		"user-defined sessions), read a charger's versioned price history, and browse " +
-		"market statistics. Built on open AFIR/transportdata.be data."
+		"market statistics. Built on open AFIR/transportdata.be data.\n\n" +
+		"The full dataset is also published as open, periodically-rotated static " +
+		"dumps (NDJSON, GeoJSON, OCPI Locations+Tariffs) under /export — see " +
+		"/export/index.json for the manifest, sizes, checksums and licence."
 	cfg.DocsPath = "" // served below with Scalar instead of the bundled renderer
 	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"adminToken": {
@@ -115,7 +131,36 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	s.registerAdmin(api)
 
 	r.Get("/docs", scalarDocs)
+
+	// Open bulk dataset dumps (static files regenerated on a schedule). Served
+	// with gzip + short caching so a CDN can absorb "give me everything" load.
+	if s.exportDir != "" {
+		fs := http.StripPrefix("/export", http.FileServer(http.Dir(s.exportDir)))
+		r.Route("/export", func(er chi.Router) {
+			er.Use(middleware.Compress(5))
+			er.Use(exportCacheControl)
+			er.Handle("/*", fs)
+			er.Handle("/", fs)
+		})
+	}
 	return r
+}
+
+// exportCacheControl marks the static dumps publicly cacheable for a short
+// window (the availability delta rotates ~every minute) and sets accurate
+// content types for the .ndjson/.geojson extensions the file server doesn't
+// know (http.ServeContent only fills Content-Type when it's unset).
+func exportCacheControl(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=30")
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".ndjson"):
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		case strings.HasSuffix(r.URL.Path, ".geojson"):
+			w.Header().Set("Content-Type", "application/geo+json")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {

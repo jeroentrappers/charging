@@ -25,6 +25,12 @@ type Config struct {
 	CORSOrigins string
 	// Bearer token protecting the admin endpoints; empty disables them.
 	AdminToken string
+
+	// Bulk dataset export (open static dumps served at /export). Empty dir
+	// disables it.
+	ExportDir        string
+	ExportFullEvery  time.Duration
+	ExportAvailEvery time.Duration
 }
 
 func Load() Config {
@@ -38,6 +44,9 @@ func Load() Config {
 		MetricsAddr:            env("METRICS_ADDR", ":9090"),
 		CORSOrigins:            env("CORS_ORIGINS", "*"),
 		AdminToken:             os.Getenv("ADMIN_TOKEN"),
+		ExportDir:              env("EXPORT_DIR", "./export"),
+		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
+		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
 	}
 }
 
