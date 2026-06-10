@@ -1,0 +1,106 @@
+// Typed client for the charging HTTP API (read endpoints only; admin is the
+// CLI's job). Base URL comes from VITE_API_BASE.
+
+const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8080').replace(/\/$/, '')
+
+export interface Charger {
+  id: number
+  cpo_id: string
+  name: string
+  address: string
+  lat: number
+  lon: number
+  power_kw: number
+  plug_type: string
+  current_type: string // AC | DC
+  distance_m: number
+  available_count: number
+  comparable_price_eur: number | null
+  session_price_eur?: number | null
+  comparable_prices: Record<string, number>
+  currency: string
+  status_updated_at: string | null
+  availability_stale: boolean
+}
+
+export interface SessionProfile {
+  key: string
+  label: string
+  current: string // AC | DC
+  tier_kw: number
+  avg_kw: number
+  metered_kwh: number
+}
+
+export interface PricePoint {
+  comparable_price_eur: number | null
+  comparable_prices: Record<string, number>
+  currency: string
+  observed_from: string
+  observed_to: string | null
+  source_last_updated: string | null
+}
+
+export interface PriceAgg {
+  group: string
+  count: number
+  avg_eur: number | null
+  median_eur: number | null
+  min_eur: number | null
+  max_eur: number | null
+}
+
+export interface Overview {
+  chargers: number
+  priced_chargers: number
+  by_current_type: PriceAgg[]
+}
+
+export interface TrendPoint {
+  month: string
+  avg_eur: number | null
+  count: number
+}
+
+export interface SessionStat {
+  session: string
+  count: number
+  avg_eur: number
+  min_eur: number
+  max_eur: number
+}
+
+async function get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+  const url = new URL(BASE + path)
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== '' && v !== false) url.searchParams.set(k, String(v))
+    }
+  }
+  const res = await fetch(url.toString())
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return res.json() as Promise<T>
+}
+
+export interface CheapestParams {
+  lat: number
+  lon: number
+  radius?: number
+  session?: string
+  available?: boolean
+  min_power?: number
+  plug?: string
+  limit?: number
+}
+
+export const api = {
+  cheapest: (p: CheapestParams) =>
+    get<{ results: Charger[]; count: number }>('/chargers/cheapest', { ...p }),
+  sessions: () => get<{ sessions: SessionProfile[] }>('/sessions'),
+  priceHistory: (id: number) =>
+    get<{ charger_id: number; history: PricePoint[] }>(`/chargers/${id}/price-history`),
+  overview: () => get<Overview>('/stats/overview'),
+  trend: (months = 12) => get<{ trend: TrendPoint[] }>('/stats/price-trend', { months }),
+  regions: (by = 'city') => get<{ by: string; regions: PriceAgg[] }>('/stats/regions', { by }),
+  sessionStats: () => get<{ sessions: SessionStat[] }>('/stats/sessions'),
+}

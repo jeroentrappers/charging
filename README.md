@@ -23,6 +23,41 @@ aggregate the feeds ourselves. The first wired source is **EnergyVision**
 > is the fairest basis for comparison. Per-MSP/card tariffs (e.g. a Mobiflow
 > card) would require a commercial source like the Chargeprice API.
 
+## Architecture (API/CLI-driven)
+
+The HTTP API is the single control + data plane; every client goes through it —
+nothing else touches the database.
+
+```
+                      ┌───────────── clients ─────────────┐
+   PWA (web/)  ─────▶  │                                    │
+   chargingctl ─────▶  │   HTTP API (cmd/api)               │
+   third parties ──▶   │     read:  chargers/stats/sessions │
+                      │     admin: sources/ingest (token)  │
+                      └───────────────┬────────────────────┘
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+        cmd/ingest (scheduler)    PostgreSQL + PostGIS    cmd/migrate
+        OCPI 2.1.1/2.2.1 + DATEX        history (SCD2)      (embedded)
+              feeds ▲ poll               + geo + stats
+```
+
+## Components & docs
+
+| Path | What |
+|---|---|
+| `cmd/api` | HTTP API: read endpoints + admin control plane |
+| `cmd/ingest` | polling scheduler (availability + price) |
+| `cmd/migrate` | applies embedded migrations on deploy |
+| `cmd/chargingctl` | CLI client over the API (read + admin) |
+| `internal/{ocpi,datex}` | source readers (OCPI 2.1.1/2.2.1, DATEX II) |
+| `internal/{normalize,model,pricing}` | canonical model + comparable-session pricing |
+| `internal/{store,ingest,source}` | persistence, CDC engine, source registry |
+| `web/` | React + Vite + TS **PWA** (map-first frontend) |
+| [`docs/frontend.md`](docs/frontend.md) | frontend UX analysis |
+| [`docs/sources.md`](docs/sources.md) | Belgian NAP source catalogue + status |
+| [`docs/access-request-emails.md`](docs/access-request-emails.md) | API-key request drafts |
+
 ## Key design decisions
 
 - **Prices change rarely → temporal versioning (SCD Type 2), not snapshots.**
@@ -118,6 +153,19 @@ curl 'localhost:8080/healthz'
 curl 'localhost:8080/chargers/cheapest?lat=51.0544&lon=3.7251&radius=5000&available=true'
 curl 'localhost:8080/chargers/1/price-history'
 ```
+
+### Frontend (PWA)
+
+The map-first web app lives in [`web/`](web/) (React + Vite + TS + Leaflet,
+installable PWA, mobile-first/responsive). It's a pure API client on a separate
+origin:
+
+```bash
+cd web && cp .env.example .env && pnpm install && pnpm dev
+```
+
+See [`web/README.md`](web/README.md) and the UX analysis in
+[`docs/frontend.md`](docs/frontend.md).
 
 ### API
 
