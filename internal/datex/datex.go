@@ -1,14 +1,12 @@
 // Package datex reads DATEX II (v3, EnergyInfrastructure profile) charging data
-// into the canonical model. DATEX II becomes the mandatory NAP format on
-// 2026-04-14 and is what aggregators such as Eco-Movement publish today.
+// into the canonical model. DATEX II is the mandatory NAP format from
+// 2026-04-14 and what aggregators such as Eco-Movement publish today.
 //
-// NOTE: element paths here follow the DATEX II v3 EnergyInfrastructure profile
-// and are matched by local name (namespace-agnostic). The exact nesting varies
-// slightly between publishers, so paths may need tuning against a real feed —
-// validated against the Eco-Movement NAP feed once access is granted. The
-// static publication carries locations + (optionally) ad-hoc price; live
-// availability is a separate status publication, so connectors parsed here have
-// unknown status until that is wired in.
+// Element paths were validated against the live Eco-Movement NAP feed
+// (api.eco-movement.com/api/nap/datexii/locations). That static publication
+// carries locations + connector type + max power, but NOT ad-hoc price or live
+// status, so connectors parsed here have no tariff and unknown availability.
+// Matching is by local element name (namespace-agnostic).
 package datex
 
 import (
@@ -34,23 +32,22 @@ type site struct {
 	Name       string    `xml:"name>values>value"`
 	Latitude   float64   `xml:"locationReference>pointByCoordinates>pointCoordinates>latitude"`
 	Longitude  float64   `xml:"locationReference>pointByCoordinates>pointCoordinates>longitude"`
-	PostalCode string    `xml:"locationReference>addressByName>postalCode"`
-	City       string    `xml:"locationReference>addressByName>city"`
+	PostalCode string    `xml:"locationReference>_pointLocationExtension>facilityLocation>address>postcode"`
+	City       string    `xml:"locationReference>_pointLocationExtension>facilityLocation>address>city"`
+	Operator   string    `xml:"operator>name>values>value"`
 	Stations   []station `xml:"energyInfrastructureStation"`
 }
 
 type station struct {
-	ID           string        `xml:"id,attr"`
 	RefillPoints []refillPoint `xml:"refillPoint"`
 }
 
 type refillPoint struct {
-	ID            string   `xml:"id,attr"`
-	ConnectorType string   `xml:"connector>connectorType"`
-	ChargingMode  string   `xml:"connector>chargingMode"` // e.g. "mode4" (DC) / "mode3" (AC), or AC/DC text
-	MaxPowerW     float64  `xml:"connector>maximumPower"` // watts
-	PricePerKWh   *float64 `xml:"applicablePrice>priceForEnergy>priceForKWh"`
-	Currency      string   `xml:"applicablePrice>priceForEnergy>currency"`
+	ID            string  `xml:"id,attr"`
+	ExternalID    string  `xml:"externalIdentifier"`
+	ConnectorType string  `xml:"connector>connectorType"`
+	ChargingMode  string  `xml:"connector>chargingMode"`     // mode3AC3p (AC), mode4 (DC), ...
+	MaxPowerW     float64 `xml:"connector>maxPowerAtSocket"` // watts
 }
 
 // Fetch retrieves and parses a DATEX II locations publication.
@@ -63,12 +60,12 @@ func Fetch(ctx context.Context, cpoID, url, token string) ([]model.Connector, ma
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Accept", "application/xml")
-	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -78,51 +75,38 @@ func Fetch(ctx context.Context, cpoID, url, token string) ([]model.Connector, ma
 	return Parse(cpoID, body)
 }
 
-// Parse maps a DATEX II EnergyInfrastructure publication to canonical connectors
-// and tariffs (keyed by a synthesized tariff id).
+// Parse maps a DATEX II EnergyInfrastructure publication to canonical
+// connectors. No tariffs are present in this profile, so the tariff map is empty.
 func Parse(cpoID string, data []byte) ([]model.Connector, map[string]model.Tariff, error) {
 	var pub publication
 	if err := xml.Unmarshal(data, &pub); err != nil {
 		return nil, nil, fmt.Errorf("decode datex: %w", err)
 	}
-	var conns []model.Connector
 	tariffs := map[string]model.Tariff{}
+	var conns []model.Connector
 
 	for _, s := range pub.Sites {
 		for _, st := range s.Stations {
 			for _, rp := range st.RefillPoints {
-				c := model.Connector{
+				uid := rp.ExternalID
+				if uid == "" {
+					uid = rp.ID
+				}
+				conns = append(conns, model.Connector{
 					CPOID:       cpoID,
-					EVSEUID:     st.ID,
-					ConnectorID: rp.ID,
+					EVSEUID:     uid,
+					ConnectorID: "1",
 					Lat:         s.Latitude,
 					Lon:         s.Longitude,
 					PowerKW:     round1(rp.MaxPowerW / 1000),
 					PlugType:    rp.ConnectorType,
 					CurrentType: currentType(rp.ChargingMode),
-					Name:        s.Name,
+					Name:        name(s),
 					Address:     address(s),
 					PostalCode:  s.PostalCode,
 					City:        s.City,
-					// DATEX static feed carries no live status (separate publication).
-					EVSEStatus: "",
-				}
-				if rp.PricePerKWh != nil {
-					tid := "datex:" + cpoID + ":" + st.ID + ":" + rp.ID
-					cur := rp.Currency
-					if cur == "" {
-						cur = "EUR"
-					}
-					tariffs[tid] = model.Tariff{
-						OCPIID:   tid,
-						Currency: cur,
-						Elements: []model.TariffElement{{
-							PriceComponents: []model.PriceComponent{{Type: "ENERGY", Price: *rp.PricePerKWh}},
-						}},
-					}
-					c.TariffID = tid
-				}
-				conns = append(conns, c)
+					EVSEStatus:  "", // not in this DATEX profile
+				})
 			}
 		}
 	}
@@ -135,6 +119,18 @@ func currentType(mode string) string {
 		return model.CurrentDC
 	}
 	return model.CurrentAC
+}
+
+// name prefers "Operator · Site" so cards are recognisable (all sites share one
+// cpo_id, so the operator would otherwise be lost).
+func name(s site) string {
+	if s.Operator != "" && s.Name != "" {
+		return s.Operator + " · " + s.Name
+	}
+	if s.Name != "" {
+		return s.Name
+	}
+	return s.Operator
 }
 
 func address(s site) string {

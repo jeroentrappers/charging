@@ -83,16 +83,21 @@ func Seeds() []store.CPO {
 			Enabled:     true,           // open data, no key required
 		},
 		{
-			// DATEX II aggregator (~20 networks). For DATEX sources OCPIBaseURL
-			// holds the feed URL. Validate element paths/auth against the real
-			// feed before enabling; the NAP token may be a URL query param.
+			// DATEX II aggregator (~20 networks, ~36k connectors). Validated
+			// against the live feed: it carries locations + connector type +
+			// power, but NO price and NO live status, and the response is ~31 MB,
+			// so poll it at most daily. The NAP token goes in the URL query param
+			// (the feed is open); set the full URL incl. ?token=… via the CLI:
+			//   chargingctl sources add ecomovement --type datex \
+			//     --url "https://api.eco-movement.com/api/nap/datexii/locations?token=…"
+			// Disabled by default: it's coverage-only (no price), so enable
+			// deliberately. OCPIBaseURL is the feed URL (token query param).
 			ID:          "ecomovement",
 			Name:        "Eco-Movement (NAP aggregator)",
 			OCPIBaseURL: "https://api.eco-movement.com/api/nap/datexii/locations",
 			SourceType:  "datex",
-			TokenEnv:    "ECOMOVEMENT_TOKEN",
 			PollCron:    "0 5 * * *",
-			StatusCron:  "*/10 * * * *",
+			StatusCron:  "30 5 * * *", // daily; no live status in this feed
 			Enabled:     false,
 		},
 	}

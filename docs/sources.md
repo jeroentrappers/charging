@@ -15,7 +15,7 @@ Last researched: 2026-06-09.
 | **Tesla Belgium** | 1 CPO (Superchargers) | OCPI **2.2.1** | `https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/` | ⚠️ needs 2.2.1 support | spolireddi@tesla.com |
 | **Monta** | 1 CPO | AFIR JSON (OCPI 2.2.1) | `https://docs.partner-api.monta.com/reference/get-afir-charge-points` | ⚠️ needs 2.2.1 / adapter | data@monta.com |
 | **Road** ✅LIVE | 1 CPO (~3,300 sites / 7,700 connectors) | OCPI 2.2.1 static JSON | `https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305/{locations,tariffs}.json` | ✅ **open, no key** — wired & ingesting (incl. prices) | roaming-dev@road.io |
-| **Eco-Movement** ⭐ | **20 networks** | **DATEX II** XML | `https://api.eco-movement.com/api/nap/datexii/locations?token=…` (token in URL, open) | ❌ needs DATEX II reader | nap@eco-movement.com |
+| **Eco-Movement** ⭐ | **~20 networks (~36k connectors)** | **DATEX II** XML (open, token in URL) | `https://api.eco-movement.com/api/nap/datexii/locations?token=…` | ✅ reader works — but **locations + power only, NO price/availability** (≈31 MB) | nap@eco-movement.com |
 | **Gireve (EVCI)** | many (roaming) | DATEX II XML | dataset `/en/dataset/evci` | ❌ needs DATEX II reader | via dataset page |
 | **Group INDIGO** | 1 CPO | DATEX II XML | dataset `/en/dataset/indigo-open-data-evcharging` | ❌ needs DATEX II reader | via dataset page |
 
@@ -33,11 +33,11 @@ commercial **OCPI** API is the richer alternative.
 - **OCPI 2.2.1** — ✅ supported: `/versions` discovery, base64 `Token` auth, and
   2.2.1 fields (`max_electric_power`, `tariff_ids`). Unlocks Tesla + Monta once
   tokens are set.
-- **DATEX II** — ✅ reader built (`internal/datex`, v3 EnergyInfrastructure) and
-  wired via `cpo.source_type='datex'`. Unlocks Eco-Movement (20 networks),
-  Gireve, INDIGO. *Element paths + auth (Bearer vs URL token) need validating
-  against the real Eco-Movement feed; static feed has no live status yet.*
-  Mandatory NAP format from 2026-04-14.
+- **DATEX II** — ✅ reader built (`internal/datex`, v3 EnergyInfrastructure),
+  wired via `cpo.source_type='datex'`, and **validated against the live
+  Eco-Movement feed** (parses 35,980 connectors). Caveat: that open feed is
+  **coverage only — no ad-hoc price, no live status** (≈31 MB), so enable it for
+  reach, not for price comparison. Mandatory NAP format from 2026-04-14.
 - **Static JSON file** (Road) — ✅ **done** (`source_type='ocpi_file'`): fetches
   `{base}/locations.json` + `{base}/tariffs.json` (bare OCPI arrays). It's **open
   (no token)** and carries real ad-hoc prices, so it's enabled by default and
