@@ -14,6 +14,7 @@ export default function App() {
   const [speed, setSpeed] = useState('dc150')
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '' })
   const [located, setLocated] = useState<[number, number] | null>(null)
+  const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
   const [geoNote, setGeoNote] = useState('')
   const [geoNonce, setGeoNonce] = useState(0) // bumps on each explicit locate -> recenter + re-follow geo
   const watchId = useRef<number | null>(null)
@@ -22,7 +23,10 @@ export default function App() {
   function startWatch() {
     if (watchId.current != null || !navigator.geolocation) return
     watchId.current = navigator.geolocation.watchPosition(
-      (p) => setLocated([p.coords.latitude, p.coords.longitude]),
+      (p) => {
+        setLocated([p.coords.latitude, p.coords.longitude])
+        setAccuracy(p.coords.accuracy)
+      },
       () => {},
       { enableHighAccuracy: true, maximumAge: 10000 },
     )
@@ -38,6 +42,7 @@ export default function App() {
     navigator.geolocation.getCurrentPosition(
       (p) => {
         setLocated([p.coords.latitude, p.coords.longitude])
+        setAccuracy(p.coords.accuracy)
         setGeoNote('')
         setGeoNonce((n) => n + 1)
         startWatch()
@@ -90,6 +95,7 @@ export default function App() {
         <FindPage
           initial={located ?? DEFAULT_CENTER}
           located={located}
+          accuracy={accuracy}
           geoNonce={geoNonce}
           sessionKey={sessionKey(need, speed)}
           filters={filters}

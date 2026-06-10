@@ -10,6 +10,7 @@ interface Viewport { lat: number; lon: number; radius: number }
 export function FindPage(props: {
   initial: [number, number]
   located: [number, number] | null // live geolocation, or null if unavailable
+  accuracy: number | null // GPS accuracy radius (m), for the geolocated pin
   geoNonce: number // bumps on each explicit "Locate me"
   sessionKey: string | undefined
   filters: Filters
@@ -38,6 +39,8 @@ export function FindPage(props: {
   const origin: [number, number] =
     manualOrigin ?? props.located ?? (vp ? [vp.lat, vp.lon] : props.initial)
   const hasFix = manualOrigin != null || props.located != null
+  // Accuracy circle only applies to the live geolocation pin (a tapped pin has none).
+  const accuracyM = manualOrigin == null && props.located != null ? props.accuracy : null
   const oLat = origin[0]
   const oLon = origin[1]
   const radius = vp?.radius ?? 5000
@@ -88,6 +91,7 @@ export function FindPage(props: {
         focusNonce={focusNonce}
         origin={origin}
         showOrigin={hasFix}
+        accuracyM={accuracyM}
         chargers={chargers}
         selectedId={selectedId}
         onSelect={select}

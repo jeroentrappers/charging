@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import { MapContainer, TileLayer, CircleMarker, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Circle, useMap, useMapEvents } from 'react-leaflet'
 import type { Charger } from './api'
 import { priceColor, priceOf } from './ui'
 
@@ -77,6 +77,7 @@ export function MapView(props: {
   focusNonce: number
   origin: [number, number] | null
   showOrigin: boolean
+  accuracyM: number | null
   chargers: Charger[]
   selectedId: number | null
   onSelect: (id: number) => void
@@ -103,7 +104,12 @@ export function MapView(props: {
             it pans with the map. Distances are measured from here. */}
         {props.showOrigin && props.origin && (
           <>
-            <CircleMarker center={props.origin} radius={20} pathOptions={{ stroke: false, fillColor: '#2563eb', fillOpacity: 0.15 }} />
+            {props.accuracyM != null && props.accuracyM > 0 ? (
+              // Real-world GPS accuracy radius (metres) — scales with zoom.
+              <Circle center={props.origin} radius={props.accuracyM} pathOptions={{ color: '#2563eb', weight: 1, opacity: 0.4, fillColor: '#2563eb', fillOpacity: 0.12 }} />
+            ) : (
+              <CircleMarker center={props.origin} radius={18} pathOptions={{ stroke: false, fillColor: '#2563eb', fillOpacity: 0.15 }} />
+            )}
             <CircleMarker center={props.origin} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }} />
           </>
         )}
