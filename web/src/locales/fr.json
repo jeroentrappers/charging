@@ -68,7 +68,8 @@
     "loadError": "Impossible de charger les bornes. Vérifiez votre connexion.",
     "emptyAvailable": "Aucune borne libre à proximité. Désactivez « Disponible maintenant ».",
     "empty": "Aucune borne trouvée à proximité.",
-    "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer. Données : transportdata.be / AFIR."
+    "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer. Données : transportdata.be / AFIR.",
+    "alongRoute": "le long de votre trajet"
   },
   "avail": {
     "free": "Libre",
@@ -224,5 +225,11 @@
   "confidence": {
     "direct": "direct opérateur",
     "aggregator": "agrégé"
+  },
+  "trip": {
+    "addDestination": "Ajouter une destination…",
+    "distance": "{{km}} km · {{min}} min",
+    "range": "autonomie ~{{km}} km",
+    "clear": "Effacer la destination"
   }
 }

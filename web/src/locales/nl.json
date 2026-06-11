@@ -68,7 +68,8 @@
     "loadError": "Kon laadpunten niet laden. Controleer je verbinding.",
     "emptyAvailable": "Geen vrije laadpunten in de buurt. Schakel \"Nu beschikbaar\" uit.",
     "empty": "Geen laadpunten in de buurt gevonden.",
-    "caveat": "Drive-up (ad-hoc) prijzen — je laadpas kan afwijken. Bron: transportdata.be / AFIR."
+    "caveat": "Drive-up (ad-hoc) prijzen — je laadpas kan afwijken. Bron: transportdata.be / AFIR.",
+    "alongRoute": "langs je route"
   },
   "avail": {
     "free": "Nu vrij",
@@ -224,5 +225,11 @@
   "confidence": {
     "direct": "rechtstreeks van uitbater",
     "aggregator": "geaggregeerd"
+  },
+  "trip": {
+    "addDestination": "Voeg een bestemming toe…",
+    "distance": "{{km}} km · {{min}} min",
+    "range": "bereik ~{{km}} km",
+    "clear": "Bestemming wissen"
   }
 }

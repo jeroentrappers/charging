@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, type Charger } from './api'
+import { api, type Charger, type RouteGeometry } from './api'
 import { MapView } from './MapView'
 import { rankChargers } from './pricing'
+import { geocode, type Place } from './geocode'
 import type { NavState } from './url'
 import type { Settings } from './settings'
 import { AvailBadge, availOf, eur, km, plugLabel, priceOf, type Filters } from './ui'
@@ -46,6 +47,11 @@ export function FindPage(props: {
   const [view, setView] = useState<{ to: [number, number]; zoom?: number } | null>(null)
   const [viewNonce, setViewNonce] = useState(0)
   const [expanded, setExpanded] = useState(false)
+  // Trip / corridor mode: a destination turns the list into "chargers along the
+  // way", ranked by price + deviation from the route.
+  const [tripTo, setTripTo] = useState<Place | null>(null)
+  const [route, setRoute] = useState<RouteGeometry | null>(null)
+  const [routeNonce, setRouteNonce] = useState(0)
 
   // Set synchronously when a detail is (logically) open, so the map-move handler
   // never writes a /@center URL over a /charger/{id} URL during a recenter.
@@ -81,29 +87,50 @@ export function FindPage(props: {
   // or filters change. Pricing/detour/ranking happens client-side below, so
   // tweaking the car / charging profile / detour never refetches.
   useEffect(() => {
-    const t = setTimeout(async () => {
+    const handle = setTimeout(async () => {
       setLoading(true)
       setError(false)
+      const f = props.filters
       try {
-        const r = await api.nearby({
-          lat: oLat,
-          lon: oLon,
-          radius,
-          available: props.filters.available,
-          include_private: props.filters.includePrivate,
-          min_power: props.filters.minPower || undefined,
-          plug: props.filters.plug || undefined,
-          limit: CANDIDATE_POOL,
-        })
-        setRaw(r.results)
+        if (tripTo) {
+          // Corridor search: chargers along the route from origin to destination.
+          const r = await api.alongRoute({
+            from_lat: oLat,
+            from_lon: oLon,
+            to_lat: tripTo.lat,
+            to_lon: tripTo.lon,
+            buffer: 4000,
+            available: f.available,
+            include_private: f.includePrivate,
+            min_power: f.minPower || undefined,
+            plug: f.plug || undefined,
+            limit: 80,
+          })
+          setRaw(r.results)
+          setRoute(r.route)
+          setRouteNonce((n) => n + 1)
+        } else {
+          const r = await api.nearby({
+            lat: oLat,
+            lon: oLon,
+            radius,
+            available: f.available,
+            include_private: f.includePrivate,
+            min_power: f.minPower || undefined,
+            plug: f.plug || undefined,
+            limit: CANDIDATE_POOL,
+          })
+          setRaw(r.results)
+          setRoute(null)
+        }
       } catch {
         setError(true)
       } finally {
         setLoading(false)
       }
     }, 300)
-    return () => clearTimeout(t)
-  }, [oLat, oLon, radius, props.filters])
+    return () => clearTimeout(handle)
+  }, [oLat, oLon, radius, props.filters, tripTo])
 
   // Price + detour + rank entirely on the client; re-ranks instantly when the
   // car / charging profile / detour settings change (no network round-trip).
@@ -203,15 +230,19 @@ export function FindPage(props: {
         onSelect={select}
         onViewport={onViewport}
         onPick={(lat, lon) => setManualOrigin([lat, lon])}
+        route={route ? route.points.map((p) => [p.lat, p.lon] as [number, number]) : null}
+        dest={tripTo ? [tripTo.lat, tripTo.lon] : null}
+        routeNonce={routeNonce}
       />
 
       {!hasFix && <div className="map-hint">{t('find.tapHint')}</div>}
 
       <div className={`sheet ${expanded ? 'expanded' : ''}`}>
         <div className="handle"><button aria-label="toggle list" onClick={() => setExpanded((e) => !e)} /></div>
+        <TripBar dest={tripTo} route={route} settings={props.settings} onSet={setTripTo} onClear={() => setTripTo(null)} />
         <div className="sheet-head">
           <h2>{loading ? t('find.searching') : t('find.chargers', { count: chargers.length })}</h2>
-          <span className="muted">{t('find.cheapestFirst')}</span>
+          <span className="muted">{tripTo ? t('find.alongRoute') : t('find.cheapestFirst')}</span>
         </div>
         <div className="list">
           {error && <div className="state">{t('find.loadError')}</div>}
@@ -243,4 +274,81 @@ export function FindPage(props: {
       )}
     </div>
   )
+}
+
+// Trip destination search + summary. When a destination is set, the list shows
+// chargers along the route; the summary shows trip distance/time and whether it
+// fits the car's range.
+function TripBar(props: {
+  dest: Place | null
+  route: RouteGeometry | null
+  settings: Settings
+  onSet: (p: Place) => void
+  onClear: () => void
+}) {
+  const { t } = useTranslation()
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<Place[]>([])
+
+  useEffect(() => {
+    if (props.dest || q.trim().length < 3) {
+      setResults([])
+      return
+    }
+    const ctrl = new AbortController()
+    const h = setTimeout(() => {
+      geocode(q, ctrl.signal).then(setResults).catch(() => {})
+    }, 350)
+    return () => {
+      clearTimeout(h)
+      ctrl.abort()
+    }
+  }, [q, props.dest])
+
+  if (props.dest) {
+    const r = props.route
+    const tripKm = r ? Math.round(r.distance_m / 1000) : null
+    const tripMin = r ? Math.round(r.duration_s / 60) : null
+    const { usableKWh, consumptionKWh100 } = props.settings.car
+    const rangeKm = Math.round((usableKWh / consumptionKWh100) * 100)
+    const within = tripKm != null ? tripKm <= rangeKm : true
+    return (
+      <div className="tripbar set">
+        <span className="trip-dest">🏁 {shortPlace(props.dest.label)}</span>
+        {tripKm != null && (
+          <span className="trip-stats">
+            {t('trip.distance', { km: tripKm, min: tripMin })} ·{' '}
+            <span className={within ? 'ok' : 'warn'}>{t('trip.range', { km: rangeKm })} {within ? '✓' : '⚠'}</span>
+          </span>
+        )}
+        <button className="trip-clear" onClick={props.onClear} aria-label={t('trip.clear')}>✕</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="tripbar">
+      <input
+        className="trip-input"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t('trip.addDestination')}
+        aria-label={t('trip.addDestination')}
+      />
+      {results.length > 0 && (
+        <ul className="trip-results">
+          {results.map((r) => (
+            <li key={`${r.lat},${r.lon}`}>
+              <button onClick={() => { props.onSet(r); setQ(''); setResults([]) }}>{r.label}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// Trim a verbose Nominatim label to its first couple of parts.
+function shortPlace(label: string): string {
+  return label.split(',').slice(0, 2).join(',').trim()
 }

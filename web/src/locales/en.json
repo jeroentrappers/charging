@@ -68,7 +68,8 @@
     "loadError": "Couldn't load chargers. Check your connection.",
     "emptyAvailable": "No chargers free right now nearby. Try turning off \"Available now\".",
     "empty": "No chargers found nearby.",
-    "caveat": "Drive-up (ad-hoc) prices — your charge card may differ. Data: transportdata.be / AFIR."
+    "caveat": "Drive-up (ad-hoc) prices — your charge card may differ. Data: transportdata.be / AFIR.",
+    "alongRoute": "along your route"
   },
   "avail": {
     "free": "Free now",
@@ -224,5 +225,11 @@
   "confidence": {
     "direct": "operator-direct",
     "aggregator": "aggregated"
+  },
+  "trip": {
+    "addDestination": "Add a destination…",
+    "distance": "{{km}} km · {{min}} min",
+    "range": "range ~{{km}} km",
+    "clear": "Clear destination"
   }
 }
