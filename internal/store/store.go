@@ -408,8 +408,8 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
 		       ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
 		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
-		       CASE WHEN $2 = 0 AND $3 = 0 THEN 0
-		            ELSE ST_Distance(c.geom, ST_SetSRID(ST_MakePoint($3,$2),4326)::geography) END AS dist,
+		       CASE WHEN $2::float8 = 0 AND $3::float8 = 0 THEN 0
+		            ELSE ST_Distance(c.geom, ST_SetSRID(ST_MakePoint($3::float8, $2::float8),4326)::geography) END AS dist,
 		       COALESCE(st.available_count,0),
 		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
 		       st.updated_at, (NOT %s) AS stale, tv.price_components
