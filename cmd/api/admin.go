@@ -23,6 +23,7 @@ func (s *server) registerAdmin(api huma.API) {
 			Tags:        []string{"Admin"},
 			Security:    []map[string][]string{{"adminToken": {}}},
 			Middlewares: huma.Middlewares{s.adminGuard(api)},
+			Hidden:      true, // control plane: functional but excluded from the public OpenAPI
 		}
 	}
 

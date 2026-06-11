@@ -79,6 +79,7 @@ func (s *server) registerReportsAdmin(api huma.API, guard func(huma.Context, fun
 		OperationID: "admin-clear-reports", Method: http.MethodDelete, Path: "/admin/chargers/{id}/reports",
 		Summary: "Clear all community reports for a charger", Tags: []string{"Admin"},
 		Security: []map[string][]string{{"adminToken": {}}}, Middlewares: huma.Middlewares{guard},
+		Hidden: true, // control plane: excluded from the public OpenAPI
 	}, s.opAdminClearReports)
 }
 
