@@ -137,6 +137,27 @@ func (e *Engine) recordRun(ctx context.Context, cpoID, kind string, fn func() (r
 	return err
 }
 
+// IngestOCPI upserts a set of connectors and applies SCD2 tariff change
+// detection — the shared path for pulled feeds and OCPI push receivers. Returns
+// the number of tariff versions recorded.
+func (e *Engine) IngestOCPI(ctx context.Context, conns []model.Connector, tariffs map[string]model.Tariff) (int, error) {
+	changes := 0
+	for _, conn := range conns {
+		id, err := e.upsertConnector(ctx, conn)
+		if err != nil {
+			return changes, err
+		}
+		ch, err := e.processTariff(ctx, id, conn, tariffs)
+		if err != nil {
+			return changes, err
+		}
+		if ch {
+			changes++
+		}
+	}
+	return changes, nil
+}
+
 // upsertConnector refreshes a connector's identity and current availability.
 func (e *Engine) upsertConnector(ctx context.Context, conn model.Connector) (int64, error) {
 	id, err := e.Store.UpsertCharger(ctx, conn)

@@ -30,6 +30,14 @@ type Config struct {
 	// the OpenAPI server URL and the docs' spec link. Empty = mounted at root.
 	APIBasePath string
 
+	// Public origin+prefix the API is reachable at (e.g. https://host/api), used
+	// to build absolute OCPI URLs in the handshake. Empty = derive from request.
+	PublicURL string
+	// Our OCPI eMSP identity for the credentials handshake.
+	OCPICountry   string
+	OCPIPartyID   string
+	OCPIPartyName string
+
 	// Bulk dataset export (open static dumps served at /export). Empty dir
 	// disables it.
 	ExportDir        string
@@ -49,6 +57,10 @@ func Load() Config {
 		CORSOrigins:            env("CORS_ORIGINS", "*"),
 		AdminToken:             os.Getenv("ADMIN_TOKEN"),
 		APIBasePath:            env("API_BASE_PATH", ""),
+		PublicURL:              env("PUBLIC_URL", ""),
+		OCPICountry:            env("OCPI_COUNTRY", "BE"),
+		OCPIPartyID:            env("OCPI_PARTY_ID", "APM"),
+		OCPIPartyName:          env("OCPI_PARTY_NAME", "Appmire Charging"),
 		ExportDir:              env("EXPORT_DIR", "./export"),
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),

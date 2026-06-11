@@ -38,6 +38,7 @@ func (s *server) registerAdmin(api huma.API) {
 	huma.Register(api, runOp, s.opAdminRun)
 
 	huma.Register(api, op("admin-list-runs", http.MethodGet, "/admin/runs", "Recent ingestion runs"), s.opAdminRuns)
+	huma.Register(api, op("admin-ocpi-register", http.MethodPost, "/admin/sources/{id}/ocpi/register", "Run the OCPI credentials handshake with a CPO"), s.opOCPIRegister)
 }
 
 // adminGuard gates the control plane with a static bearer token. If ADMIN_TOKEN

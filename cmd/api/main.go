@@ -26,6 +26,7 @@ import (
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
 	"github.com/appmire/charging/internal/monta"
+	"github.com/appmire/charging/internal/ocpi"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
 )
@@ -44,6 +45,8 @@ type server struct {
 	engine          *ingest.Engine
 	live            *liveService
 	reportLimiter   *ipLimiter
+	publicURL       string
+	ocpiParty       ocpi.Party
 }
 
 func main() {
@@ -76,6 +79,8 @@ func main() {
 		adminToken:      cfg.AdminToken,
 		exportDir:       cfg.ExportDir,
 		apiBasePath:     cfg.APIBasePath,
+		publicURL:       cfg.PublicURL,
+		ocpiParty:       ocpi.Party{CountryCode: cfg.OCPICountry, PartyID: cfg.OCPIPartyID, Name: cfg.OCPIPartyName},
 	}
 	s.engine = ingest.NewEngine(st, log)
 	s.engine.Vehicle = s.vehicle
@@ -161,6 +166,9 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	s.registerAdmin(api)
 
 	r.Get("/docs", scalarDocs(basePath))
+
+	// OCPI eMSP: credentials-handshake + push-receiver endpoints (own token auth).
+	r.Mount("/ocpi", s.ocpiHandler())
 
 	// Open bulk dataset dumps (static files regenerated on a schedule). Served
 	// with gzip + short caching so a CDN can absorb "give me everything" load.
