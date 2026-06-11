@@ -92,10 +92,22 @@ not strictly the nearest or the raw-cheapest:
   re-includes them).
 - **Community reports** corroborated by ≥2 drivers (out-of-service / not-public /
   doesn't-exist) sink a charger to the bottom (never hidden).
+- **Charge cards (MSP)**: pick your roaming card(s) and the price becomes the
+  cheapest of ad-hoc vs your card's blended rate (`web/src/msps.ts`). Rates are
+  **estimated** and labelled `≈` — a client-only overlay until real per-CPO MSP
+  data exists.
+- **Car picker**: choose your model (`web/src/cars.ts`) to fill battery +
+  consumption and the accepted plugs (powers the "Fits my car" filter).
+- **Trip / corridor mode**: add a destination and the list becomes "chargers
+  along the route", ranked by price + deviation, with a range check
+  (`/chargers/along-route`, self-hosted OSRM).
 
 Pricing is computed **on the client** (`web/src/pricing.ts`), a faithful port of
-`internal/pricing` — so changing the car/profile/detour re-ranks instantly with
-no network call. **`internal/pricing` is canonical; keep `pricing.ts` in sync.**
+`internal/pricing` — so changing the car/profile/detour/card re-ranks instantly
+with no network call. **`internal/pricing` is canonical; keep `pricing.ts` in
+sync** (membership pricing is a deliberate client-only overlay). The map shows
+each result as a **color-coded price pin**; the charger detail shows price
+**freshness + source confidence** (operator-direct vs aggregated).
 
 ## Key design decisions
 
@@ -246,6 +258,16 @@ make prod-up           # build + start; migrations run automatically
 `PUBLIC_URL` (e.g. `https://charging.appmire.be/api`) makes the OCPI endpoints'
 advertised URLs absolute. `WEB_API_BASE` is the API origin the **browser**
 reaches; it's injected into the web container at runtime (envsubst → `/config.js`).
+
+**Corridor search (OSRM)** is an optional overlay. Add `-f docker-compose.osrm.yml`
+to the compose command; run the one-time data prep first (downloads + processes
+the Belgium extract into `./osrm-data`), then start it:
+
+```bash
+COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.osrm.yml"
+./scripts/osrm-prep.sh          # ~minutes; needs the COMPOSE env above
+$COMPOSE up -d osrm             # sets OSRM_URL on the api → enables /chargers/along-route
+```
 
 ## Testing
 

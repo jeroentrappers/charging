@@ -98,12 +98,26 @@ Everything below optimizes for the primary job; the rest are secondary views.
   the ad-hoc caveat; "availability as of" timestamps.
 - **Empty-before-tokens reality**: until a real source is live the map is empty
   (or demo-seeded). Ship a friendly empty state and the demo seed for showcasing.
-- **Settings & display prefs**: a Settings panel (gear icon) holds the car
-  parameters + detour weighting (localStorage, drives the client-side ranking)
-  and a **Display** section — language (en/nl/fr) and a Light/Dark/System theme.
-  Theme is persisted (`charging.theme`), follows the OS live in System mode, and
-  is applied before first paint by an inline script in `index.html` (no flash);
-  dark mode also darkens the OSM tiles via a CSS filter on the tile pane.
+- **Settings & display prefs**: a Settings panel (gear icon) holds the **car
+  picker** (`cars.ts` → fills battery/consumption/plugs/max powers), **charge
+  cards** (`msps.ts`, estimated rates), detour weighting (all localStorage,
+  driving the client-side ranking) and a **Display** section — language (en/nl/fr)
+  and a Light/Dark/System theme. Theme is persisted (`charging.theme`), follows
+  the OS live in System mode, and is applied before first paint by an inline
+  script in `index.html` (no flash); dark mode also darkens the OSM tiles via a
+  CSS filter on the tile pane.
+- **Map price pins**: each result is a color-coded €-price pill (green→red),
+  selected/avoid/stale styled — the cheapest pop at a glance.
+- **Filters**: available-now, min power, plug, include-private, and **"Fits my
+  car"** (plug-compat from the picked car).
+- **Trip / corridor mode**: a destination (OSM Nominatim geocode) turns the list
+  into chargers along the driving route (`/chargers/along-route`, self-hosted
+  OSRM), ranked by price + deviation, with a range check; the route + 🏁 draw on
+  the map.
+- **Charge cards (MSP)**: pick roaming card(s) → price = cheapest of ad-hoc vs
+  the card's blended rate, shown `≈ {card}` (estimated). Client-only overlay.
+- **Price provenance**: the detail shows "Price confirmed {ago} · via {source}"
+  with an operator-direct / aggregated confidence badge.
 
 ## Proposed build (v1 scope)
 
