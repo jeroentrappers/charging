@@ -55,6 +55,7 @@ func Seeds() []store.CPO {
 			OCPIBaseURL: "https://ocpi.energyvision.be/cpo/2.1.1/",
 			OCPIVersion: "2.1.1",
 			TokenEnv:    "ENERGYVISION_TOKEN",
+			Country:     "BE",
 			PollCron:    "0 4 * * *",   // daily 04:00; price changes are rare
 			StatusCron:  "*/3 * * * *", // availability every 3 min
 			Enabled:     false,         // ready for the current client; needs a token
@@ -66,6 +67,7 @@ func Seeds() []store.CPO {
 			OCPIBaseURL: "https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/",
 			OCPIVersion: "2.2.1",
 			TokenEnv:    "TESLA_TOKEN",
+			Country:     "BE",
 			PollCron:    "0 4 * * *",
 			StatusCron:  "*/5 * * * *", // Tesla refreshes every 5 min
 			Enabled:     false,
@@ -81,6 +83,7 @@ func Seeds() []store.CPO {
 			OCPIBaseURL: "https://public-api.monta.com",
 			SourceType:  "monta",
 			TokenEnv:    "MONTA_CREDS",
+			Country:     "BE",
 			PollCron:    "0 3 * * *",
 			StatusCron:  "0 3 * * *", // per-EVSE + rate-limited -> daily
 			// Enabled, but only actually polled/crawled once MONTA_CREDS is set
@@ -95,6 +98,7 @@ func Seeds() []store.CPO {
 			OCPIBaseURL: "https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305",
 			OCPIVersion: "2.2.1",
 			SourceType:  "ocpi_file",
+			Country:     "BE",
 			PollCron:    "0 5 * * *",    // daily price refresh
 			StatusCron:  "*/15 * * * *", // availability every 15 min (5 MB file)
 			Enabled:     true,           // open data, no key required
@@ -109,6 +113,7 @@ func Seeds() []store.CPO {
 			OCPIBaseURL: "https://opendata.ndw.nu/charging_point_locations_ocpi.json.gz",
 			OCPIVersion: "2.2.1",
 			SourceType:  "ocpi_file_gz",
+			Country:     "NL",
 			PollCron:    "0 4 * * *", // daily price refresh
 			StatusCron:  "0 * * * *", // hourly availability (18 MB file → don't over-poll)
 			Enabled:     true,        // open data, no key required
@@ -122,6 +127,7 @@ func Seeds() []store.CPO {
 			Name:        "Bundesnetzagentur (DE)",
 			OCPIBaseURL: "https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/Ladesaeulenkarte/start.html",
 			SourceType:  "bnetza",
+			Country:     "DE",
 			PollCron:    "0 5 2 * *", // monthly (2nd, 05:00) — registry refreshes ~monthly
 			StatusCron:  "0 5 2 * *", // no live status; keep it monthly too
 			Enabled:     true,
@@ -134,6 +140,7 @@ func Seeds() []store.CPO {
 			Name:        "transport.data.gouv.fr (FR)",
 			OCPIBaseURL: "https://www.data.gouv.fr/api/1/datasets/r/7eee8f09-5d1b-4f48-a304-5e99e8da1e26",
 			SourceType:  "irve",
+			Country:     "FR",
 			PollCron:    "0 6 2 * *", // monthly
 			StatusCron:  "0 6 2 * *",
 			Enabled:     true,
@@ -152,6 +159,7 @@ func Seeds() []store.CPO {
 			Name:        "Eco-Movement (NAP aggregator)",
 			OCPIBaseURL: "https://api.eco-movement.com/api/nap/datexii/locations",
 			SourceType:  "datex",
+			Country:     "BE",
 			PollCron:    "0 5 * * *",
 			StatusCron:  "30 5 * * *", // daily; no live status in this feed
 			Enabled:     false,

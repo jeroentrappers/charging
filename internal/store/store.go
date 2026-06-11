@@ -46,13 +46,14 @@ type CPO struct {
 	StatusCron  string // availability poll schedule
 	SourceType  string // "ocpi" (default) | "datex"
 	Enabled     bool
+	Country     string // ISO 3166-1 alpha-2 country of this CPO's chargers (e.g. "BE")
 }
 
-const cpoCols = `id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), COALESCE(token,''), poll_cron, status_cron, source_type, enabled`
+const cpoCols = `id, name, ocpi_base_url, ocpi_version, COALESCE(token_env,''), COALESCE(token,''), poll_cron, status_cron, source_type, enabled, country`
 
 func scanCPO(row interface{ Scan(...any) error }) (CPO, error) {
 	var c CPO
-	err := row.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.Token, &c.PollCron, &c.StatusCron, &c.SourceType, &c.Enabled)
+	err := row.Scan(&c.ID, &c.Name, &c.OCPIBaseURL, &c.OCPIVersion, &c.TokenEnv, &c.Token, &c.PollCron, &c.StatusCron, &c.SourceType, &c.Enabled, &c.Country)
 	return c, err
 }
 
@@ -61,10 +62,10 @@ func scanCPO(row interface{ Scan(...any) error }) (CPO, error) {
 func (s *Store) SeedCPO(ctx context.Context, c CPO) error {
 	c.defaults()
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled, country)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (id) DO NOTHING`,
-		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.SourceType, c.Enabled)
+		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.SourceType, c.Enabled, c.Country)
 	return err
 }
 
@@ -73,14 +74,15 @@ func (s *Store) SeedCPO(ctx context.Context, c CPO) error {
 func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
 	c.defaults()
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		INSERT INTO cpo (id, name, ocpi_base_url, ocpi_version, token_env, poll_cron, status_cron, source_type, enabled, country)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, ocpi_base_url=EXCLUDED.ocpi_base_url,
 			ocpi_version=EXCLUDED.ocpi_version, token_env=EXCLUDED.token_env,
 			poll_cron=EXCLUDED.poll_cron, status_cron=EXCLUDED.status_cron,
-			source_type=EXCLUDED.source_type, enabled=EXCLUDED.enabled`,
-		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.SourceType, c.Enabled)
+			source_type=EXCLUDED.source_type, enabled=EXCLUDED.enabled,
+			country=EXCLUDED.country`,
+		c.ID, c.Name, c.OCPIBaseURL, c.OCPIVersion, c.TokenEnv, c.PollCron, c.StatusCron, c.SourceType, c.Enabled, c.Country)
 	return err
 }
 

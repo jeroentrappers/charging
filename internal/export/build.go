@@ -134,7 +134,7 @@ func BuildOCPI(rows []store.ExportCharger, now time.Time) ([]ocpi.Location, []oc
 			coord := ocpi.GeoLocation{Latitude: ftoa(r.Lat), Longitude: ftoa(r.Lon)}
 			newLoc := &ocpi.Location{
 				ID: key, Type: "ON_STREET", Name: r.Name,
-				Address: r.Address, City: r.City, PostalCode: r.PostalCode, Country: "BEL",
+				Address: r.Address, City: r.City, PostalCode: r.PostalCode, Country: countryAlpha3(r.Country),
 				Coordinates: coord, LastUpdated: now,
 			}
 			if r.CPOID != "" {
@@ -200,6 +200,23 @@ func toOCPITariff(id string, t model.Tariff, lastUpdated *time.Time, now time.Ti
 		upd = *lastUpdated
 	}
 	return ocpi.Tariff{ID: id, Currency: t.Currency, Elements: els, LastUpdated: upd}
+}
+
+// countryAlpha3 maps an ISO 3166-1 alpha-2 country code (as stored on the CPO)
+// to the alpha-3 code OCPI Locations use. Unknown/empty -> "".
+func countryAlpha3(c string) string {
+	switch c {
+	case "BE":
+		return "BEL"
+	case "NL":
+		return "NLD"
+	case "DE":
+		return "DEU"
+	case "FR":
+		return "FRA"
+	default:
+		return ""
+	}
 }
 
 func powerType(currentType string) string {

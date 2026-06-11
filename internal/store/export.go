@@ -11,6 +11,7 @@ import (
 type ExportCharger struct {
 	ID             int64              `json:"id"`
 	CPOID          string             `json:"cpo_id"`
+	Country        string             `json:"country"`
 	EVSEUID        string             `json:"evse_uid"`
 	ConnectorID    string             `json:"connector_id"`
 	Name           string             `json:"name"`
@@ -68,6 +69,46 @@ func (s *Store) ExportAll(ctx context.Context) ([]ExportCharger, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// ExportStream streams every charger (with current tariff + status + source
+// country) to fn, ordered so each region's connectors are contiguous. No slice.
+func (s *Store) ExportStream(ctx context.Context, fn func(ExportCharger) error) error {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT c.id, c.cpo_id, COALESCE(p.country,''), c.evse_uid, c.connector_id,
+		       COALESCE(c.name,''), COALESCE(c.address,''),
+		       COALESCE(c.postal_code,''), COALESCE(c.city,''),
+		       ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
+		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
+		       COALESCE(st.status,''), COALESCE(st.available_count,0), st.updated_at,
+		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb),
+		       COALESCE(tv.currency,'EUR'), c.private, tv.price_components
+		FROM charger c
+		LEFT JOIN charger_status st ON st.charger_id = c.id
+		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
+		LEFT JOIN cpo p ON p.id = c.cpo_id
+		ORDER BY p.country, c.postal_code, c.cpo_id, c.evse_uid, c.connector_id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var e ExportCharger
+		if err := rows.Scan(
+			&e.ID, &e.CPOID, &e.Country, &e.EVSEUID, &e.ConnectorID,
+			&e.Name, &e.Address, &e.PostalCode, &e.City,
+			&e.Lat, &e.Lon, &e.PowerKW, &e.PlugType, &e.CurrentType,
+			&e.Status, &e.AvailableCount, &e.StatusAt,
+			&e.PriceEUR, &e.Prices, &e.Currency, &e.Private, &e.Components,
+		); err != nil {
+			return err
+		}
+		if err := fn(e); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 // AvailabilitySnapshot is the small, frequently-rotated availability delta.
