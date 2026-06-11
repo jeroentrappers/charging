@@ -152,8 +152,9 @@ func (s *server) routes(corsOrigins string) http.Handler {
 		"user-defined sessions), read a charger's versioned price history, and browse " +
 		"market statistics. Built on open AFIR/transportdata.be data.\n\n" +
 		"The full dataset is also published as open, periodically-rotated static " +
-		"dumps (NDJSON, GeoJSON, OCPI Locations+Tariffs) under /export — see " +
-		"/export/index.json for the manifest, sizes, checksums and licence."
+		"dumps (NDJSON, GeoJSON, OCPI Locations+Tariffs), split by region — " +
+		"[**browse the files**](" + basePath + "/export/) (human-readable) or see " +
+		"[index.json](" + basePath + "/export/index.json) for the manifest, sizes, checksums and licence."
 	cfg.DocsPath = "" // served below with Scalar instead of the bundled renderer
 	if basePath != "" {
 		cfg.OpenAPI.Servers = []*huma.Server{{URL: basePath, Description: "Public base path"}}

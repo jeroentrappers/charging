@@ -360,10 +360,16 @@ func (s *Snapshotter) writeManifestLocked() error {
 	m.License = datasetLicense
 	m.Attribution = datasetAttribution
 	// Stable ordering is handled by the map in JSON output; copy is fine.
-	_, err := s.writeAtomicNoManifest("index.json", func(w io.Writer) error {
+	if _, err := s.writeAtomicNoManifest("index.json", func(w io.Writer) error {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(m)
+	}); err != nil {
+		return err
+	}
+	// Human-readable companion served at /export/ (index.html).
+	_, err := s.writeAtomicNoManifest("index.html", func(w io.Writer) error {
+		return RenderIndexHTML(w, m)
 	})
 	return err
 }
@@ -383,7 +389,7 @@ func (c *countWriter) Write(p []byte) (int, error) { c.n += int64(len(p)); retur
 // geojson/<R>.geojson, ocpi/<R>-{locations,tariffs}.json) are dynamic and
 // enumerated via the manifest's Regions + Files instead.
 func FileNames() []string {
-	names := []string{"index.json", "availability.json"}
+	names := []string{"index.html", "index.json", "availability.json"}
 	sort.Strings(names)
 	return names
 }
