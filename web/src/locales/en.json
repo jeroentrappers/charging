@@ -173,7 +173,10 @@
     "detourEnable": "Factor in the detour to get there",
     "refPrice": "Energy price for the detour (€/kWh)",
     "valuePerH": "Value of your time (€/h)",
-    "note": "Saved in your browser. The detour adds the round-trip's extra energy and time to the ranking."
+    "note": "Saved in your browser. The detour adds the round-trip's extra energy and time to the ranking.",
+    "display": "Display",
+    "language": "Language",
+    "theme": "Theme"
   },
   "lang": {
     "label": "Language"
@@ -207,5 +210,10 @@
       "does_not_exist": "Doesn't exist",
       "confirmed_ok": "Confirmed OK"
     }
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
   }
 }

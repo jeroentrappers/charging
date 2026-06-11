@@ -7,6 +7,15 @@
     <meta name="theme-color" content="#15803d" />
     <meta name="description" content="Find the cheapest available public EV charger near you." />
     <title>Charging — cheapest EV charger nearby</title>
+    <!-- Apply the saved theme before first paint, to avoid a light flash. -->
+    <script>
+      try {
+        var t = localStorage.getItem('charging.theme') || 'system'
+        var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0b1220')
+      } catch (e) {}
+    </script>
     <!-- Runtime config, generated from env at container startup (envsubst). -->
     <script src="/config.js"></script>
   </head>

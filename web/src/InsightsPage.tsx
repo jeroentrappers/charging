@@ -135,11 +135,11 @@ export function InsightsPage() {
           <div className="section-head">
             <h3>{t('insights.areaTitle')}</h3>
             <div className="toggles">
-              <div className="seg">
+              <div className="pills">
                 <button className={scope === 'city' ? 'on' : ''} onClick={() => setScope('city')}>{t('insights.byCity')}</button>
                 <button className={scope === 'postal' ? 'on' : ''} onClick={() => setScope('postal')}>{t('insights.byPostal')}</button>
               </div>
-              <div className="seg">
+              <div className="pills">
                 <button className={order === 'cheapest' ? 'on' : ''} onClick={() => setOrder('cheapest')}>{t('insights.cheapest')}</button>
                 <button className={order === 'priciest' ? 'on' : ''} onClick={() => setOrder('priciest')}>{t('insights.priciest')}</button>
               </div>

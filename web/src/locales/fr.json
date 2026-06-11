@@ -173,7 +173,10 @@
     "detourEnable": "Tenir compte du détour pour y aller",
     "refPrice": "Prix de l'énergie pour le détour (€/kWh)",
     "valuePerH": "Valeur de votre temps (€/h)",
-    "note": "Enregistré dans votre navigateur. Le détour ajoute au classement l'énergie et le temps de l'aller-retour."
+    "note": "Enregistré dans votre navigateur. Le détour ajoute au classement l'énergie et le temps de l'aller-retour.",
+    "display": "Affichage",
+    "language": "Langue",
+    "theme": "Thème"
   },
   "lang": {
     "label": "Langue"
@@ -207,5 +210,10 @@
       "does_not_exist": "N'existe pas",
       "confirmed_ok": "Confirmé OK"
     }
+  },
+  "theme": {
+    "light": "Clair",
+    "dark": "Sombre",
+    "system": "Système"
   }
 }

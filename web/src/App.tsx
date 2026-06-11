@@ -2,9 +2,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FindPage } from './FindPage'
 import { API_BASE, type Charger } from './api'
-import { LANGS } from './i18n'
 import { buildPath, parseUrl, type NavState } from './url'
 import { useSettings } from './settings'
+import { useTheme } from './theme'
 import { ProfileBar, SettingsPanel, FilterBar, type Filters } from './ui'
 
 const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
@@ -16,7 +16,7 @@ const InsightsPage = lazy(() => import('./InsightsPage').then((m) => ({ default:
 const DEFAULT_CENTER: [number, number] = [51.0543, 3.725]
 
 export default function App() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
 
   // URL-driven navigation. `route` mirrors the address bar; `routeNonce` bumps
   // only on load + back/forward (popstate), so FindPage applies the URL then but
@@ -51,6 +51,7 @@ export default function App() {
   const onCloseCharger = () => navigate({ tab: 'find', center: route.center }, true)
 
   const [settings, patchSettings] = useSettings()
+  const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '', includePrivate: false })
   const [located, setLocated] = useState<[number, number] | null>(null)
@@ -114,13 +115,6 @@ export default function App() {
           <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>{t('nav.find')}</button>
           <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
         </nav>
-        <label className="lang" aria-label={t('lang.label')}>
-          <select value={i18n.resolvedLanguage} onChange={(e) => i18n.changeLanguage(e.target.value)}>
-            {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
-        </label>
         <div className="header-links">
           <button className="hlink hlink-btn" onClick={() => setShowSettings(true)} aria-label={t('settings.title')} title={t('settings.title')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -171,7 +165,15 @@ export default function App() {
         <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
       </nav>
 
-      {showSettings && <SettingsPanel settings={settings} onChange={patchSettings} onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsPanel
+          settings={settings}
+          onChange={patchSettings}
+          theme={theme}
+          onTheme={setTheme}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   )
 }

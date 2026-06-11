@@ -173,7 +173,10 @@
     "detourEnable": "Reken de omweg erheen mee",
     "refPrice": "Energieprijs voor de omweg (€/kWh)",
     "valuePerH": "Waarde van je tijd (€/u)",
-    "note": "Opgeslagen in je browser. De omweg telt de extra energie en tijd van de heen-en-terugrit mee in de rangschikking."
+    "note": "Opgeslagen in je browser. De omweg telt de extra energie en tijd van de heen-en-terugrit mee in de rangschikking.",
+    "display": "Weergave",
+    "language": "Taal",
+    "theme": "Thema"
   },
   "lang": {
     "label": "Taal"
@@ -207,5 +210,10 @@
       "does_not_exist": "Bestaat niet",
       "confirmed_ok": "Bevestigd OK"
     }
+  },
+  "theme": {
+    "light": "Licht",
+    "dark": "Donker",
+    "system": "Systeem"
   }
 }

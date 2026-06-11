@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { Charger } from './api'
 import { energyPresets, type Settings } from './settings'
+import { LANGS } from './i18n'
+import type { Theme } from './theme'
 
 export function eur(n: number | null | undefined): string {
   return n == null ? '—' : '€' + n.toFixed(2)
@@ -216,9 +218,18 @@ export function ProfileBar(props: {
   )
 }
 
-// SettingsPanel edits the persisted car parameters and detour weighting.
-export function SettingsPanel(props: { settings: Settings; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
-  const { t } = useTranslation()
+const THEMES: Theme[] = ['light', 'dark', 'system']
+
+// SettingsPanel edits display preferences (language, theme) and the persisted
+// car parameters + detour weighting.
+export function SettingsPanel(props: {
+  settings: Settings
+  onChange: (p: Partial<Settings>) => void
+  theme: Theme
+  onTheme: (t: Theme) => void
+  onClose: () => void
+}) {
+  const { t, i18n } = useTranslation()
   const { car, detour } = props.settings
   const num = (v: string, min: number) => Math.max(min, Number(v) || min)
   return (
@@ -228,6 +239,26 @@ export function SettingsPanel(props: { settings: Settings; onChange: (p: Partial
           <h2>{t('settings.title')}</h2>
           <button className="btn" onClick={props.onClose}>{t('detail.close')}</button>
         </div>
+
+        <h3 style={{ margin: '12px 0 6px' }}>{t('settings.display')}</h3>
+        <label className="setting-row">
+          <span>{t('settings.language')}</span>
+          <select value={i18n.resolvedLanguage} onChange={(e) => i18n.changeLanguage(e.target.value)}>
+            {LANGS.map((l) => (
+              <option key={l.code} value={l.code}>{l.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="setting-row">
+          <span>{t('settings.theme')}</span>
+          <span className="pills theme-seg">
+            {THEMES.map((th) => (
+              <button key={th} className={props.theme === th ? 'on' : ''} onClick={() => props.onTheme(th)}>
+                {t(`theme.${th}`)}
+              </button>
+            ))}
+          </span>
+        </label>
 
         <h3 style={{ margin: '12px 0 6px' }}>{t('settings.car')}</h3>
         <label className="setting-row">
