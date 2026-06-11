@@ -28,6 +28,9 @@ func feedFor(src source.Source) feed {
 	switch src.CPO.SourceType {
 	case "datex":
 		return datexFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token}
+	case "mobilithek":
+		// DE Mobilithek AFIR DATEX II (mutual-TLS). OCPIBaseURL = "<static>|<status>".
+		return newMobilithekFeed(src.CPO.ID, src.CPO.OCPIBaseURL)
 	case "bnetza":
 		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: bnetza.Fetch}
 	case "irve":
