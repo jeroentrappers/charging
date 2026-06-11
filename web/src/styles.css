@@ -195,6 +195,25 @@ table.matrix tr.warn td { color: var(--amber); font-weight: 700; }
 .card h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .section { background: var(--surface); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); margin-top: 12px; }
 .section h3 { margin: 0 0 10px; font-size: 14px; }
+.card .muted { margin-top: 4px; font-size: 12px; }
+.insights-intro { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+
+/* ---- section header with toggles ---- */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.section-head h3 { margin: 0; }
+.toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg { display: inline-flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.seg button { border: 0; background: transparent; padding: 4px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+/* ---- color-coded meter bars ---- */
+.meters { display: flex; flex-direction: column; gap: 9px; }
+.meter-row { display: grid; grid-template-columns: minmax(96px, 40%) 1fr auto; align-items: center; gap: 10px; }
+.meter-label { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meter-sub { color: var(--muted); font-size: 11px; }
+.meter-track { height: 9px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.meter-fill { display: block; height: 100%; border-radius: 6px; transition: width 0.25s ease; }
+.meter-val { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; min-width: 52px; text-align: right; }
 
 /* ---- bottom nav (mobile) ---- */
 .bottomnav {

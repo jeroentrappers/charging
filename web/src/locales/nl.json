@@ -1,5 +1,9 @@
 {
-  "nav": { "find": "Zoeken", "insights": "Inzichten", "apiDocs": "API-docs" },
+  "nav": {
+    "find": "Zoeken",
+    "insights": "Inzichten",
+    "apiDocs": "API-docs"
+  },
   "geo": {
     "locate": "Mijn locatie",
     "locating": "Locatie bepalen…",
@@ -47,7 +51,11 @@
     "anyPower": "Alle vermogens",
     "minPower": "≥ {{kw}} kW",
     "anyPlug": "Alle stekkers",
-    "plug": { "type2": "Type 2", "ccs": "CCS", "chademo": "CHAdeMO" }
+    "plug": {
+      "type2": "Type 2",
+      "ccs": "CCS",
+      "chademo": "CHAdeMO"
+    }
   },
   "find": {
     "searching": "Zoeken…",
@@ -61,7 +69,11 @@
     "empty": "Geen laadpunten in de buurt gevonden.",
     "caveat": "Drive-up (ad-hoc) prijzen — je laadpas kan afwijken. Bron: transportdata.be / AFIR."
   },
-  "avail": { "free": "Nu vrij", "busy": "Bezet", "unknown": "Onbekend" },
+  "avail": {
+    "free": "Nu vrij",
+    "busy": "Bezet",
+    "unknown": "Onbekend"
+  },
   "detail": {
     "close": "Sluiten",
     "navigate": "Navigeer",
@@ -93,7 +105,12 @@
     "TIME": "Tijd (tijdens laden)",
     "PARKING_TIME": "Blokkeertarief (na het laden)"
   },
-  "unit": { "kwh": "/ kWh", "session": "/ sessie", "hour": "/ u", "min": "/min" },
+  "unit": {
+    "kwh": "/ kWh",
+    "session": "/ sessie",
+    "hour": "/ u",
+    "min": "/min"
+  },
   "restr": {
     "afterMin": "na {{n}} min",
     "uptoMin": "tot {{n}} min",
@@ -114,26 +131,38 @@
   "insights": {
     "loading": "laden…",
     "error": "Kon inzichten niet laden.",
-    "chargers": "Laadpunten",
-    "withPrice": "{{n}} met prijs",
-    "avgAc": "Gem. AC (10→80%)",
-    "avgDc": "Gem. DC (10→80%)",
-    "median": "Mediaan totaal",
-    "trendTitle": "Gemiddeld prijsverloop (12 maanden)",
-    "noHistory": "Nog geen historie — groeit naarmate ingestie draait.",
-    "regionsTitle": "Goedkoopste regio's",
+    "intro": "Prijzen gelden voor een volledige lading van 10→80% van een typische EV, vóór abonnement. Privé-/thuisladers zijn uitgesloten.",
+    "chargers": "Laders met prijs",
+    "ofTotal": "van {{n}} vermeld",
+    "coverage": "{{pct}}% met prijs",
+    "medianAll": "Mediaanprijs",
+    "acMedian": "AC-mediaan",
+    "dcMedian": "DC-mediaan",
+    "perCharger": "{{n}} laders",
+    "trendTitle": "Gemiddelde prijstrend",
+    "trendNote": "We volgen prijswijzigingen sinds juni 2026 — de trendlijn vult zich naarmate de maanden verstrijken.",
+    "noHistory": "Nog geen historiek — bouwt op naarmate de ingestie loopt.",
+    "areaTitle": "Prijs per gebied",
+    "byCity": "Stad",
+    "byPostal": "Postcode",
+    "cheapest": "Goedkoopst",
+    "priciest": "Duurst",
+    "sessionTitle": "Wat een laadbeurt doorgaans kost",
     "region": "Regio",
+    "count": "Laders",
     "avg": "Gem.",
-    "count": "Laadpunten",
-    "bySession": "Per sessie",
-    "session": "Sessie",
+    "median": "Mediaan",
     "min": "Min",
     "max": "Max"
   },
   "profile": {
     "energy": "Energie",
     "speed": "Snelheid",
-    "preset": { "km100": "~100 km", "soc1080": "10→80%", "full": "Vol" }
+    "preset": {
+      "km100": "~100 km",
+      "soc1080": "10→80%",
+      "full": "Vol"
+    }
   },
   "settings": {
     "title": "Instellingen",
@@ -146,7 +175,9 @@
     "valuePerH": "Waarde van je tijd (€/u)",
     "note": "Opgeslagen in je browser. De omweg telt de extra energie en tijd van de heen-en-terugrit mee in de rangschikking."
   },
-  "lang": { "label": "Taal" },
+  "lang": {
+    "label": "Taal"
+  },
   "report": {
     "community": "Meldingen van gebruikers",
     "none": "Nog geen meldingen.",
@@ -158,7 +189,11 @@
     "byN_other": "{{count}} meldingen",
     "hoursVal": "sluit om {{close}}",
     "kwVal": "~{{kw}} kW gemeten",
-    "ph": { "time": "UU:MM", "kw": "kW", "price": "€/kWh" },
+    "ph": {
+      "time": "UU:MM",
+      "kw": "kW",
+      "price": "€/kWh"
+    },
     "type": {
       "out_of_service": "Buiten dienst",
       "back_in_service": "Weer in dienst",

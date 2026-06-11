@@ -1,5 +1,9 @@
 {
-  "nav": { "find": "Rechercher", "insights": "Analyses", "apiDocs": "Doc API" },
+  "nav": {
+    "find": "Rechercher",
+    "insights": "Analyses",
+    "apiDocs": "Doc API"
+  },
   "geo": {
     "locate": "Me localiser",
     "locating": "Localisation…",
@@ -47,7 +51,11 @@
     "anyPower": "Toutes puissances",
     "minPower": "≥ {{kw}} kW",
     "anyPlug": "Toutes prises",
-    "plug": { "type2": "Type 2", "ccs": "CCS", "chademo": "CHAdeMO" }
+    "plug": {
+      "type2": "Type 2",
+      "ccs": "CCS",
+      "chademo": "CHAdeMO"
+    }
   },
   "find": {
     "searching": "Recherche…",
@@ -61,7 +69,11 @@
     "empty": "Aucune borne trouvée à proximité.",
     "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer. Données : transportdata.be / AFIR."
   },
-  "avail": { "free": "Libre", "busy": "Occupée", "unknown": "Inconnu" },
+  "avail": {
+    "free": "Libre",
+    "busy": "Occupée",
+    "unknown": "Inconnu"
+  },
   "detail": {
     "close": "Fermer",
     "navigate": "Itinéraire",
@@ -93,7 +105,12 @@
     "TIME": "Temps (pendant la charge)",
     "PARKING_TIME": "Frais d'occupation (après la charge)"
   },
-  "unit": { "kwh": "/ kWh", "session": "/ session", "hour": "/ h", "min": "/min" },
+  "unit": {
+    "kwh": "/ kWh",
+    "session": "/ session",
+    "hour": "/ h",
+    "min": "/min"
+  },
   "restr": {
     "afterMin": "après {{n}} min",
     "uptoMin": "jusqu'à {{n}} min",
@@ -114,26 +131,38 @@
   "insights": {
     "loading": "chargement…",
     "error": "Impossible de charger les analyses.",
-    "chargers": "Bornes",
-    "withPrice": "{{n}} avec un prix",
-    "avgAc": "Moy. AC (10→80%)",
-    "avgDc": "Moy. DC (10→80%)",
-    "median": "Médiane globale",
-    "trendTitle": "Évolution moyenne des prix (12 mois)",
-    "noHistory": "Pas encore d'historique — se construit au fil des collectes.",
-    "regionsTitle": "Régions les moins chères",
+    "intro": "Les prix correspondent à une charge complète 10→80 % d'un VE typique, hors abonnement. Les bornes privées/domestiques sont exclues.",
+    "chargers": "Bornes avec prix",
+    "ofTotal": "sur {{n}} répertoriées",
+    "coverage": "{{pct}} % avec prix",
+    "medianAll": "Prix médian",
+    "acMedian": "Médiane AC",
+    "dcMedian": "Médiane DC",
+    "perCharger": "{{n}} bornes",
+    "trendTitle": "Tendance des prix moyens",
+    "trendNote": "Suivi des variations de prix depuis juin 2026 — la courbe se complète au fil des mois.",
+    "noHistory": "Pas encore d'historique — se constitue au fil de l'ingestion.",
+    "areaTitle": "Prix par zone",
+    "byCity": "Ville",
+    "byPostal": "Code postal",
+    "cheapest": "Moins cher",
+    "priciest": "Plus cher",
+    "sessionTitle": "Ce que coûte généralement une charge",
     "region": "Région",
-    "avg": "Moy.",
     "count": "Bornes",
-    "bySession": "Par session",
-    "session": "Session",
+    "avg": "Moy.",
+    "median": "Médiane",
     "min": "Min",
     "max": "Max"
   },
   "profile": {
     "energy": "Énergie",
     "speed": "Vitesse",
-    "preset": { "km100": "~100 km", "soc1080": "10→80%", "full": "Plein" }
+    "preset": {
+      "km100": "~100 km",
+      "soc1080": "10→80%",
+      "full": "Plein"
+    }
   },
   "settings": {
     "title": "Réglages",
@@ -146,7 +175,9 @@
     "valuePerH": "Valeur de votre temps (€/h)",
     "note": "Enregistré dans votre navigateur. Le détour ajoute au classement l'énergie et le temps de l'aller-retour."
   },
-  "lang": { "label": "Langue" },
+  "lang": {
+    "label": "Langue"
+  },
   "report": {
     "community": "Signalements des utilisateurs",
     "none": "Aucun signalement.",
@@ -158,7 +189,11 @@
     "byN_other": "{{count}} signalements",
     "hoursVal": "ferme à {{close}}",
     "kwVal": "~{{kw}} kW constaté",
-    "ph": { "time": "HH:MM", "kw": "kW", "price": "€/kWh" },
+    "ph": {
+      "time": "HH:MM",
+      "kw": "kW",
+      "price": "€/kWh"
+    },
     "type": {
       "out_of_service": "Hors service",
       "back_in_service": "De nouveau en service",

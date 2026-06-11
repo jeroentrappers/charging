@@ -1,5 +1,9 @@
 {
-  "nav": { "find": "Find", "insights": "Insights", "apiDocs": "API docs" },
+  "nav": {
+    "find": "Find",
+    "insights": "Insights",
+    "apiDocs": "API docs"
+  },
   "geo": {
     "locate": "Locate me",
     "locating": "Locating…",
@@ -47,7 +51,11 @@
     "anyPower": "Any power",
     "minPower": "≥ {{kw}} kW",
     "anyPlug": "Any plug",
-    "plug": { "type2": "Type 2", "ccs": "CCS", "chademo": "CHAdeMO" }
+    "plug": {
+      "type2": "Type 2",
+      "ccs": "CCS",
+      "chademo": "CHAdeMO"
+    }
   },
   "find": {
     "searching": "Searching…",
@@ -61,7 +69,11 @@
     "empty": "No chargers found nearby.",
     "caveat": "Drive-up (ad-hoc) prices — your charge card may differ. Data: transportdata.be / AFIR."
   },
-  "avail": { "free": "Free now", "busy": "In use", "unknown": "Unknown" },
+  "avail": {
+    "free": "Free now",
+    "busy": "In use",
+    "unknown": "Unknown"
+  },
   "detail": {
     "close": "Close",
     "navigate": "Navigate",
@@ -93,7 +105,12 @@
     "TIME": "Time (while charging)",
     "PARKING_TIME": "Idle fee (after charging)"
   },
-  "unit": { "kwh": "/ kWh", "session": "/ session", "hour": "/ h", "min": "/min" },
+  "unit": {
+    "kwh": "/ kWh",
+    "session": "/ session",
+    "hour": "/ h",
+    "min": "/min"
+  },
   "restr": {
     "afterMin": "after {{n}} min",
     "uptoMin": "up to {{n}} min",
@@ -114,26 +131,38 @@
   "insights": {
     "loading": "loading…",
     "error": "Couldn't load insights.",
-    "chargers": "Chargers",
-    "withPrice": "{{n}} with a price",
-    "avgAc": "Avg AC (10→80%)",
-    "avgDc": "Avg DC (10→80%)",
-    "median": "Median overall",
-    "trendTitle": "Average price trend (12 months)",
+    "intro": "Prices are a full 10→80% charge for a typical EV, before any subscription. Private/home chargers are excluded.",
+    "chargers": "Priced chargers",
+    "ofTotal": "of {{n}} listed",
+    "coverage": "{{pct}}% with a price",
+    "medianAll": "Median price",
+    "acMedian": "AC median",
+    "dcMedian": "DC median",
+    "perCharger": "{{n}} chargers",
+    "trendTitle": "Average price trend",
+    "trendNote": "Tracking price changes since June 2026 — the trend line fills in as the months accrue.",
     "noHistory": "No history yet — builds up as ingestion runs.",
-    "regionsTitle": "Cheapest regions",
+    "areaTitle": "Price by area",
+    "byCity": "City",
+    "byPostal": "Postal",
+    "cheapest": "Cheapest",
+    "priciest": "Priciest",
+    "sessionTitle": "What a charge typically costs",
     "region": "Region",
-    "avg": "Avg",
     "count": "Chargers",
-    "bySession": "By session",
-    "session": "Session",
+    "avg": "Avg",
+    "median": "Median",
     "min": "Min",
     "max": "Max"
   },
   "profile": {
     "energy": "Energy",
     "speed": "Speed",
-    "preset": { "km100": "~100 km", "soc1080": "10→80%", "full": "Full" }
+    "preset": {
+      "km100": "~100 km",
+      "soc1080": "10→80%",
+      "full": "Full"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -146,7 +175,9 @@
     "valuePerH": "Value of your time (€/h)",
     "note": "Saved in your browser. The detour adds the round-trip's extra energy and time to the ranking."
   },
-  "lang": { "label": "Language" },
+  "lang": {
+    "label": "Language"
+  },
   "report": {
     "community": "Community reports",
     "none": "No reports yet.",
@@ -158,7 +189,11 @@
     "byN_other": "{{count}} reports",
     "hoursVal": "closes {{close}}",
     "kwVal": "~{{kw}} kW seen",
-    "ph": { "time": "HH:MM", "kw": "kW", "price": "€/kWh" },
+    "ph": {
+      "time": "HH:MM",
+      "kw": "kW",
+      "price": "€/kWh"
+    },
     "type": {
       "out_of_service": "Out of service",
       "back_in_service": "Back in service",
