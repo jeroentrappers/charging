@@ -98,6 +98,12 @@ Everything below optimizes for the primary job; the rest are secondary views.
   the ad-hoc caveat; "availability as of" timestamps.
 - **Empty-before-tokens reality**: until a real source is live the map is empty
   (or demo-seeded). Ship a friendly empty state and the demo seed for showcasing.
+- **Settings & display prefs**: a Settings panel (gear icon) holds the car
+  parameters + detour weighting (localStorage, drives the client-side ranking)
+  and a **Display** section — language (en/nl/fr) and a Light/Dark/System theme.
+  Theme is persisted (`charging.theme`), follows the OS live in System mode, and
+  is applied before first paint by an inline script in `index.html` (no flash);
+  dark mode also darkens the OSM tiles via a CSS filter on the tile pane.
 
 ## Proposed build (v1 scope)
 
