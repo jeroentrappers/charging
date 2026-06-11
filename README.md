@@ -177,6 +177,7 @@ Public endpoints:
 |---|---|---|
 | GET | `/chargers/nearby` | nearest candidates + structured tariffs (the PWA prices/ranks these) |
 | GET | `/chargers/cheapest` | server-ranked cheapest-by-price+detour |
+| GET | `/chargers/along-route` | corridor search: chargers along a driving route (self-hosted OSRM) |
 | GET | `/chargers/{id}` | one charger (shareable deep links) |
 | GET | `/chargers/{id}/price-history` | every recorded tariff version |
 | GET | `/chargers/{id}/live` | on-demand live availability (Monta) |
