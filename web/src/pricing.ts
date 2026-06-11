@@ -5,8 +5,9 @@
 //
 // KEEP IN SYNC with internal/pricing/pricing.go + profiles.go (the canonical
 // implementation): evaluate/customPrice/detour must match the server's
-// /chargers/cheapest. (Membership/MSP pricing below is a deliberate client-only
-// overlay — the server prices ad-hoc only; memberships re-rank locally.)
+// /chargers/cheapest. (Two deliberate client-only refinements the server
+// doesn't apply: membership/MSP pricing below, and the car's AC/DC max-power cap
+// in customPrice — the server only gets usable_kWh + consumption, not max powers.)
 import type { Charger, TariffStruct, TariffElement, TariffRestrictions } from './api'
 import type { Settings } from './settings'
 import { MSPS, memberSessionPrice } from './msps'
@@ -79,13 +80,17 @@ function evaluate(t: TariffStruct, s: Session): number | null {
 
 // customPrice mirrors pricing.CustomPriceAt: a user-defined session (energy +
 // optional power cap). powerKW <= 0 means "as fast as the charger allows".
-function customPrice(t: TariffStruct, chargerPowerKW: number, current: string, batteryKWh: number, powerKW: number, at: Date): number | null {
+// carMaxKW (>0) caps the real power the car can draw for this current type —
+// e.g. an ID. Buzz tops out ~185 kW DC / 11 kW AC, so a 350 kW charger doesn't
+// make its session any faster (a client-only refinement; see the sync note).
+function customPrice(t: TariffStruct, chargerPowerKW: number, current: string, batteryKWh: number, powerKW: number, carMaxKW: number, at: Date): number | null {
   if (batteryKWh <= 0 || chargerPowerKW <= 0) return null
   let power = chargerPowerKW
   if (powerKW > 0) {
-    if (chargerPowerKW < powerKW - 0.5) return null // charger can't deliver it
+    if (chargerPowerKW < powerKW - 0.5) return null // charger can't deliver the requested speed
     power = powerKW
   }
+  if (carMaxKW > 0 && power > carMaxKW) power = carMaxKW // the car can't draw more than this
   const metered = batteryKWh / (current === 'DC' ? EFF_DC : EFF_AC)
   const avg = current === 'DC' ? power * DC_TAPER : power
   return evaluate(t, { kWh: metered, power, avgPower: avg, at })
@@ -106,8 +111,9 @@ function detourCost(distanceM: number, settings: Settings): number {
 export function rankChargers(chargers: Charger[], settings: Settings, now: Date, limit = 50): Charger[] {
   const memberships = (settings.memberships ?? []).map((id) => MSPS.find((m) => m.id === id)).filter(Boolean)
   const ranked = chargers.map((c) => {
+    const carMaxKW = (c.current_type === 'DC' ? settings.car.maxDcKw : settings.car.maxAcKw) ?? 0
     const adhoc = c.price_components
-      ? customPrice(c.price_components, c.power_kw, c.current_type, settings.charge.kWh, settings.charge.powerKW ?? 0, now)
+      ? customPrice(c.price_components, c.power_kw, c.current_type, settings.charge.kWh, settings.charge.powerKW ?? 0, carMaxKW, now)
       : null
     // The effective price is the cheapest of the ad-hoc price and any selected
     // membership's blended rate (a flat card applies regardless of operator).

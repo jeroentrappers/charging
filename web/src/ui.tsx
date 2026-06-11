@@ -189,6 +189,10 @@ export function ProfileBar(props: {
   const { t } = useTranslation()
   const presets = energyPresets(props.car)
   const { charge } = props
+  // Don't offer charging speeds the car can't reach (its DC max is the ceiling;
+  // AC charging is further capped per-charger in pricing).
+  const maxKW = props.car.maxDcKw ?? 0
+  const speeds = CUSTOM_POWERS.filter((p) => maxKW <= 0 || p <= maxKW + 0.5)
   return (
     <>
       <div className="seg-row">
@@ -215,7 +219,7 @@ export function ProfileBar(props: {
           <button className={`seg ${charge.powerKW == null ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, powerKW: null })}>
             {t('session.fastest')}
           </button>
-          {CUSTOM_POWERS.map((p) => (
+          {speeds.map((p) => (
             <button key={p} className={`seg ${charge.powerKW === p ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, powerKW: p })}>
               {t('session.kw', { n: p })}
             </button>
@@ -280,6 +284,7 @@ export function SettingsPanel(props: {
                 props.onChange({ car: { ...car, modelId: undefined } })
                 return
               }
+              const charge = props.settings.charge
               props.onChange({
                 car: {
                   usableKWh: c.usableKWh,
@@ -289,6 +294,8 @@ export function SettingsPanel(props: {
                   maxAcKw: c.acKw,
                   maxDcKw: c.dcKw,
                 },
+                // Drop a target speed the new car can't reach (fall back to "fastest").
+                ...(charge.powerKW != null && charge.powerKW > c.dcKw ? { charge: { ...charge, powerKW: null } } : {}),
               })
             }}
           >

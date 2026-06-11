@@ -29,6 +29,7 @@ export const CARS: CarModel[] = [
   { id: 'vw-id4-77', make: 'Volkswagen', model: 'ID.4 Pro (77 kWh)', usableKWh: 77, consumptionKWh100: 18.5, acKw: 11, dcKw: 135, dcStandard: 'ccs' },
   { id: 'vw-id5-77', make: 'Volkswagen', model: 'ID.5 (77 kWh)', usableKWh: 77, consumptionKWh100: 18, acKw: 11, dcKw: 135, dcStandard: 'ccs' },
   { id: 'vw-id7-77', make: 'Volkswagen', model: 'ID.7 Pro (77 kWh)', usableKWh: 77, consumptionKWh100: 16.5, acKw: 11, dcKw: 175, dcStandard: 'ccs' },
+  { id: 'vw-idbuzz-79', make: 'Volkswagen', model: 'ID. Buzz Pro (79 kWh)', usableKWh: 79, consumptionKWh100: 24, acKw: 11, dcKw: 185, dcStandard: 'ccs' },
   { id: 'skoda-enyaq-77', make: 'Škoda', model: 'Enyaq 85 (77 kWh)', usableKWh: 77, consumptionKWh100: 17.5, acKw: 11, dcKw: 135, dcStandard: 'ccs' },
   { id: 'cupra-born-58', make: 'Cupra', model: 'Born (58 kWh)', usableKWh: 58, consumptionKWh100: 16.5, acKw: 11, dcKw: 120, dcStandard: 'ccs' },
   { id: 'audi-q4-77', make: 'Audi', model: 'Q4 e-tron (77 kWh)', usableKWh: 77, consumptionKWh100: 18.5, acKw: 11, dcKw: 135, dcStandard: 'ccs' },
