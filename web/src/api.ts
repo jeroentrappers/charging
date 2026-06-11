@@ -33,6 +33,7 @@ export interface Charger {
   availability_stale: boolean
   reports?: ReportAgg[] // active community reports
   avoid?: boolean // de-prioritised by corroborated flag reports
+  detour_eur?: number | null // estimated round-trip detour cost added to the ranking
 }
 
 // One report type's value payload (only some types carry one).
@@ -181,6 +182,13 @@ export interface CheapestParams {
   // power_kw omitted/0 means "as fast as the charger allows".
   energy_kwh?: number
   power_kw?: number
+  // Car parameters for the price calc.
+  usable_kwh?: number
+  consumption_kwh100?: number
+  // Detour weighting (round-trip cost added to the ranking).
+  detour?: boolean
+  detour_price?: number
+  detour_eur_per_h?: number
   available?: boolean
   min_power?: number
   plug?: string
@@ -204,7 +212,8 @@ export const api = {
   priceHistory: (id: number) =>
     get<{ charger_id: number; history: PricePoint[] }>(`/chargers/${id}/price-history`),
   live: (id: number) => get<LiveStatus>(`/chargers/${id}/live`),
-  charger: (id: number, lat?: number, lon?: number) => get<Charger>(`/chargers/${id}`, { lat, lon }),
+  charger: (id: number, lat?: number, lon?: number, usable_kwh?: number, consumption_kwh100?: number) =>
+    get<Charger>(`/chargers/${id}`, { lat, lon, usable_kwh, consumption_kwh100 }),
   overview: () => get<Overview>('/stats/overview'),
   trend: (months = 12) => get<{ trend: TrendPoint[] }>('/stats/price-trend', { months }),
   regions: (by = 'city') => get<{ by: string; regions: PriceAgg[] }>('/stats/regions', { by }),

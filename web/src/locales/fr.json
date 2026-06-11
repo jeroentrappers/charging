@@ -52,11 +52,12 @@
     "searching": "Recherche…",
     "chargers_one": "{{count}} borne",
     "chargers_other": "{{count}} bornes",
-    "cheapestFirst": "moins cher d'abord",
+    "cheapestFirst": "par prix + détour",
+    "detour": "détour",
     "tapHint": "Touchez la carte pour définir votre position",
     "loadError": "Impossible de charger les bornes. Vérifiez votre connexion.",
-    "emptyAvailable": "Aucune borne libre ici pour le moment. Dézoomez ou désactivez « Disponible maintenant ».",
-    "empty": "Aucune borne ici. Dézoomez.",
+    "emptyAvailable": "Aucune borne libre à proximité. Désactivez « Disponible maintenant ».",
+    "empty": "Aucune borne trouvée à proximité.",
     "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer. Données : transportdata.be / AFIR."
   },
   "avail": { "free": "Libre", "busy": "Occupée", "unknown": "Inconnu" },
@@ -122,6 +123,22 @@
     "session": "Session",
     "min": "Min",
     "max": "Max"
+  },
+  "profile": {
+    "energy": "Énergie",
+    "speed": "Vitesse",
+    "preset": { "km100": "~100 km", "soc1080": "10→80%", "full": "Plein" }
+  },
+  "settings": {
+    "title": "Réglages",
+    "car": "Votre voiture",
+    "battery": "Batterie utile (kWh)",
+    "consumption": "Consommation (kWh/100 km)",
+    "detour": "Détour",
+    "detourEnable": "Tenir compte du détour pour y aller",
+    "refPrice": "Prix de l'énergie pour le détour (€/kWh)",
+    "valuePerH": "Valeur de votre temps (€/h)",
+    "note": "Enregistré dans votre navigateur. Le détour ajoute au classement l'énergie et le temps de l'aller-retour."
   },
   "lang": { "label": "Langue" },
   "report": {

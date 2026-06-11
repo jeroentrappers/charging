@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { Charger } from './api'
+import { energyPresets, type Settings } from './settings'
 
 export function eur(n: number | null | undefined): string {
   return n == null ? '—' : '€' + n.toFixed(2)
@@ -150,6 +151,105 @@ export const REPORT_TYPES: { key: string; group: string; value?: 'time' | 'kw' |
   { key: 'does_not_exist', group: 'data' },
   { key: 'confirmed_ok', group: 'positive' },
 ]
+
+// ProfileBar is the simplified charging profile: how much energy + how fast.
+// (The full price comparison reduces to energy × €/kWh + duration × €/h + the
+// per-session flat fee — so energy and speed are all the user needs to pick.)
+export function ProfileBar(props: {
+  car: Settings['car']
+  charge: Settings['charge']
+  onCharge: (c: Settings['charge']) => void
+}) {
+  const { t } = useTranslation()
+  const presets = energyPresets(props.car)
+  const { charge } = props
+  return (
+    <>
+      <div className="seg-row">
+        <span className="seg-label">{t('profile.energy')}</span>
+        <div className="segs">
+          {presets.map((p) => (
+            <button key={p.key} className={`seg ${charge.kWh === p.kWh ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, kWh: p.kWh })}>
+              {t(`profile.preset.${p.key}`)} <span className="seg-sub">{p.kWh} kWh</span>
+            </button>
+          ))}
+          <label className="seg seg-input">
+            <input
+              type="number" min={1} max={250} step={1} inputMode="numeric"
+              value={charge.kWh}
+              onChange={(e) => props.onCharge({ ...charge, kWh: Math.max(1, Math.min(250, Number(e.target.value) || 0)) })}
+            />
+            <span>kWh</span>
+          </label>
+        </div>
+      </div>
+      <div className="seg-row">
+        <span className="seg-label">{t('profile.speed')}</span>
+        <div className="segs">
+          <button className={`seg ${charge.powerKW == null ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, powerKW: null })}>
+            {t('session.fastest')}
+          </button>
+          {CUSTOM_POWERS.map((p) => (
+            <button key={p} className={`seg ${charge.powerKW === p ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, powerKW: p })}>
+              {t('session.kw', { n: p })}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+// SettingsPanel edits the persisted car parameters and detour weighting.
+export function SettingsPanel(props: { settings: Settings; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
+  const { t } = useTranslation()
+  const { car, detour } = props.settings
+  const num = (v: string, min: number) => Math.max(min, Number(v) || min)
+  return (
+    <div className="overlay" onClick={props.onClose}>
+      <div className="detail" onClick={(e) => e.stopPropagation()}>
+        <div className="detail-head">
+          <h2>{t('settings.title')}</h2>
+          <button className="btn" onClick={props.onClose}>{t('detail.close')}</button>
+        </div>
+
+        <h3 style={{ margin: '12px 0 6px' }}>{t('settings.car')}</h3>
+        <label className="setting-row">
+          <span>{t('settings.battery')}</span>
+          <input type="number" min={1} step={1} value={car.usableKWh}
+            onChange={(e) => props.onChange({ car: { ...car, usableKWh: num(e.target.value, 1) } })} />
+        </label>
+        <label className="setting-row">
+          <span>{t('settings.consumption')}</span>
+          <input type="number" min={1} step={0.5} value={car.consumptionKWh100}
+            onChange={(e) => props.onChange({ car: { ...car, consumptionKWh100: num(e.target.value, 1) } })} />
+        </label>
+
+        <h3 style={{ margin: '12px 0 6px' }}>{t('settings.detour')}</h3>
+        <label className="setting-row">
+          <span>{t('settings.detourEnable')}</span>
+          <input type="checkbox" checked={detour.enabled}
+            onChange={(e) => props.onChange({ detour: { ...detour, enabled: e.target.checked } })} />
+        </label>
+        {detour.enabled && (
+          <>
+            <label className="setting-row">
+              <span>{t('settings.refPrice')}</span>
+              <input type="number" min={0} step={0.01} value={detour.refPrice}
+                onChange={(e) => props.onChange({ detour: { ...detour, refPrice: num(e.target.value, 0) } })} />
+            </label>
+            <label className="setting-row">
+              <span>{t('settings.valuePerH')}</span>
+              <input type="number" min={0} step={1} value={detour.eurPerHour}
+                onChange={(e) => props.onChange({ detour: { ...detour, eurPerHour: num(e.target.value, 0) } })} />
+            </label>
+          </>
+        )}
+        <p className="caveat">{t('settings.note')}</p>
+      </div>
+    </div>
+  )
+}
 
 export interface Filters {
   available: boolean

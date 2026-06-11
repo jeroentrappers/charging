@@ -52,11 +52,12 @@
     "searching": "Zoeken…",
     "chargers_one": "{{count}} laadpunt",
     "chargers_other": "{{count}} laadpunten",
-    "cheapestFirst": "goedkoopste eerst",
+    "cheapestFirst": "op prijs + omweg",
+    "detour": "omweg",
     "tapHint": "Tik op de kaart om je locatie te kiezen",
     "loadError": "Kon laadpunten niet laden. Controleer je verbinding.",
-    "emptyAvailable": "Hier zijn geen laadpunten die nu vrij zijn. Zoom uit of schakel \"Nu beschikbaar\" uit.",
-    "empty": "Hier zijn geen laadpunten. Zoom uit.",
+    "emptyAvailable": "Geen vrije laadpunten in de buurt. Schakel \"Nu beschikbaar\" uit.",
+    "empty": "Geen laadpunten in de buurt gevonden.",
     "caveat": "Drive-up (ad-hoc) prijzen — je laadpas kan afwijken. Bron: transportdata.be / AFIR."
   },
   "avail": { "free": "Nu vrij", "busy": "Bezet", "unknown": "Onbekend" },
@@ -122,6 +123,22 @@
     "session": "Sessie",
     "min": "Min",
     "max": "Max"
+  },
+  "profile": {
+    "energy": "Energie",
+    "speed": "Snelheid",
+    "preset": { "km100": "~100 km", "soc1080": "10→80%", "full": "Vol" }
+  },
+  "settings": {
+    "title": "Instellingen",
+    "car": "Je auto",
+    "battery": "Bruikbare batterij (kWh)",
+    "consumption": "Verbruik (kWh/100 km)",
+    "detour": "Omweg",
+    "detourEnable": "Reken de omweg erheen mee",
+    "refPrice": "Energieprijs voor de omweg (€/kWh)",
+    "valuePerH": "Waarde van je tijd (€/u)",
+    "note": "Opgeslagen in je browser. De omweg telt de extra energie en tijd van de heen-en-terugrit mee in de rangschikking."
   },
   "lang": { "label": "Taal" },
   "report": {

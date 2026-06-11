@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { api, type Charger } from './api'
 import { MapView } from './MapView'
 import type { NavState } from './url'
+import type { Settings } from './settings'
 import { AvailBadge, availOf, eur, km, priceOf, type Filters } from './ui'
 
 const ChargerDetail = lazy(() => import('./ChargerDetail').then((m) => ({ default: m.ChargerDetail })))
@@ -25,9 +26,7 @@ export function FindPage(props: {
   onCenter: (c: { lat: number; lon: number; zoom: number }) => void
   onOpenCharger: (c: Charger) => void
   onCloseCharger: () => void
-  sessionKey: string | undefined
-  energyKWh?: number // custom session: energy to add (overrides sessionKey)
-  powerKW?: number // custom session: power cap; undefined = as fast as possible
+  settings: Settings // car + charging profile + detour weighting
   filters: Filters
 }) {
   const { t } = useTranslation()
@@ -76,6 +75,7 @@ export function FindPage(props: {
   const originRef = useRef(origin)
   originRef.current = origin
 
+  const { car, charge, detour } = props.settings
   useEffect(() => {
     const t = setTimeout(async () => {
       setLoading(true)
@@ -85,9 +85,13 @@ export function FindPage(props: {
           lat: oLat,
           lon: oLon,
           radius,
-          session: props.sessionKey,
-          energy_kwh: props.energyKWh,
-          power_kw: props.powerKW,
+          energy_kwh: charge.kWh,
+          power_kw: charge.powerKW ?? undefined,
+          usable_kwh: car.usableKWh,
+          consumption_kwh100: car.consumptionKWh100,
+          detour: detour.enabled,
+          detour_price: detour.refPrice,
+          detour_eur_per_h: detour.eurPerHour,
           available: props.filters.available,
           min_power: props.filters.minPower || undefined,
           plug: props.filters.plug || undefined,
@@ -101,7 +105,7 @@ export function FindPage(props: {
       }
     }, 300)
     return () => clearTimeout(t)
-  }, [oLat, oLon, radius, props.sessionKey, props.energyKWh, props.powerKW, props.filters])
+  }, [oLat, oLon, radius, charge.kWh, charge.powerKW, car.usableKWh, car.consumptionKWh100, detour.enabled, detour.refPrice, detour.eurPerHour, props.filters])
 
   // Refresh the open detail's data from new results, but keep the snapshot if
   // the charger isn't in the latest set.
@@ -130,7 +134,7 @@ export function FindPage(props: {
       setFocusNonce((n) => n + 1)
     } else {
       api
-        .charger(id, originRef.current[0], originRef.current[1])
+        .charger(id, originRef.current[0], originRef.current[1], car.usableKWh, car.consumptionKWh100)
         .then((c) => {
           setDetailCharger(c)
           setView({ to: [c.lat, c.lon] })
@@ -211,6 +215,7 @@ export function FindPage(props: {
                 <div className="name">{c.name || c.cpo_id}</div>
                 <div className="sub">
                   {c.power_kw} kW {c.current_type} · {km(c.distance_m)}
+                  {c.detour_eur != null && c.detour_eur > 0 && <span className="detour"> · +{eur(c.detour_eur)} {t('find.detour')}</span>}
                   {c.avoid && <span className="flag-badge"> · ⚠ {t('report.flagged')}</span>}
                 </div>
               </span>

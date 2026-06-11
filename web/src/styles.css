@@ -59,6 +59,14 @@ button { font: inherit; cursor: pointer; }
 .report-input input { width: 92px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
 .report-thanks { color: var(--green); font-weight: 600; font-size: 13px; margin-top: 6px; }
 .row .flag-badge { color: #b91c1c; font-size: 11px; font-weight: 700; }
+.row .detour { color: var(--amber); font-weight: 600; }
+.hlink-btn { border: 0; background: transparent; cursor: pointer; padding: 0; }
+.hlink-btn svg { width: 20px; height: 20px; }
+.seg .seg-sub { font-weight: 400; opacity: 0.7; font-size: 11px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+.setting-row span { font-size: 14px; }
+.setting-row input[type="number"] { width: 96px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; text-align: right; }
+.setting-row input[type="checkbox"] { width: 20px; height: 20px; }
 
 /* ---- session selector (hero control) ---- */
 .controls { background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 14px; z-index: 19; }

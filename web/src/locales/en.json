@@ -52,11 +52,12 @@
     "searching": "Searching…",
     "chargers_one": "{{count}} charger",
     "chargers_other": "{{count}} chargers",
-    "cheapestFirst": "cheapest first",
+    "cheapestFirst": "by price + detour",
+    "detour": "detour",
     "tapHint": "Tap the map to set your location",
     "loadError": "Couldn't load chargers. Check your connection.",
-    "emptyAvailable": "No chargers here that are free right now. Try zooming out or turning off \"Available now\".",
-    "empty": "No chargers here. Try zooming out.",
+    "emptyAvailable": "No chargers free right now nearby. Try turning off \"Available now\".",
+    "empty": "No chargers found nearby.",
     "caveat": "Drive-up (ad-hoc) prices — your charge card may differ. Data: transportdata.be / AFIR."
   },
   "avail": { "free": "Free now", "busy": "In use", "unknown": "Unknown" },
@@ -122,6 +123,22 @@
     "session": "Session",
     "min": "Min",
     "max": "Max"
+  },
+  "profile": {
+    "energy": "Energy",
+    "speed": "Speed",
+    "preset": { "km100": "~100 km", "soc1080": "10→80%", "full": "Full" }
+  },
+  "settings": {
+    "title": "Settings",
+    "car": "Your car",
+    "battery": "Usable battery (kWh)",
+    "consumption": "Consumption (kWh/100 km)",
+    "detour": "Detour",
+    "detourEnable": "Factor in the detour to get there",
+    "refPrice": "Energy price for the detour (€/kWh)",
+    "valuePerH": "Value of your time (€/h)",
+    "note": "Saved in your browser. The detour adds the round-trip's extra energy and time to the ranking."
   },
   "lang": { "label": "Language" },
   "report": {

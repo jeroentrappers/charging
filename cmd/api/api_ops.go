@@ -69,7 +69,15 @@ type cheapestIn struct {
 	Session   string  `query:"session" doc:"Standard comparison profile key (see GET /sessions)"`
 	EnergyKWh float64 `query:"energy_kwh" doc:"Custom session: energy to add to the battery (kWh, 1-250). Overrides 'session'."`
 	PowerKW   float64 `query:"power_kw" doc:"Custom session: target power (kW, 1-400). Omit (or 0) for as-fast-as-possible."`
-	Limit     int     `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Maximum results to return"`
+	// Car parameters for the price calc (0 = server default vehicle).
+	UsableKWh   float64 `query:"usable_kwh" doc:"Car usable battery (kWh) for the price calc"`
+	Consumption float64 `query:"consumption_kwh100" doc:"Car consumption (kWh/100km)"`
+	// Detour weighting: rank by charging price PLUS the estimated round-trip
+	// detour cost (extra energy + time to drive there and back).
+	Detour      bool    `query:"detour" doc:"Add an estimated round-trip detour cost to the ranking"`
+	DetourPrice float64 `query:"detour_price" doc:"Reference energy price (€/kWh) for detour energy; 0 = 0.30"`
+	DetourPerH  float64 `query:"detour_eur_per_h" doc:"Value of time (€/h) for detour driving time; 0 = ignore time"`
+	Limit       int     `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Maximum results to return"`
 }
 
 type cheapestOut struct {
@@ -101,6 +109,21 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 	if radius <= 0 {
 		radius = 5000
 	}
+	vehicle := s.vehicle
+	if in.UsableKWh > 0 {
+		vehicle.UsableKWh = in.UsableKWh
+	}
+	if in.Consumption > 0 {
+		vehicle.ConsumptionKWh100 = in.Consumption
+	}
+
+	// Pull a generous pool of the nearest candidates, then rank by the weighted
+	// price+detour cost and keep the best `Limit`. Detour grows with distance, so
+	// the optimum is always near — the nearest pool is more than enough.
+	pool := 8 * in.Limit
+	if pool < 200 {
+		pool = 200
+	}
 	nq := store.NearbyQuery{
 		Lat: in.Lat, Lon: in.Lon, RadiusM: radius,
 		MinPowerKW: in.MinPower,
@@ -108,7 +131,7 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 		OnlyAvail:  in.Available,
 		Session:    spec.session,
 		StaleAfter: s.staleAfter,
-		Limit:      4 * in.Limit, // candidate pool; re-ranked by current-time price below
+		Limit:      pool,
 	}
 	res, err := s.st.CheapestNearby(ctx, nq)
 	if err != nil {
@@ -116,14 +139,14 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 		return nil, huma.Error500InternalServerError("query failed")
 	}
 
-	// Re-price each candidate at the *current* local time so time-of-day tariffs
-	// rank correctly (the stored comparable uses a fixed reference time).
+	// Re-price each candidate at the *current* local time (so time-of-day tariffs
+	// rank correctly) for the user's car.
 	now := time.Now()
 	if brussels != nil {
 		now = now.In(brussels)
 	}
 	for i := range res {
-		s.repriceNow(&res[i], spec, now)
+		s.repriceNow(&res[i], spec, vehicle, now)
 	}
 
 	// Community reports: attach the active set per candidate and flag chargers to
@@ -145,7 +168,27 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 		}
 	}
 
-	sortByLivePrice(res, spec.selecting())
+	// Estimated round-trip detour cost (extra energy + time), added to the price
+	// for ranking when requested.
+	if in.Detour {
+		refPrice := in.DetourPrice
+		if refPrice <= 0 {
+			refPrice = 0.30
+		}
+		perH := in.DetourPerH
+		if perH < 0 {
+			perH = 0
+		}
+		for i := range res {
+			roundTripKm := 2 * res[i].DistanceM / 1000
+			energy := vehicle.ConsumptionKWh100 * roundTripKm / 100 * refPrice
+			timeCost := roundTripKm / 50.0 * perH // ~50 km/h detour driving
+			d := energy + timeCost
+			res[i].DetourEUR = &d
+		}
+	}
+
+	sortByWeighted(res, spec.selecting())
 	if len(res) > in.Limit {
 		res = res[:in.Limit]
 	}
@@ -191,8 +234,9 @@ func queryEcho(nq store.NearbyQuery, limit int, spec priceSpec) map[string]any {
 var brussels, _ = time.LoadLocation("Europe/Brussels")
 
 // repriceNow overrides a candidate's headline (and selected-session) price with
-// the value evaluated at `now`, when the structured tariff is available.
-func (s *server) repriceNow(c *store.NearbyCharger, spec priceSpec, now time.Time) {
+// the value evaluated at `now` for the given vehicle, when the structured tariff
+// is available.
+func (s *server) repriceNow(c *store.NearbyCharger, spec priceSpec, v pricing.Vehicle, now time.Time) {
 	if len(c.Components) == 0 {
 		return // no structured tariff (e.g. Monta snapshot) — keep stored value
 	}
@@ -200,18 +244,18 @@ func (s *server) repriceNow(c *store.NearbyCharger, spec priceSpec, now time.Tim
 	if err := json.Unmarshal(c.Components, &tar); err != nil {
 		return
 	}
-	if p, ok := pricing.HeadlineAt(tar, c.PowerKW, c.CurrentType, s.vehicle, now); ok {
+	if p, ok := pricing.HeadlineAt(tar, c.PowerKW, c.CurrentType, v, now); ok {
 		c.PriceEUR = &p
 	}
 	switch {
 	case spec.custom != nil:
-		if p, ok := pricing.CustomPriceAt(tar, c.PowerKW, c.CurrentType, *spec.custom, s.vehicle, now); ok {
+		if p, ok := pricing.CustomPriceAt(tar, c.PowerKW, c.CurrentType, *spec.custom, v, now); ok {
 			c.SessionPrice = &p
 		} else {
 			c.SessionPrice = nil
 		}
 	case spec.session != "":
-		if p, ok := pricing.SessionPriceAt(tar, c.PowerKW, c.CurrentType, spec.session, s.vehicle, now); ok {
+		if p, ok := pricing.SessionPriceAt(tar, c.PowerKW, c.CurrentType, spec.session, v, now); ok {
 			c.SessionPrice = &p
 		} else {
 			c.SessionPrice = nil
@@ -219,27 +263,37 @@ func (s *server) repriceNow(c *store.NearbyCharger, spec priceSpec, now time.Tim
 	}
 }
 
-// sortByLivePrice ranks by the effective price (session price when a session is
-// selected, else headline), nulls last, then distance.
-func sortByLivePrice(res []store.NearbyCharger, selecting bool) {
-	eff := func(c store.NearbyCharger) *float64 {
-		if selecting {
-			return c.SessionPrice
-		}
-		return c.PriceEUR
+// weighted is the ranking cost: the effective charging price (session price when
+// a session is selected, else headline) plus any estimated detour cost. Nil when
+// the charger has no priceable charging cost.
+func weighted(c store.NearbyCharger, selecting bool) *float64 {
+	base := c.PriceEUR
+	if selecting {
+		base = c.SessionPrice
 	}
+	if base == nil {
+		return nil
+	}
+	v := *base
+	if c.DetourEUR != nil {
+		v += *c.DetourEUR
+	}
+	return &v
+}
+
+// sortByWeighted ranks by the weighted price+detour cost (nulls last), with
+// corroborated-bad chargers sunk to the bottom (never hidden), then distance.
+func sortByWeighted(res []store.NearbyCharger, selecting bool) {
 	sort.SliceStable(res, func(i, j int) bool {
-		// Corroborated-bad chargers sink below everything else (but are never
-		// hidden).
 		if res[i].Avoid != res[j].Avoid {
 			return !res[i].Avoid
 		}
-		pi, pj := eff(res[i]), eff(res[j])
-		if (pi == nil) != (pj == nil) {
-			return pi != nil // priced before unpriced
+		wi, wj := weighted(res[i], selecting), weighted(res[j], selecting)
+		if (wi == nil) != (wj == nil) {
+			return wi != nil // priced before unpriced
 		}
-		if pi != nil && *pi != *pj {
-			return *pi < *pj
+		if wi != nil && *wi != *wj {
+			return *wi < *wj
 		}
 		return res[i].DistanceM < res[j].DistanceM
 	})
@@ -248,9 +302,11 @@ func sortByLivePrice(res []store.NearbyCharger, selecting bool) {
 // ---- GET /chargers/{id} ----
 
 type chargerIn struct {
-	ID  int64   `path:"id"`
-	Lat float64 `query:"lat" doc:"Optional origin latitude (for distance)"`
-	Lon float64 `query:"lon" doc:"Optional origin longitude (for distance)"`
+	ID          int64   `path:"id"`
+	Lat         float64 `query:"lat" doc:"Optional origin latitude (for distance)"`
+	Lon         float64 `query:"lon" doc:"Optional origin longitude (for distance)"`
+	UsableKWh   float64 `query:"usable_kwh" doc:"Car usable battery (kWh) for the price calc"`
+	Consumption float64 `query:"consumption_kwh100" doc:"Car consumption (kWh/100km)"`
 }
 
 type chargerOut struct {
@@ -270,7 +326,14 @@ func (s *server) opGetCharger(ctx context.Context, in *chargerIn) (*chargerOut, 
 	if brussels != nil {
 		now = now.In(brussels)
 	}
-	s.repriceNow(&c, priceSpec{}, now) // headline price at the current time
+	vehicle := s.vehicle
+	if in.UsableKWh > 0 {
+		vehicle.UsableKWh = in.UsableKWh
+	}
+	if in.Consumption > 0 {
+		vehicle.ConsumptionKWh100 = in.Consumption
+	}
+	s.repriceNow(&c, priceSpec{}, vehicle, now) // headline price at the current time
 	if raws, rerr := s.st.ReportsRaw(ctx, c.ID); rerr == nil {
 		aggs := report.Aggregate(time.Now().UTC(), raws)
 		c.Reports = aggs

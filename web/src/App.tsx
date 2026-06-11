@@ -4,7 +4,8 @@ import { FindPage } from './FindPage'
 import { API_BASE, type Charger } from './api'
 import { LANGS } from './i18n'
 import { buildPath, parseUrl, type NavState } from './url'
-import { SessionBar, FilterBar, sessionKey, type Filters, type CustomSession } from './ui'
+import { useSettings } from './settings'
+import { ProfileBar, SettingsPanel, FilterBar, type Filters } from './ui'
 
 const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
 
@@ -49,9 +50,8 @@ export default function App() {
     navigate({ tab: 'find', center: route.center, chargerId: c.id, chargerSlug: c.name || c.cpo_id }, true)
   const onCloseCharger = () => navigate({ tab: 'find', center: route.center }, true)
 
-  const [need, setNeed] = useState('best')
-  const [speed, setSpeed] = useState('dc150')
-  const [custom, setCustom] = useState<CustomSession>({ kWh: 50, powerKW: null })
+  const [settings, patchSettings] = useSettings()
+  const [showSettings, setShowSettings] = useState(false)
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '' })
   const [located, setLocated] = useState<[number, number] | null>(null)
   const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
@@ -122,6 +122,9 @@ export default function App() {
           </select>
         </label>
         <div className="header-links">
+          <button className="hlink hlink-btn" onClick={() => setShowSettings(true)} aria-label={t('settings.title')} title={t('settings.title')}>
+            <svg viewBox="0 0 24 24" aria-hidden><path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 4a6.96 6.96 0 00-.14-1.36l2.03-1.58-2-3.46-2.39.96a7 7 0 00-2.35-1.36L15.6 1h-4l-.49 2.84a7 7 0 00-2.35 1.36l-2.39-.96-2 3.46 2.03 1.58A6.96 6.96 0 003.26 12c0 .46.05.92.14 1.36L1.37 14.94l2 3.46 2.39-.96c.7.58 1.5 1.05 2.35 1.36L8.6 23h4l.49-2.84a7 7 0 002.35-1.36l2.39.96 2-3.46-2.03-1.58c.09-.44.14-.9.14-1.36z"/></svg>
+          </button>
           <a className="hlink" href={`${API_BASE}/docs`} target="_blank" rel="noreferrer">{t('nav.apiDocs')}</a>
           <a className="hlink" href={GITHUB_URL} target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
             <svg viewBox="0 0 16 16" aria-hidden><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -131,7 +134,7 @@ export default function App() {
 
       {tab === 'find' && (
         <div className="controls">
-          <SessionBar need={need} speed={speed} onNeed={setNeed} onSpeed={setSpeed} custom={custom} onCustom={setCustom} />
+          <ProfileBar car={settings.car} charge={settings.charge} onCharge={(charge) => patchSettings({ charge })} />
           <div className="filters">
             <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
             <FilterBarInline filters={filters} setFilters={setFilters} />
@@ -151,9 +154,7 @@ export default function App() {
           onCenter={onCenter}
           onOpenCharger={onOpenCharger}
           onCloseCharger={onCloseCharger}
-          sessionKey={need === 'custom' ? undefined : sessionKey(need, speed)}
-          energyKWh={need === 'custom' ? custom.kWh : undefined}
-          powerKW={need === 'custom' ? custom.powerKW ?? undefined : undefined}
+          settings={settings}
           filters={filters}
         />
       ) : (
@@ -166,6 +167,8 @@ export default function App() {
         <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>{t('nav.find')}</button>
         <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
       </nav>
+
+      {showSettings && <SettingsPanel settings={settings} onChange={patchSettings} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }
