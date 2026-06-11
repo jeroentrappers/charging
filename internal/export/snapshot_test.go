@@ -11,22 +11,6 @@ import (
 	"github.com/appmire/charging/internal/store"
 )
 
-func TestRegionKey(t *testing.T) {
-	cases := []struct{ country, postal, want string }{
-		{"NL", "1011 AB", "NL-10"},
-		{"FR", "75001", "FR-75"},
-		{"BE", "", "BE-XX"},
-		{"", "x", "XX-XX"},
-		{"", "", "XX-XX"},
-		{"DE", "10115", "DE-10"},
-	}
-	for _, c := range cases {
-		if got := regionKey(c.country, c.postal); got != c.want {
-			t.Errorf("regionKey(%q,%q)=%q want %q", c.country, c.postal, got, c.want)
-		}
-	}
-}
-
 // sliceStream returns a stream func over an in-memory slice (no DB), driving
 // writeRegions exactly the way ExportStream would.
 func sliceStream(rows []store.ExportCharger) func(func(store.ExportCharger) error) error {
@@ -40,9 +24,11 @@ func sliceStream(rows []store.ExportCharger) func(func(store.ExportCharger) erro
 	}
 }
 
-func TestWriteRegions(t *testing.T) {
+func TestWriteRegionsChunksBySize(t *testing.T) {
 	dir := t.TempDir()
-	s := &Snapshotter{Dir: dir, FullEvery: time.Hour}
+	// Tiny chunk target so each row except the last of a country forces a flush:
+	// with ChunkBytes=1 every row exceeds the target → one row per chunk.
+	s := &Snapshotter{Dir: dir, FullEvery: time.Hour, ChunkBytes: 1}
 	now := time.Unix(1700000000, 0).UTC()
 	if err := s.ensureDir(); err != nil {
 		t.Fatal(err)
@@ -50,8 +36,7 @@ func TestWriteRegions(t *testing.T) {
 
 	price := 0.42
 	a := tariffRaw(t, 0.40)
-	// 5 rows spanning NL-10 (2 rows, one priced + one with a tariff), NL-20, FR-75.
-	// Already ordered by (country, postal) the way ExportStream guarantees.
+	// 3 NL rows then 2 FR rows, ordered by (country, postal) like ExportStream.
 	rows := []store.ExportCharger{
 		{ID: 1, CPOID: "dotnl", Country: "NL", PostalCode: "1011 AB", EVSEUID: "E1", ConnectorID: "1", Lat: 52.3, Lon: 4.9, PowerKW: 22, CurrentType: "AC", PlugType: "IEC_62196_T2", Status: "AVAILABLE", Currency: "EUR", PriceEUR: &price, Components: a},
 		{ID: 2, CPOID: "dotnl", Country: "NL", PostalCode: "1011 CD", EVSEUID: "E2", ConnectorID: "1", Lat: 52.3, Lon: 4.9, PowerKW: 22, CurrentType: "AC", PlugType: "IEC_62196_T2", Status: "CHARGING", Currency: "EUR", Components: a},
@@ -64,25 +49,18 @@ func TestWriteRegions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if total != 5 {
-		t.Errorf("total=%d want 5", total)
+	if total != 5 || priced != 1 {
+		t.Errorf("total=%d priced=%d want 5/1", total, priced)
 	}
-	if priced != 1 {
-		t.Errorf("priced=%d want 1", priced)
-	}
-	wantRegions := []string{"FR-75", "NL-10", "NL-20"}
+	// 3 NL chunks + 2 FR chunks, sequence numbered per country.
+	wantRegions := []string{"FR-001", "FR-002", "NL-001", "NL-002", "NL-003"}
 	if !reflect.DeepEqual(regions, wantRegions) {
 		t.Errorf("regions=%v want %v", regions, wantRegions)
 	}
-
-	// Every region must have all four file kinds present on disk.
 	for _, r := range wantRegions {
 		for _, rel := range []string{
-			"ndjson/" + r + ".ndjson",
-			"geojson/" + r + ".geojson",
-			"ocpi/" + r + "-locations.json",
-			"ocpi/" + r + "-tariffs.json",
+			"ndjson/" + r + ".ndjson", "geojson/" + r + ".geojson",
+			"ocpi/" + r + "-locations.json", "ocpi/" + r + "-tariffs.json",
 		} {
 			if _, ok := files[rel]; !ok {
 				t.Errorf("missing FileInfo for %s", rel)
@@ -91,19 +69,35 @@ func TestWriteRegions(t *testing.T) {
 				t.Errorf("missing file on disk %s: %v", rel, err)
 			}
 		}
+		if n := countLines(t, filepath.Join(dir, "ndjson", r+".ndjson")); n != 1 {
+			t.Errorf("%s ndjson lines=%d want 1", r, n)
+		}
 	}
+}
 
-	// NL-10 holds rows 1 and 2 -> 2 NDJSON lines.
-	if n := countLines(t, filepath.Join(dir, "ndjson", "NL-10.ndjson")); n != 2 {
-		t.Errorf("NL-10 ndjson lines=%d want 2", n)
+func TestWriteRegionsGroupsByCountry(t *testing.T) {
+	dir := t.TempDir()
+	// Large target so a whole country fits in one chunk.
+	s := &Snapshotter{Dir: dir, FullEvery: time.Hour, ChunkBytes: 1 << 30}
+	now := time.Unix(1700000000, 0).UTC()
+	if err := s.ensureDir(); err != nil {
+		t.Fatal(err)
 	}
-	// FR-75 holds rows 4 and 5 -> 2 lines.
-	if n := countLines(t, filepath.Join(dir, "ndjson", "FR-75.ndjson")); n != 2 {
-		t.Errorf("FR-75 ndjson lines=%d want 2", n)
+	rows := []store.ExportCharger{
+		{ID: 1, CPOID: "dotnl", Country: "NL", PostalCode: "1011", EVSEUID: "E1", ConnectorID: "1", Currency: "EUR"},
+		{ID: 2, CPOID: "dotnl", Country: "NL", PostalCode: "2000", EVSEUID: "E2", ConnectorID: "1", Currency: "EUR"},
+		{ID: 3, CPOID: "irve", Country: "FR", PostalCode: "75001", EVSEUID: "E3", ConnectorID: "1", Currency: "EUR"},
 	}
-	// NL-20 holds row 3 -> 1 line.
-	if n := countLines(t, filepath.Join(dir, "ndjson", "NL-20.ndjson")); n != 1 {
-		t.Errorf("NL-20 ndjson lines=%d want 1", n)
+	_, regions, _, _, err := s.writeRegions(now, sliceStream(rows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRegions := []string{"FR-001", "NL-001"}
+	if !reflect.DeepEqual(regions, wantRegions) {
+		t.Errorf("regions=%v want %v", regions, wantRegions)
+	}
+	if n := countLines(t, filepath.Join(dir, "ndjson", "NL-001.ndjson")); n != 2 {
+		t.Errorf("NL-001 lines=%d want 2 (whole country in one chunk)", n)
 	}
 }
 
@@ -127,11 +121,11 @@ func TestGenerateFullPrunesStaleRegions(t *testing.T) {
 	if err := s.pruneRegions(files); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "ndjson", "FR-75.ndjson")); err != nil {
-		t.Fatalf("FR-75 should exist after first run: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "ndjson", "FR-001.ndjson")); err != nil {
+		t.Fatalf("FR-001 should exist after first run: %v", err)
 	}
 
-	// Second run: only NL-10 remains; FR-75 must be pruned across all subdirs.
+	// Second run: only NL remains; FR-001 must be pruned across all subdirs.
 	rows2 := []store.ExportCharger{
 		{ID: 1, CPOID: "dotnl", Country: "NL", PostalCode: "1011", EVSEUID: "E1", ConnectorID: "1", Currency: "EUR"},
 	}
@@ -142,21 +136,21 @@ func TestGenerateFullPrunesStaleRegions(t *testing.T) {
 	if err := s.pruneRegions(files2); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(regions2, []string{"NL-10"}) {
-		t.Errorf("regions2=%v want [NL-10]", regions2)
+	if !reflect.DeepEqual(regions2, []string{"NL-001"}) {
+		t.Errorf("regions2=%v want [NL-001]", regions2)
 	}
 	for _, rel := range []string{
-		"ndjson/FR-75.ndjson",
-		"geojson/FR-75.geojson",
-		"ocpi/FR-75-locations.json",
-		"ocpi/FR-75-tariffs.json",
+		"ndjson/FR-001.ndjson",
+		"geojson/FR-001.geojson",
+		"ocpi/FR-001-locations.json",
+		"ocpi/FR-001-tariffs.json",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); !os.IsNotExist(err) {
 			t.Errorf("stale file %s should have been pruned (err=%v)", rel, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "ndjson", "NL-10.ndjson")); err != nil {
-		t.Errorf("NL-10 should still exist: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "ndjson", "NL-001.ndjson")); err != nil {
+		t.Errorf("NL-001 should still exist: %v", err)
 	}
 }
 

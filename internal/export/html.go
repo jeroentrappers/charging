@@ -34,7 +34,7 @@ func RenderIndexHTML(w io.Writer, m Manifest) error {
 	}
 	b.WriteString(`<br><span class="muted">License: ` + html.EscapeString(m.License) + " — " + html.EscapeString(m.Attribution) + `</span></div>`)
 
-	b.WriteString(`<p>Each region (country + postal prefix) is published in four formats. ` +
+	b.WriteString(`<p>Files are split into ~10 MB chunks — each a contiguous postal range of one country — in four formats. ` +
 		`Machine-readable manifest: <a href="index.json">index.json</a>` +
 		fileLink(m, "availability.json", ` · live availability delta: <a href="availability.json">availability.json</a>`) +
 		`</p>`)

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/appmire/charging/internal/store"
 )
@@ -57,10 +57,19 @@ type Snapshotter struct {
 	Log        *slog.Logger
 	FullEvery  time.Duration
 	AvailEvery time.Duration
+	ChunkBytes int64            // target NDJSON bytes per region file; 0 → 10 MiB
 	Now        func() time.Time // injectable for tests
 
 	mu       sync.Mutex
 	manifest Manifest
+}
+
+// chunkTarget is the approximate NDJSON size at which a region file is rotated.
+func (s *Snapshotter) chunkTarget() int64 {
+	if s.ChunkBytes > 0 {
+		return s.ChunkBytes
+	}
+	return 10 << 20 // 10 MiB
 }
 
 func (s *Snapshotter) now() time.Time {
@@ -98,31 +107,6 @@ func (s *Snapshotter) Run(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// regionKey derives the per-region bucket key from a charger's country and
-// postal code: "C-P" where C is the country (or "XX" if empty) and P is the
-// first 2 alphanumeric characters of the postal code uppercased (or "XX" if
-// there are fewer than 2). e.g. ("NL","1011 AB")->"NL-10", ("FR","75001")->"FR-75",
-// ("BE","")->"BE-XX", ("","x")->"XX-XX".
-func regionKey(country, postal string) string {
-	c := country
-	if c == "" {
-		c = "XX"
-	}
-	var p []rune
-	for _, r := range postal {
-		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-			p = append(p, unicode.ToUpper(r))
-			if len(p) == 2 {
-				break
-			}
-		}
-	}
-	if len(p) < 2 {
-		return c + "-XX"
-	}
-	return c + "-" + string(p)
 }
 
 // GenerateFull rebuilds the normalized, GeoJSON, and OCPI dumps, streaming from
@@ -172,26 +156,32 @@ func (s *Snapshotter) GenerateFull(ctx context.Context) error {
 // regionSubdirs are the subdirectories holding the per-region export files.
 var regionSubdirs = []string{"ndjson", "geojson", "ocpi"}
 
-// writeRegions consumes a stream of rows (already ordered so a region's rows
-// are contiguous) and writes per-region ndjson/geojson/ocpi files, returning
-// the FileInfos, total + priced counts, and the sorted region list. Only one
-// region's rows are held in memory at a time.
+// writeRegions consumes a stream of rows (ordered by country then postal) and
+// writes them into size-bounded region files (~chunkTarget NDJSON bytes each),
+// rotating to a new chunk when the target is hit and always at a country
+// boundary — so each file is a contiguous postal range of one country, ~10 MB.
+// Chunk keys are COUNTRY-NNN (e.g. NL-001). Only one chunk is held in memory.
 func (s *Snapshotter) writeRegions(now time.Time, stream func(func(store.ExportCharger) error) error) (files map[string]FileInfo, regions []string, total, priced int, err error) {
 	files = map[string]FileInfo{}
-	regionSet := map[string]struct{}{}
+	target := s.chunkTarget()
 
-	var curKey string
 	var buf []store.ExportCharger
+	var bufBytes int64
+	curCountry := ""
+	seq := 0
 
 	flush := func() error {
 		if len(buf) == 0 {
 			return nil
 		}
-		if err := s.writeRegionFiles(curKey, buf, now, files); err != nil {
+		seq++
+		key := fmt.Sprintf("%s-%03d", curCountry, seq)
+		if err := s.writeRegionFiles(key, buf, now, files); err != nil {
 			return err
 		}
-		regionSet[curKey] = struct{}{}
+		regions = append(regions, key)
 		buf = buf[:0]
+		bufBytes = 0
 		return nil
 	}
 
@@ -200,14 +190,20 @@ func (s *Snapshotter) writeRegions(now time.Time, stream func(func(store.ExportC
 		if e.PriceEUR != nil {
 			priced++
 		}
-		key := regionKey(e.Country, e.PostalCode)
-		if len(buf) > 0 && key != curKey {
+		if c := countryBucket(e.Country); c != curCountry {
+			if err := flush(); err != nil { // close the previous country's last chunk
+				return err
+			}
+			curCountry = c
+			seq = 0
+		}
+		buf = append(buf, e)
+		bufBytes += int64(ndjsonSize(e))
+		if bufBytes >= target {
 			if err := flush(); err != nil {
 				return err
 			}
 		}
-		curKey = key
-		buf = append(buf, e)
 		return nil
 	})
 	if streamErr != nil {
@@ -217,12 +213,25 @@ func (s *Snapshotter) writeRegions(now time.Time, stream func(func(store.ExportC
 		return nil, nil, 0, 0, err
 	}
 
-	regions = make([]string, 0, len(regionSet))
-	for k := range regionSet {
-		regions = append(regions, k)
-	}
 	sort.Strings(regions)
 	return files, regions, total, priced, nil
+}
+
+// countryBucket maps an empty country to the "XX" bucket.
+func countryBucket(country string) string {
+	if country == "" {
+		return "XX"
+	}
+	return country
+}
+
+// ndjsonSize estimates the NDJSON byte length of one row (for chunk sizing).
+func ndjsonSize(e store.ExportCharger) int {
+	b, err := json.Marshal(ndjsonRecord{ExportCharger: e, Tariff: parseTariff(e.Components)})
+	if err != nil {
+		return 256
+	}
+	return len(b) + 1 // + newline
 }
 
 // writeRegionFiles writes the four per-region files for one region's rows and
