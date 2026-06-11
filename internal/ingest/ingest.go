@@ -153,6 +153,27 @@ func (e *Engine) upsertConnector(ctx context.Context, conn model.Connector) (int
 	return id, nil
 }
 
+// RecordLive persists a single charger's live reading (status + optional
+// tariff) using the same SCD2 change-detection as the crawlers. The on-demand
+// live-status endpoint uses it so a live lookup enriches stored history AND
+// bumps charger_status.updated_at — which the crawl orders by, so a
+// just-refreshed EVSE is naturally deprioritized rather than re-polled.
+func (e *Engine) RecordLive(ctx context.Context, chargerID int64, conn model.Connector, status string, tar *model.Tariff) error {
+	avail := 0
+	if status == "AVAILABLE" {
+		avail = 1
+	}
+	if err := e.Store.UpsertStatus(ctx, chargerID, status, avail); err != nil {
+		return err
+	}
+	if tar != nil {
+		if _, err := e.processTariff(ctx, chargerID, conn, map[string]model.Tariff{conn.TariffID: *tar}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // processTariff applies SCD2 change detection for one connector's tariff.
 // It returns whether a new tariff version was recorded.
 //

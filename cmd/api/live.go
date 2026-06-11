@@ -10,6 +10,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/appmire/charging/internal/ingest"
+	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/monta"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/store"
@@ -23,6 +25,7 @@ type liveService struct {
 	client  *monta.Client // nil when Monta creds aren't configured
 	vehicle pricing.Vehicle
 	log     *slog.Logger
+	engine  *ingest.Engine // persists live readings (status + SCD2 tariff)
 	ttl     time.Duration
 
 	mu    sync.Mutex
@@ -37,13 +40,13 @@ type liveEntry struct {
 	currency  string
 }
 
-func newLiveService(client *monta.Client, vehicle pricing.Vehicle, log *slog.Logger) *liveService {
+func newLiveService(client *monta.Client, vehicle pricing.Vehicle, log *slog.Logger, engine *ingest.Engine) *liveService {
 	if client != nil {
 		// On-demand budget: ~burst 3 then 1 per 30s (~20 calls/10 min), leaving
 		// the bulk of Monta's 100/10min for the background crawl.
 		client.SetLimit(30*time.Second, 3)
 	}
-	return &liveService{client: client, vehicle: vehicle, log: log, ttl: 90 * time.Second, cache: map[int64]liveEntry{}}
+	return &liveService{client: client, vehicle: vehicle, log: log, engine: engine, ttl: 90 * time.Second, cache: map[int64]liveEntry{}}
 }
 
 type liveOut struct {
@@ -130,6 +133,19 @@ func (s *liveService) fetch(ctx context.Context, ref store.LiveRef) (liveEntry, 
 	s.mu.Lock()
 	s.cache[ref.ID] = e
 	s.mu.Unlock()
+
+	// Persist the reading so it enriches the stored dataset and, crucially, bumps
+	// charger_status.updated_at — the crawl orders by that, so it won't redundantly
+	// re-poll an EVSE we just refreshed live. Best-effort; never fails the response.
+	if s.engine != nil {
+		conn := model.Connector{
+			CPOID: ref.CPOID, EVSEUID: ref.EVSEUID, TariffID: ref.EVSEUID,
+			PowerKW: ref.PowerKW, CurrentType: ref.CurrentType,
+		}
+		if err := s.engine.RecordLive(ctx, ref.ID, conn, status, tariff); err != nil {
+			s.log.Warn("live: persist reading", "id", ref.ID, "err", err)
+		}
+	}
 	return e, true
 }
 

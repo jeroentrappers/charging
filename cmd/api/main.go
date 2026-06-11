@@ -89,7 +89,7 @@ func main() {
 			log.Info("live status: Monta client configured")
 		}
 	}
-	s.live = newLiveService(montaClient, s.vehicle, log)
+	s.live = newLiveService(montaClient, s.vehicle, log, s.engine)
 
 	// Bulk dataset export: regenerate the open static dumps on a schedule and
 	// serve them from exportDir (see routes()).
