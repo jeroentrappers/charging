@@ -1,10 +1,16 @@
 # charging — cheapest public EV charger nearby
 
-A service that ingests open EV-charging data from Belgium's National Access
-Point and answers two questions:
+Live at **[charging.appmire.be](https://charging.appmire.be)**.
 
-1. **Where is the cheapest *available* public charger near me?**
+A service that ingests open EV-charging data from Belgium's National Access
+Point and answers:
+
+1. **Where is the best-value *available* public charger near me?** — ranked by
+   the real cost of *your* charge (energy + time + session fee) plus the
+   **detour** to get there.
 2. **How has a charger's ad-hoc price changed over time?** (statistics)
+3. **What do other drivers report** about a charger (out of service, not really
+   public, slower than advertised, …)?
 
 ## Why this exists / where the data comes from
 
@@ -16,127 +22,125 @@ Access Point **[transportdata.be](https://www.transportdata.be/)**. Most feeds
 speak **OCPI** (DATEX II becomes mandatory 2026-04-14).
 
 The NAP is a *catalogue of per-CPO endpoints*, not one unified API, so we
-aggregate the feeds ourselves. The first wired source is **EnergyVision**
-(OCPI 2.1.1). See **[Getting real data](#getting-real-data)**.
+aggregate the feeds. See [Sources](#sources--getting-real-data).
 
 > Ad-hoc price ≠ per-charge-card price. AFIR mandates the drive-up price, which
-> is the fairest basis for comparison. Per-MSP/card tariffs (e.g. a Mobiflow
-> card) would require a commercial source like the Chargeprice API.
+> is the fairest basis for comparison. Per-MSP/card tariffs would require a
+> commercial source.
 
 ## Architecture (API/CLI-driven)
 
 The HTTP API is the single control + data plane; every client goes through it —
-nothing else touches the database.
+nothing else touches the database. **Pricing + ranking run on the client**: the
+API does a fast indexed geo query and returns candidates with their structured
+tariff; the PWA prices them for the user's car at the current time and ranks by
+price + detour (see [Comparison model](#comparison-model)).
 
 ```
-                      ┌───────────── clients ─────────────┐
-   PWA (web/)  ─────▶  │                                    │
-   chargingctl ─────▶  │   HTTP API (cmd/api)               │
-   third parties ──▶   │     read:  chargers/stats/sessions │
-                      │     admin: sources/ingest (token)  │
-                      └───────────────┬────────────────────┘
-                                      │
-              ┌───────────────────────┼───────────────────────┐
-        cmd/ingest (scheduler)    PostgreSQL + PostGIS    cmd/migrate
-        OCPI 2.1.1/2.2.1 + DATEX        history (SCD2)      (embedded)
-              feeds ▲ poll               + geo + stats
+   PWA (web/, charging.appmire.be)  ─┐
+   chargingctl (CLI)                 ├─▶  HTTP API (cmd/api)  ──┐
+   third parties / OCPI CPOs ────────┘     read · admin · OCPI │
+                                                               ▼
+   cmd/ingest (scheduler) ──poll/crawl──▶  PostgreSQL+PostGIS ◀── cmd/migrate
+   OCPI files · OCPI API · DATEX · Monta     SCD2 history · geo · stats · reports
 ```
 
-## Components & docs
+In production (single VM) nginx terminates TLS and reverse-proxies the PWA and
+the API (`/api/*`) on one origin; the API serves the bulk **export** and the
+**OCPI eMSP** endpoints too. See [Deploy](#deploy).
+
+## Components
 
 | Path | What |
 |---|---|
-| `cmd/api` | HTTP API: read endpoints + admin control plane |
-| `cmd/ingest` | polling scheduler (availability + price) |
+| `cmd/api` | HTTP API: read endpoints, hidden admin control plane, OCPI eMSP, `/export`, Scalar `/docs` |
+| `cmd/ingest` | polling scheduler (availability + price) + Monta background crawl |
 | `cmd/migrate` | applies embedded migrations on deploy |
 | `cmd/chargingctl` | CLI client over the API (read + admin) |
-| `internal/{ocpi,datex}` | source readers (OCPI 2.1.1/2.2.1, DATEX II) |
-| `internal/{normalize,model,pricing}` | canonical model + comparable-session pricing |
+| `internal/ocpi` | OCPI 2.1.1/2.2.1 **client** (pull) + **eMSP server** (handshake + push receiver) |
+| `internal/{datex,monta}` | DATEX II reader; Monta Public API (AFIR list + per-EVSE price/status) |
+| `internal/{normalize,model,pricing}` | canonical model, plug/private classification, comparable-session pricing |
+| `internal/{report,export}` | community reports taxonomy/aggregation; open bulk dataset dumps |
 | `internal/{store,ingest,source}` | persistence, CDC engine, source registry |
-| `web/` | React + Vite + TS **PWA** (map-first frontend) |
-| [`docs/frontend.md`](docs/frontend.md) | frontend UX analysis |
+| `web/` | React + Vite + TS **PWA**; client-side pricing in `web/src/pricing.ts` |
 | [`docs/sources.md`](docs/sources.md) | Belgian NAP source catalogue + status |
+| [`docs/ocpi.md`](docs/ocpi.md) | acting as an OCPI eMSP: handshake + push |
+| [`docs/export.md`](docs/export.md) | the open bulk dataset dumps under `/export` |
+| [`docs/frontend.md`](docs/frontend.md) | PWA UX + features |
 | [`docs/access-request-emails.md`](docs/access-request-emails.md) | API-key request drafts |
+
+## Comparison model
+
+The cost of charging anywhere reduces to **energy needed + speed + the
+per-session fee**, so the user just sets a **charging profile** (how much energy,
+how fast) and their **car** (usable battery, consumption) — all stored in the
+browser (localStorage), editable via the ⚙ settings panel. The 10 fixed
+comparison profiles still exist *server-side* for the Insights aggregates; the
+user-facing picker is energy + speed.
+
+The result list is **the 50 lowest by weighted cost = charging price + detour**,
+not strictly the nearest or the raw-cheapest:
+
+- **Per-car, time-of-day price**: energy×€/kWh (with charging losses) + duration
+  (energy ÷ speed, DC taper) ×€/h + the FLAT session fee, evaluated at the
+  current time so peak/off-peak tariffs rank correctly.
+- **Detour**: the round-trip to reach a charger adds extra energy (consumption ×
+  km × a reference €/kWh) and time (× a value-of-time €/h) — a cheaper charger
+  far off your route isn't actually cheaper. Toggle + tune in settings.
+- **Private chargers excluded**: home / peer-to-peer points (e.g. Stroohm
+  "Private"/"Home") are filtered from the public search by default (a filter
+  re-includes them).
+- **Community reports** corroborated by ≥2 drivers (out-of-service / not-public /
+  doesn't-exist) sink a charger to the bottom (never hidden).
+
+Pricing is computed **on the client** (`web/src/pricing.ts`), a faithful port of
+`internal/pricing` — so changing the car/profile/detour re-ranks instantly with
+no network call. **`internal/pricing` is canonical; keep `pricing.ts` in sync.**
 
 ## Key design decisions
 
 - **Prices change rarely → temporal versioning (SCD Type 2), not snapshots.**
   A new `tariff_version` row is written **only when the tariff content changes**
-  (detected via an order-independent content hash). The history table stays
-  tiny; "current price" is a single indexed row; "price at time T" is a
-  temporal range query.
-- **Manufactured history.** The OCPI feeds only ever expose the *current*
-  tariff. We build history by polling and recording observed changes — see
-  the honesty rules below.
-- **Availability is current-only** (overwritten each poll), by design. Price is
-  historized; occupancy is not.
-- **PostgreSQL + PostGIS** for geo ("nearby" via `ST_DWithin` + KNN), relational
-  data, and temporal history in one store.
-- **Comparable price across realistic sessions.** Raw OCPI tariffs mix €/kWh,
-  €/min and session fees, so they aren't directly sortable. We price a set of
-  **10 realistic charging sessions** (see below) into `comparable_prices` jsonb,
-  plus a single headline `comparable_price_eur` for the default sort. This makes
-  AC and DC chargers comparable and "cheapest" well-defined — and lets a user
-  ask "cheapest for *my* kind of session".
-- **Store layer uses pgx directly** (not sqlc): PostGIS `geography` + `numeric`
-  fight code generation, and explicit geo expressions/casts are cleaner.
+  (order-independent content hash). "Current price" is one indexed row; "price
+  at time T" is a temporal range query.
+- **Manufactured history.** OCPI feeds expose only the *current* tariff; we build
+  history by polling and recording observed changes — see the honesty rules.
+- **Availability is current-only** (overwritten each poll), by design.
+- **PostgreSQL + PostGIS** for geo (`ST_DWithin` + KNN), relational data and
+  temporal history in one store.
+- **Canonical values**: plug standards are normalized to OCPI form on ingest
+  (`IEC_62196_T2` …, shown as "Type 2", "CCS", …); private chargers flagged from
+  the operator name.
+- **Store layer uses pgx directly** (not sqlc): PostGIS `geography`/`numeric`
+  fight code generation.
+- **OpenAPI is generated from the typed handlers (huma)** so it can't drift;
+  served as Scalar at `/docs`, spec at `/openapi.{json,yaml}`. The admin control
+  plane is registered but **hidden** from the public spec.
 
 ### Running continuously (unattended)
 
-The `ingest` scheduler is built to run 24/7:
+- **Two cadences:** availability frequently (`status_cron`, ~3 min); price/tariff
+  diffs rarely (`poll_cron`, ~daily). **Monta** has no bulk price endpoint, so a
+  background crawl cycles its per-EVSE status+price under the rate limit (private
+  chargers skipped to save budget).
+- **Staleness:** availability older than `AVAILABILITY_STALE_AFTER` (15 min) is
+  *unknown* — excluded from `available=true`.
+- **Overlap-safe**, **hot registry reload** (every 5 min), **graceful shutdown**.
+- **Observability:** Prometheus `/metrics`; `/readyz` fails if an enabled source
+  has no recent successful ingest.
 
-- **Two cadences:** availability is polled frequently (`status_cron`, default
-  every 3 min) via the Locations feed; price/tariff diffs run rarely
-  (`poll_cron`, default daily). The full pass also refreshes availability.
-- **Staleness:** availability older than `AVAILABILITY_STALE_AFTER` (default
-  15 min) is treated as *unknown* — excluded from `available=true` and flagged
-  `availability_stale` — so a dead feed never masquerades as "free".
-- **Overlap-safe:** a pass is skipped if the previous one of the same job is
-  still running (no pile-ups).
-- **Hot registry reload:** the scheduler re-reads the `cpo` table every 5 min,
-  so enabling or adding a source takes effect without a restart.
-- **Graceful shutdown:** on SIGINT/SIGTERM it waits for in-flight passes.
-- **Observability:** Prometheus `/metrics` (runs, rows, changes, duration,
-  last-success timestamp per CPO+kind) and an API `/readyz` that fails if any
-  enabled source has no recent successful availability/price ingest.
+### Data honesty rules
 
-### Data honesty rules (so statistics stay credible)
-
-- `observed_from`/`observed_to` are *when we saw the change*, not the CPO's real
-  change time. OCPI `last_updated` is kept as `source_last_updated` when given.
-- A CPO endpoint being down is a **gap**, never "price removed" or "free".
-- "No tariff published" is distinct from "price = €0" (the former records no
-  version at all).
-
-## Architecture
-
-```
-cmd/ingest   poller binary: -once (cron/CI) or in-process scheduler
-cmd/api      HTTP API: cheapest-nearby + price-history
-
-internal/ocpi       OCPI 2.1.1 + 2.2.1 client (discovery, paged Locations+Tariffs)
-internal/datex      DATEX II v3 EnergyInfrastructure reader (aggregators)
-internal/normalize  OCPI -> canonical model
-internal/model      canonical types + tariff content hash
-internal/pricing    comparable standard-session price from tariff components
-internal/source     CPO registry + token resolution (+ EnergyVision seed)
-internal/store      pgx + PostGIS persistence and queries
-internal/ingest     change-data-capture engine (hash -> SCD2), run logging
-db/migrations       goose schema
-```
-
-### Data model (core tables)
-
-- `cpo` — source registry (OCPI base URL, token env var, poll cron, enabled).
-- `charger` — one row per connector; `geography(Point,4326)` + GiST index.
-- `tariff_version` — append-only history; partial unique index
-  `WHERE observed_to IS NULL` guarantees exactly one current row per charger.
-- `charger_status` — current availability only.
-- `ingest_run` — one row per poll per CPO (rows seen, changes, error).
+- `observed_from/to` are *when we saw the change*, not the CPO's real change
+  time (`source_last_updated` keeps OCPI `last_updated` when given).
+- A CPO endpoint being down is a **gap**, never "price removed"/"free".
+- "No tariff published" ≠ "price = €0".
+- Detour assumptions (reference €/kWh, value-of-time) are user-set and surfaced,
+  never hidden.
 
 ## Quick start
 
-Requires Docker, Go 1.26+.
+Requires Docker, Go 1.26+, pnpm (for the web).
 
 ```bash
 cp .env.example .env
@@ -146,159 +150,101 @@ make demo-seed                 # OPTIONAL: fake data so the API returns results
 make run-api                   # serve on :8080
 ```
 
-Then:
-
 ```bash
 curl 'localhost:8080/healthz'
-curl 'localhost:8080/chargers/cheapest?lat=51.0544&lon=3.7251&radius=5000&available=true'
-curl 'localhost:8080/chargers/1/price-history'
+curl 'localhost:8080/chargers/nearby?lat=51.0544&lon=3.7251'        # geo candidates (+ tariffs) for client pricing
+curl 'localhost:8080/chargers/cheapest?lat=51.0544&lon=3.7251&energy_kwh=40'  # server-ranked
+open http://localhost:8080/docs                                      # interactive API reference
 ```
 
 ### Frontend (PWA)
 
-The map-first web app lives in [`web/`](web/) (React + Vite + TS + Leaflet,
-installable PWA, mobile-first/responsive). It's a pure API client on a separate
-origin:
+Map-first installable PWA in [`web/`](web/) (React + Vite + TS + Leaflet). Pure
+API client; URLs are shareable (`/@lat,lon,zoom`, `/charger/{id}/{slug}`).
 
 ```bash
 cd web && cp .env.example .env && pnpm install && pnpm dev
 ```
 
-See [`web/README.md`](web/README.md) and the UX analysis in
-[`docs/frontend.md`](docs/frontend.md).
+See [`docs/frontend.md`](docs/frontend.md).
 
-### API
+## API
+
+Full, always-current reference: **`/docs`** (Scalar) / **`/openapi.yaml`**.
+Public endpoints:
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/healthz` | liveness + DB ping |
-| GET | `/readyz` | ready only if every enabled source has recent successful ingests |
-| GET | `/metrics` | Prometheus metrics |
-| GET | `/sessions` | the 10 comparison sessions for the reference vehicle |
-| GET | `/chargers/cheapest` | nearby chargers, cheapest first |
+| GET | `/chargers/nearby` | nearest candidates + structured tariffs (the PWA prices/ranks these) |
+| GET | `/chargers/cheapest` | server-ranked cheapest-by-price+detour |
+| GET | `/chargers/{id}` | one charger (shareable deep links) |
 | GET | `/chargers/{id}/price-history` | every recorded tariff version |
-| GET | `/stats/overview` | market counts + avg/median price by current type |
-| GET | `/stats/sessions` | avg/min/max price per comparison session |
-| GET | `/stats/regions?by=city\|postal` | average price per region |
-| GET | `/stats/price-trend?months=` | monthly average price over the history |
-| GET/POST | `/admin/sources` | list / add sources (admin) |
-| POST | `/admin/sources/{id}/enable\|disable` | toggle a source (admin) |
-| PUT | `/admin/sources/{id}/token` | set a source token (admin) |
-| DELETE | `/admin/sources/{id}` | remove a source (admin) |
-| POST | `/admin/ingest/{id}/run?kind=` | trigger an ingestion pass (admin) |
-| GET | `/admin/runs` | recent ingestion runs (admin) |
+| GET | `/chargers/{id}/live` | on-demand live availability (Monta) |
+| GET/POST | `/chargers/{id}/reports` | community reports (read / submit) |
+| GET | `/reports/types` | the structured report taxonomy |
+| GET | `/sessions` | the comparison-session profiles |
+| GET | `/stats/{overview,sessions,regions,price-trend}` | market statistics |
+| GET | `/export/…` | open bulk dataset dumps ([docs](docs/export.md)) |
+| GET | `/healthz` · `/readyz` · `/metrics` | ops |
+| — | `/ocpi/…` | OCPI 2.2.1 eMSP (handshake + push receiver, [docs](docs/ocpi.md)) |
 
-`/admin/*` is the **control plane**: protected by a `ADMIN_TOKEN` bearer
-(disabled entirely if `ADMIN_TOKEN` is unset). Token values are never returned
-(only `has_token`).
+`/chargers/{nearby,cheapest}` filters: `lat`,`lon` (required), `radius`,
+`min_power`, `plug`, `available`, `include_private`, `limit`. `cheapest` also
+takes the car + session + detour params (`energy_kwh`,`power_kw`,`usable_kwh`,
+`consumption_kwh100`,`detour`,`detour_price`,`detour_eur_per_h`, or a named
+`session`); the PWA passes the car/session to `nearby` only as the tariffs it
+needs and computes the rest locally.
 
-### API/CLI-driven: `chargingctl`
+The **admin control plane** (`/admin/*`, bearer `ADMIN_TOKEN`) is functional but
+**hidden from the public OpenAPI**: list/add/enable/disable/token/delete sources,
+trigger ingests, view runs, clear a charger's reports, and run the OCPI
+credentials handshake (`POST /admin/sources/{id}/ocpi/register`).
 
-Everything is operable through the API; **`chargingctl` is a thin client over
-it (never the DB)** — same contract as the web app. Build with `make build`
-(produces `bin/chargingctl`).
+### `chargingctl`
+
+Everything is operable through the API; `chargingctl` is a thin client over it.
 
 ```bash
 export CHARGING_API=http://localhost:8080 ADMIN_TOKEN=…
 chargingctl chargers cheapest --lat 51.05 --lon 3.72 --session charge1080_dc300
-chargingctl sessions
 chargingctl stats price-trend --months 12
-chargingctl sources list
-chargingctl runs --cpo energyvision
+chargingctl sources set-token energyvision "$TOKEN" && chargingctl sources enable energyvision
 ```
 
-Bringing a source live (e.g. when an OCPI key arrives) is now pure CLI — no SQL:
-```bash
-chargingctl sources set-token energyvision "$TOKEN"
-chargingctl sources enable energyvision
-chargingctl ingest run energyvision        # then: chargingctl runs --cpo energyvision
-```
+## Sources & getting real data
 
-`/chargers/cheapest` query params: `lat`, `lon` (required), `radius` (m,
-default 5000), `min_power` (kW), `plug` (OCPI standard), `available`
-(`true`/`1`), `session` (a profile key — sort & return that session's price),
-`limit` (default 50). Without `session`, results are ordered by the headline
-`comparable_price_eur`; with one, by that session's price (chargers that can't
-serve it sort last). Each result carries the full `comparable_prices` map.
+| Source | Type | Status | Notes |
+|---|---|---|---|
+| **Road** | open OCPI 2.2.1 files | **live, no key** | ~7,700 connectors incl. ad-hoc prices; enabled by default |
+| **Monta** | AFIR list + per-EVSE API | **live** (key) | open locations; per-EVSE price/status crawl; `MONTA_CREDS` |
+| **EnergyVision** | OCPI 2.1.1/eMSP | pending | request a token, or run the OCPI handshake ([docs/ocpi.md](docs/ocpi.md)) |
+| **Eco-Movement** | commercial Data API | pending | has ad-hoc CPO prices (~36k connectors); token-gated, custom schema |
+| any CPO | OCPI eMSP | ready | we can register + receive pushes ([docs/ocpi.md](docs/ocpi.md)) |
 
-### Comparison sessions
-
-Each charger is priced for 10 realistic sessions: two energy needs (a 100 km
-top-up and a 10→80 % charge) at four power tiers (AC 11/22 kW, DC 150/300 kW),
-plus a quick urban top-up and an overnight destination charge. Energy is
-**metered** (includes charging losses), and DC durations use a **charging-curve
-average** (a 150 kW charger averages ~110 kW over 10→80 %), so per-minute
-components are billed honestly. A session only applies to a charger that can
-deliver it (current type + power tier).
-
-The reference vehicle is configurable (defaults to a mid-size EV, 60 kWh usable,
-18 kWh/100 km) via `VEHICLE_USABLE_KWH` and `VEHICLE_CONSUMPTION_KWH100`.
+Road + Monta already populate the map. To add a per-CPO OCPI source with a token:
 
 ```bash
-curl localhost:8080/sessions
-# cheapest charger for a 10–80% fast charge on DC:
-curl 'localhost:8080/chargers/cheapest?lat=51.0548&lon=3.7260&radius=5000&session=charge1080_dc300'
+chargingctl sources set-token <id> "$TOKEN" && chargingctl sources enable <id>
 ```
 
-## Deploy (single VM)
+Or, for a CPO that speaks OCPI, run the credentials handshake — see
+[`docs/ocpi.md`](docs/ocpi.md). New sources: extend `source.Seeds()` or
+`chargingctl sources add`.
 
-`docker-compose.prod.yml` runs the **whole stack**: PostGIS + a one-shot
-migration step + the API + ingest scheduler + the **web PWA** (nginx). The Go
-binaries (`api`, `ingest`, `migrate`) ship from one distroless image; the web
-app is built and served by its own nginx image.
+## Deploy
+
+`docker-compose.prod.yml` runs the whole stack (PostGIS + migrate + api + ingest
++ web). Live deployment notes (arm64 host, nginx `/api` reverse proxy, env) are
+in the [appmire4-web deploy memory]; in short:
 
 ```bash
-cp .env.example .env        # set source tokens; DATABASE_URL is overridden to the compose DB
-make prod-up                # build images, start db -> migrate -> api + ingest + web
-make prod-demo              # same, plus load demo data so the map shows chargers
-make prod-ps                # status
-make prod-logs              # tail
-make prod-backup TS=$(date +%F)   # gzip pg_dump into backups/
+cp .env.example .env   # set ADMIN_TOKEN, MONTA_CREDS, PUBLIC_URL, WEB_API_BASE…
+make prod-up           # build + start; migrations run automatically
 ```
 
-Services after `prod-up`: **web → http://localhost:5173**, API → :8080,
-ingest metrics → :9090 (in-container). The browser calls the API directly, so
-the web container needs the API origin the **browser** can reach. It's injected
-at **runtime** (not baked): on startup the container renders `/config.js` from
-`VITE_API_BASE` via `envsubst`, so one image works across environments — set
-`WEB_API_BASE` per deploy (e.g. `WEB_API_BASE=https://api.example.com make prod-up`).
-
-- **Migrations** run automatically on each deploy (embedded in the `migrate`
-  binary; api/ingest wait for it via `depends_on: service_completed_successfully`).
-- **Restart policy** `unless-stopped` keeps api/ingest alive across crashes and
-  reboots; the API container has a self-probing healthcheck (`api -healthcheck`).
-- **Metrics** are exposed by the ingest service on `:9090` (not published by
-  default; scrape it on the VM or add a port mapping).
-- The prod stack uses its own compose project (`charging_prod`) and data volume,
-  separate from the local dev DB.
-
-## Getting real data
-
-**Real data already flows with no key**: the **Road** source (`source_type=ocpi_file`)
-is an open OCPI 2.2.1 static feed (~3,300 sites / 7,700 connectors across Belgium,
-*including ad-hoc prices*) and is **enabled by default**. `make run-ingest-once`
-populates the map immediately. (Its file path UUID may rotate; update it with
-`chargingctl sources add road --url <new-url>`.)
-
-The remaining (per-CPO) feeds need a free OCPI key.
-
-> **ACTION REQUIRED:** email **myevplatform@energyvision.be** to request an OCPI
-> API key (granted free / non-discriminatory under AFIR Article 20).
-
-Once you have it:
-
-```bash
-echo 'ENERGYVISION_TOKEN=<your-key>' >> .env
-# enable the source:
-docker compose exec db psql -U charging -d charging \
-  -c "UPDATE cpo SET enabled=true WHERE id='energyvision';"
-
-make run-ingest-once   # one pass
-# or: make run-ingest  (scheduler; daily per the source's poll_cron)
-```
-
-Add more Belgian CPOs by extending `source.Seeds()` (or inserting `cpo` rows)
-with their NAP-published OCPI base URLs and token env vars.
+`PUBLIC_URL` (e.g. `https://charging.appmire.be/api`) makes the OCPI endpoints'
+advertised URLs absolute. `WEB_API_BASE` is the API origin the **browser**
+reaches; it's injected into the web container at runtime (envsubst → `/config.js`).
 
 ## Testing
 
@@ -306,22 +252,19 @@ with their NAP-published OCPI base URLs and token env vars.
 make test
 ```
 
-`internal/pricing` has pure unit tests (incl. off-peak/time-of-day, kWh
-thresholds, order-independent hashing). `internal/ingest` has an end-to-end
-integration test that runs the whole pipeline against a mock OCPI server and the
-PostGIS database, asserting SCD2 behaviour (no new version when unchanged; a new
-version + closure on change) and the cheapest-nearby geo query. It **skips
-cleanly** if no database is reachable.
+`internal/{pricing,report,model,ocpi,datex,monta}` have unit tests (pricing
+time-of-day + custom sessions; report TTL/opposite/threshold; plug + private
+classification; OCPI handshake + push receiver). `internal/ingest` runs the full
+pipeline against a mock OCPI server + PostGIS (SCD2 behaviour, cheapest-nearby);
+DB-backed tests skip cleanly without a database.
 
-## Status & roadmap
+## Status
 
-Working vertical slice: OCPI client → normalize → comparable pricing → SCD2
-storage → cheapest-nearby + history API, proven end-to-end against PostGIS.
+Live in production with Road + Monta. Built: client-side pricing + detour
+ranking, car/charging-profile settings, community reports, private-charger
+filtering, plug normalization, shareable URLs, the open `/export` dumps, and an
+OCPI 2.2.1 eMSP (handshake + push) ready for direct CPO integrations.
 
-Not yet done (natural next steps):
-- Live EnergyVision ingestion (blocked only on the API key above).
-- More CPO sources; DATEX II reader (mandatory 2026-04-14).
-- Recompute the comparable price at request time for time-varying tariffs (the
-  stored value uses a fixed reference time for trend comparability).
-- Aggregate statistics endpoints (avg €/kWh by region over time).
-- Frontend / map UI.
+Next: connect EnergyVision (OCPI handshake or their forthcoming consumer API)
+and Eco-Movement (priced API); DATEX II coverage expansion (mandatory
+2026-04-14); CI guard that `pricing.ts` matches `pricing.go`.
