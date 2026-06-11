@@ -7,7 +7,13 @@ import { AvailBadge, availOf, eur, km, priceOf, type Filters } from './ui'
 
 const ChargerDetail = lazy(() => import('./ChargerDetail').then((m) => ({ default: m.ChargerDetail })))
 
-interface Viewport { lat: number; lon: number; radius: number }
+// The list is the cheapest chargers in a generous region around the origin —
+// deliberately NOT tied to the visible map area, so zooming/panning the map
+// doesn't shrink or grow it.
+const SEARCH_RADIUS_M = 50000
+const RESULT_LIMIT = 50
+
+interface Viewport { lat: number; lon: number }
 
 export function FindPage(props: {
   fallbackCenter: [number, number] // used until geolocation / a URL center is known
@@ -62,7 +68,7 @@ export function FindPage(props: {
   const accuracyM = manualOrigin == null && props.located != null ? props.accuracy : null
   const oLat = origin[0]
   const oLon = origin[1]
-  const radius = vp?.radius ?? 5000
+  const radius = SEARCH_RADIUS_M
 
   // Latest values for the (nonce-keyed) URL-apply effect, without making them deps.
   const chargersRef = useRef(chargers)
@@ -85,7 +91,7 @@ export function FindPage(props: {
           available: props.filters.available,
           min_power: props.filters.minPower || undefined,
           plug: props.filters.plug || undefined,
-          limit: 100,
+          limit: RESULT_LIMIT,
         })
         setChargers(r.results)
       } catch {
@@ -150,8 +156,8 @@ export function FindPage(props: {
     props.onCloseCharger()
   }
 
-  function onViewport(lat: number, lon: number, r: number, zoom: number) {
-    setVp({ lat, lon, radius: r })
+  function onViewport(lat: number, lon: number, _r: number, zoom: number) {
+    setVp({ lat, lon })
     // Reflect the map position in the URL — but not while a charger detail owns
     // the URL (/charger/{id}).
     if (!detailOpenRef.current) props.onCenter({ lat, lon, zoom })

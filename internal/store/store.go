@@ -336,9 +336,11 @@ type NearbyQuery struct {
 }
 
 // CheapestNearby returns candidate chargers within radius (and matching the
-// filters), ordered by distance, including the structured tariff so the caller
-// can compute a request-time (time-of-day-aware) price and re-rank. Limit caps
-// the candidate pool. Each result carries the stored noon comparable + the
+// filters), ordered by the stored comparable price (cheapest first, unpriced
+// last), including the structured tariff so the caller can compute a
+// request-time (time-of-day-aware) price and re-rank. Limit caps the candidate
+// pool — so with a generous radius the pool is "the N cheapest in the region",
+// independent of map zoom. Each result carries the stored noon comparable + the
 // per-session map as fallbacks.
 func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyCharger, error) {
 	if q.Limit <= 0 || q.Limit > 1000 {
@@ -367,7 +369,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
 		  AND ($5 = '' OR c.plug_type = $5)
 		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
-		ORDER BY dist ASC
+		ORDER BY tv.comparable_price_eur ASC NULLS LAST, dist ASC
 		LIMIT $7`, freshExpr, freshExpr)
 
 	rows, err := s.Pool.Query(ctx, query,
