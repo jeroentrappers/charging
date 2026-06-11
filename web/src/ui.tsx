@@ -5,6 +5,7 @@ import { energyPresets, type Settings } from './settings'
 import { LANGS } from './i18n'
 import type { Theme } from './theme'
 import { CARS, carLabel, carPlugs } from './cars'
+import { MSPS } from './msps'
 
 export function eur(n: number | null | undefined): string {
   return n == null ? '—' : '€' + n.toFixed(2)
@@ -311,6 +312,31 @@ export function SettingsPanel(props: {
           <input type="number" min={1} step={0.5} value={car.consumptionKWh100}
             onChange={(e) => props.onChange({ car: { ...car, consumptionKWh100: num(e.target.value, 1), modelId: undefined } })} />
         </label>
+
+        <h3 style={{ margin: '12px 0 6px' }}>{t('settings.memberships')}</h3>
+        <p className="caveat" style={{ marginTop: 0 }}>{t('settings.membershipsNote')}</p>
+        <div className="member-list">
+          {MSPS.map((m) => {
+            const on = props.settings.memberships.includes(m.id)
+            return (
+              <label key={m.id} className={`member ${on ? 'on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={(e) =>
+                    props.onChange({
+                      memberships: e.target.checked
+                        ? [...props.settings.memberships, m.id]
+                        : props.settings.memberships.filter((x) => x !== m.id),
+                    })
+                  }
+                />
+                <span className="member-name">{m.name}</span>
+                <span className="member-rate">~{eur(m.acEurKWh)}/{eur(m.dcEurKWh)} {t('unit.kwh')}</span>
+              </label>
+            )
+          })}
+        </div>
 
         <h3 style={{ margin: '12px 0 6px' }}>{t('settings.detour')}</h3>
         <label className="setting-row">

@@ -15,12 +15,14 @@ export interface Settings {
   }
   charge: { kWh: number; powerKW: number | null } // energy to add; powerKW null = as fast as possible
   detour: { enabled: boolean; refPrice: number; eurPerHour: number }
+  memberships: string[] // selected MSP ids; prices use the cheapest of ad-hoc vs these
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   car: { usableKWh: 60, consumptionKWh100: 18 },
   charge: { kWh: 40, powerKW: null },
   detour: { enabled: true, refPrice: 0.3, eurPerHour: 12 },
+  memberships: [],
 }
 
 const KEY = 'charging.settings'
@@ -34,6 +36,7 @@ function load(): Settings {
       car: { ...DEFAULT_SETTINGS.car, ...p.car },
       charge: { ...DEFAULT_SETTINGS.charge, ...p.charge },
       detour: { ...DEFAULT_SETTINGS.detour, ...p.detour },
+      memberships: Array.isArray(p.memberships) ? p.memberships : [],
     }
   } catch {
     return DEFAULT_SETTINGS

@@ -182,7 +182,9 @@
     "language": "Language",
     "theme": "Theme",
     "carModel": "Car model",
-    "customCar": "Custom / other"
+    "customCar": "Custom / other",
+    "memberships": "Charge cards",
+    "membershipsNote": "Pick the cards you carry — prices then show the cheapest of ad-hoc vs your card. Rates are estimated (≈), verify with your provider."
   },
   "lang": {
     "label": "Language"

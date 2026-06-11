@@ -182,7 +182,9 @@
     "language": "Taal",
     "theme": "Thema",
     "carModel": "Automodel",
-    "customCar": "Aangepast / ander"
+    "customCar": "Aangepast / ander",
+    "memberships": "Laadpassen",
+    "membershipsNote": "Kies je passen — prijzen tonen dan de goedkoopste van ad-hoc of je pas. Tarieven zijn geschat (≈), controleer bij je aanbieder."
   },
   "lang": {
     "label": "Taal"

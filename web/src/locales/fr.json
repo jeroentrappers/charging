@@ -182,7 +182,9 @@
     "language": "Langue",
     "theme": "Thème",
     "carModel": "Modèle de voiture",
-    "customCar": "Personnalisé / autre"
+    "customCar": "Personnalisé / autre",
+    "memberships": "Cartes de recharge",
+    "membershipsNote": "Choisissez vos cartes — les prix affichent le moins cher entre ad-hoc et votre carte. Tarifs estimés (≈), à vérifier auprès de votre fournisseur."
   },
   "lang": {
     "label": "Langue"

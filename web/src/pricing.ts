@@ -4,9 +4,12 @@
 // charging profile / detour re-ranks instantly with no network round-trip.
 //
 // KEEP IN SYNC with internal/pricing/pricing.go + profiles.go (the canonical
-// implementation). The numbers must match the server's /chargers/cheapest.
+// implementation): evaluate/customPrice/detour must match the server's
+// /chargers/cheapest. (Membership/MSP pricing below is a deliberate client-only
+// overlay — the server prices ad-hoc only; memberships re-rank locally.)
 import type { Charger, TariffStruct, TariffElement, TariffRestrictions } from './api'
 import type { Settings } from './settings'
+import { MSPS, memberSessionPrice } from './msps'
 
 const EFF_AC = 0.89
 const EFF_DC = 0.94
@@ -101,13 +104,34 @@ function detourCost(distanceM: number, settings: Settings): number {
 // (avoid-flagged sink to the bottom; unpriceable last). It writes the computed
 // price into session_price_eur and detour_eur so the existing UI renders it.
 export function rankChargers(chargers: Charger[], settings: Settings, now: Date, limit = 50): Charger[] {
+  const memberships = (settings.memberships ?? []).map((id) => MSPS.find((m) => m.id === id)).filter(Boolean)
   const ranked = chargers.map((c) => {
-    const price = c.price_components
+    const adhoc = c.price_components
       ? customPrice(c.price_components, c.power_kw, c.current_type, settings.charge.kWh, settings.charge.powerKW ?? 0, now)
       : null
+    // The effective price is the cheapest of the ad-hoc price and any selected
+    // membership's blended rate (a flat card applies regardless of operator).
+    let price = adhoc
+    let via: string | undefined
+    let estimated = false
+    for (const msp of memberships) {
+      const mp = memberSessionPrice(msp!, c.current_type, settings.charge.kWh)
+      if (price == null || mp < price) {
+        price = mp
+        via = msp!.name
+        estimated = msp!.estimated
+      }
+    }
     const det = price != null ? detourCost(c.distance_m, settings) : 0
     const weighted = price == null ? null : price + det
-    return { ...c, session_price_eur: price, detour_eur: det > 0 ? det : undefined, _weighted: weighted }
+    return {
+      ...c,
+      session_price_eur: price,
+      price_via: via,
+      price_estimated: estimated || undefined,
+      detour_eur: det > 0 ? det : undefined,
+      _weighted: weighted,
+    }
   })
   ranked.sort((a, b) => {
     if (!!a.avoid !== !!b.avoid) return a.avoid ? 1 : -1

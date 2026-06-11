@@ -38,6 +38,9 @@ export interface Charger {
   price_updated_at?: string | null // when the tariff was last confirmed
   source?: string // operator / data-source name
   source_type?: string // ocpi (direct) | road | monta | … → confidence
+  // Client-side (set by pricing.ts when a membership beats the ad-hoc price):
+  price_via?: string // membership/MSP name the effective price came from
+  price_estimated?: boolean // the winning price is an estimated membership rate
 }
 
 // One report type's value payload (only some types carry one).

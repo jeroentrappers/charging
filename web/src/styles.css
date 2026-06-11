@@ -78,6 +78,17 @@ button { font: inherit; cursor: pointer; }
 .hlink:hover { color: var(--green); }
 .hlink svg { width: 18px; height: 18px; fill: currentColor; }
 
+/* Charge-card memberships (Settings) */
+.member-list { display: flex; flex-direction: column; gap: 6px; }
+.member { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; }
+.member.on { border-color: var(--green-600); background: #ecfdf5; }
+[data-theme='dark'] .member.on { background: rgba(34, 197, 94, 0.12); }
+.member-name { font-weight: 600; }
+.member-rate { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* "via {card}" tag under the price in a result row */
+.price-via { display: block; font-size: 10px; font-weight: 700; color: var(--green); line-height: 1.2; }
+
 /* Trip / corridor mode */
 .tripbar { position: relative; padding: 8px 14px 0; }
 .trip-input { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font: inherit; background: var(--surface); color: var(--ink); }

@@ -251,7 +251,10 @@ export function FindPage(props: {
           )}
           {chargers.map((c) => (
             <button key={c.id} className={`row ${c.id === selectedId ? 'sel' : ''}`} onClick={() => select(c.id)}>
-              <span className="price">{eur(priceOf(c))}</span>
+              <span className="price">
+                {eur(priceOf(c))}
+                {c.price_via && <span className="price-via">{c.price_estimated ? '≈' : ''} {c.price_via}</span>}
+              </span>
               <span>
                 <div className="name">{c.name || c.cpo_id}</div>
                 <div className="sub">
