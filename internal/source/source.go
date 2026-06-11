@@ -100,6 +100,45 @@ func Seeds() []store.CPO {
 			Enabled:     true,           // open data, no key required
 		},
 		{
+			// 🇳🇱 NL DOT-NL (NDW) — the Dutch AFIR National Access Point. Open,
+			// no-key, OCPI 2.2.1 gzipped bulk files: ~88k locations WITH live EVSE
+			// status AND structured ad-hoc tariffs (incl. Fastned, Allego, Tesla…).
+			// OCPIBaseURL is the locations .json.gz; the feed derives the tariffs URL.
+			ID:          "dotnl",
+			Name:        "NDW · DOT-NL (NL)",
+			OCPIBaseURL: "https://opendata.ndw.nu/charging_point_locations_ocpi.json.gz",
+			OCPIVersion: "2.2.1",
+			SourceType:  "ocpi_file_gz",
+			PollCron:    "0 4 * * *", // daily price refresh
+			StatusCron:  "0 * * * *", // hourly availability (18 MB file → don't over-poll)
+			Enabled:     true,        // open data, no key required
+		},
+		{
+			// 🇩🇪 DE Bundesnetzagentur Ladesäulenregister — official national
+			// registry, ~134k stations, open CSV (no key). LOCATION-ONLY: no price,
+			// no live status. OCPIBaseURL is the landing page; the feed scrapes the
+			// current dated .csv link. Big file → poll monthly.
+			ID:          "bnetza",
+			Name:        "Bundesnetzagentur (DE)",
+			OCPIBaseURL: "https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/Ladesaeulenkarte/start.html",
+			SourceType:  "bnetza",
+			PollCron:    "0 5 2 * *", // monthly (2nd, 05:00) — registry refreshes ~monthly
+			StatusCron:  "0 5 2 * *", // no live status; keep it monthly too
+			Enabled:     true,
+		},
+		{
+			// 🇫🇷 FR consolidated IRVE (transport.data.gouv.fr) — national dataset,
+			// ~230k points, open GeoJSON (Licence Ouverte). LOCATION-ONLY: only a
+			// free-text tariff we ignore. ~585 MB → streamed, polled monthly.
+			ID:          "irve",
+			Name:        "transport.data.gouv.fr (FR)",
+			OCPIBaseURL: "https://www.data.gouv.fr/api/1/datasets/r/7eee8f09-5d1b-4f48-a304-5e99e8da1e26",
+			SourceType:  "irve",
+			PollCron:    "0 6 2 * *", // monthly
+			StatusCron:  "0 6 2 * *",
+			Enabled:     true,
+		},
+		{
 			// DATEX II aggregator (~20 networks, ~36k connectors). Validated
 			// against the live feed: it carries locations + connector type +
 			// power, but NO price and NO live status, and the response is ~31 MB,

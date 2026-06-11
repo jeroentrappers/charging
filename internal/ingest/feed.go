@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/appmire/charging/internal/bnetza"
 	"github.com/appmire/charging/internal/datex"
+	"github.com/appmire/charging/internal/irve"
 	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/monta"
 	"github.com/appmire/charging/internal/normalize"
@@ -26,8 +28,16 @@ func feedFor(src source.Source) feed {
 	switch src.CPO.SourceType {
 	case "datex":
 		return datexFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token}
+	case "bnetza":
+		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: bnetza.Fetch}
+	case "irve":
+		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: irve.Fetch}
 	case "ocpi_file":
 		return fileFeed{cpoID: src.CPO.ID, base: src.CPO.OCPIBaseURL, token: src.Token}
+	case "ocpi_file_gz":
+		// OCPIBaseURL is the full locations .json.gz URL; the tariffs URL is the
+		// same with "locations" → "tariffs" (NL DOT-NL / NDW naming).
+		return gzFileFeed{cpoID: src.CPO.ID, locURL: src.CPO.OCPIBaseURL, token: src.Token}
 	case "monta":
 		// src.Token holds "clientId:clientSecret".
 		id, secret, _ := strings.Cut(src.Token, ":")
@@ -112,6 +122,60 @@ func (f fileFeed) Full(ctx context.Context) ([]model.Connector, map[string]model
 	if err != nil {
 		return nil, nil, err
 	}
+	tars, terr := ocpi.FetchArray[ocpi.Tariff](ctx, tarURL, f.token) // best-effort
+	if terr != nil {
+		tars = nil
+	}
+	r := normalize.FromOCPI(f.cpoID, locs, tars)
+	return r.Connectors, r.Tariffs, nil
+}
+
+// ---- Location-only feeds (DE BNetzA CSV, FR IRVE GeoJSON) ----
+// These national registries carry locations + power + plug but NO price and NO
+// live status, so they share one adapter parameterised by a fetch function with
+// the datex signature. Availability == Full (minus the always-empty tariffs).
+
+type locFeed struct {
+	cpoID string
+	url   string
+	token string
+	fetch func(ctx context.Context, cpoID, url, token string) ([]model.Connector, map[string]model.Tariff, error)
+}
+
+func (f locFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	conns, _, err := f.fetch(ctx, f.cpoID, f.url, f.token)
+	return conns, err
+}
+
+func (f locFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	return f.fetch(ctx, f.cpoID, f.url, f.token)
+}
+
+// ---- Gzipped static OCPI JSON files (e.g. NL DOT-NL / NDW) ----
+// locURL is the full locations .json.gz URL; the tariffs file is the same URL
+// with "locations" → "tariffs". FetchArray transparently gunzips. These feeds
+// are large (NL ≈ 18 MB gz / ~150 MB JSON), so poll them sparingly.
+
+type gzFileFeed struct {
+	cpoID  string
+	locURL string
+	token  string
+}
+
+func (f gzFileFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	locs, err := ocpi.FetchArray[ocpi.Location](ctx, f.locURL, f.token)
+	if err != nil {
+		return nil, err
+	}
+	return normalize.FromOCPI(f.cpoID, locs, nil).Connectors, nil
+}
+
+func (f gzFileFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	locs, err := ocpi.FetchArray[ocpi.Location](ctx, f.locURL, f.token)
+	if err != nil {
+		return nil, nil, err
+	}
+	tarURL := strings.Replace(f.locURL, "locations", "tariffs", 1)
 	tars, terr := ocpi.FetchArray[ocpi.Tariff](ctx, tarURL, f.token) // best-effort
 	if terr != nil {
 		tars = nil

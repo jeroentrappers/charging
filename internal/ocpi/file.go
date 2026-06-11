@@ -2,6 +2,7 @@ package ocpi
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,7 +24,7 @@ func FetchArray[T any](ctx context.Context, url, token string) ([]T, error) {
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := (&http.Client{Timeout: 90 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +35,19 @@ func FetchArray[T any](ctx context.Context, url, token string) ([]T, error) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, snippet(body))
+	}
+	// Transparently decompress gzip-published files (e.g. NL DOT-NL .json.gz),
+	// detected by the gzip magic bytes rather than the URL/headers.
+	if len(body) >= 2 && body[0] == 0x1f && body[1] == 0x8b {
+		zr, zerr := gzip.NewReader(bytes.NewReader(body))
+		if zerr != nil {
+			return nil, fmt.Errorf("gunzip: %w", zerr)
+		}
+		defer zr.Close()
+		body, err = io.ReadAll(io.LimitReader(zr, 1<<30)) // up to 1 GiB decompressed
+		if err != nil {
+			return nil, fmt.Errorf("gunzip read: %w", err)
+		}
 	}
 
 	trimmed := bytes.TrimSpace(body)

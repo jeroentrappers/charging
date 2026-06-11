@@ -82,6 +82,10 @@ type Connector struct {
 	PowerType string `json:"power_type"` // AC_1_PHASE | AC_3_PHASE | DC
 	Voltage   int    `json:"voltage"`
 	Amperage  int    `json:"amperage"`
+	// OCPI 2.2.1 renamed voltage/amperage to max_voltage/max_amperage; accept both
+	// so we can still estimate power when max_electric_power is absent (e.g. NL DOT-NL).
+	MaxVoltage  int `json:"max_voltage"`
+	MaxAmperage int `json:"max_amperage"`
 	// MaxElectricPower (watts) is present in OCPI 2.2.1 and preferred over
 	// computing power from voltage*amperage when available.
 	MaxElectricPower int       `json:"max_electric_power"`

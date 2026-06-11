@@ -110,10 +110,18 @@ func connectorPowerKW(c ocpi.Connector) float64 {
 	if c.MaxElectricPower > 0 {
 		return round1(float64(c.MaxElectricPower) / 1000)
 	}
-	if c.Voltage <= 0 || c.Amperage <= 0 {
+	// OCPI 2.1.1 uses voltage/amperage; 2.2.1 uses max_voltage/max_amperage.
+	v, a := c.Voltage, c.Amperage
+	if v <= 0 {
+		v = c.MaxVoltage
+	}
+	if a <= 0 {
+		a = c.MaxAmperage
+	}
+	if v <= 0 || a <= 0 {
 		return 0
 	}
-	w := float64(c.Voltage * c.Amperage)
+	w := float64(v * a)
 	if c.PowerType == "AC_3_PHASE" {
 		w *= 3
 	}
