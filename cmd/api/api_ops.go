@@ -20,6 +20,8 @@ func (s *server) registerPublic(api huma.API) {
 		summary("List comparison session profiles"))
 	huma.Get(api, "/chargers/cheapest", s.opCheapest, tag("Chargers"),
 		summary("Find the cheapest chargers nearby"))
+	huma.Get(api, "/chargers/{id}", s.opGetCharger, tag("Chargers"),
+		summary("Get a charger by id (for shareable deep links)"))
 	huma.Get(api, "/chargers/{id}/price-history", s.opPriceHistory, tag("Chargers"),
 		summary("Ad-hoc price history for a charger"))
 	huma.Get(api, "/chargers/{id}/live", s.opChargerLive, tag("Chargers"),
@@ -241,6 +243,40 @@ func sortByLivePrice(res []store.NearbyCharger, selecting bool) {
 		}
 		return res[i].DistanceM < res[j].DistanceM
 	})
+}
+
+// ---- GET /chargers/{id} ----
+
+type chargerIn struct {
+	ID  int64   `path:"id"`
+	Lat float64 `query:"lat" doc:"Optional origin latitude (for distance)"`
+	Lon float64 `query:"lon" doc:"Optional origin longitude (for distance)"`
+}
+
+type chargerOut struct {
+	Body store.NearbyCharger
+}
+
+func (s *server) opGetCharger(ctx context.Context, in *chargerIn) (*chargerOut, error) {
+	c, found, err := s.st.GetCharger(ctx, in.ID, in.Lat, in.Lon, s.staleAfter)
+	if err != nil {
+		s.log.Error("get charger", "err", err)
+		return nil, huma.Error500InternalServerError("query failed")
+	}
+	if !found {
+		return nil, huma.Error404NotFound("charger not found")
+	}
+	now := time.Now()
+	if brussels != nil {
+		now = now.In(brussels)
+	}
+	s.repriceNow(&c, priceSpec{}, now) // headline price at the current time
+	if raws, rerr := s.st.ReportsRaw(ctx, c.ID); rerr == nil {
+		aggs := report.Aggregate(time.Now().UTC(), raws)
+		c.Reports = aggs
+		c.Avoid = report.Avoid(aggs)
+	}
+	return &chargerOut{Body: c}, nil
 }
 
 // ---- GET /chargers/{id}/price-history ----

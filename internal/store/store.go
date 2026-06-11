@@ -397,6 +397,44 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 	return out, rows.Err()
 }
 
+// GetCharger returns one charger by id (for deep links / shareable URLs), with
+// distance measured from the given origin (pass 0,0 for no origin → distance 0).
+// Includes the structured tariff so the caller can compute a request-time price,
+// like CheapestNearby.
+func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon float64, staleAfter time.Duration) (NearbyCharger, bool, error) {
+	staleSecs := staleAfter.Seconds()
+	const freshExpr = `($4 <= 0 OR (st.updated_at IS NOT NULL AND st.updated_at > now() - make_interval(secs => $4)))`
+	query := fmt.Sprintf(`
+		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
+		       ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
+		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
+		       CASE WHEN $2 = 0 AND $3 = 0 THEN 0
+		            ELSE ST_Distance(c.geom, ST_SetSRID(ST_MakePoint($3,$2),4326)::geography) END AS dist,
+		       COALESCE(st.available_count,0),
+		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
+		       st.updated_at, (NOT %s) AS stale, tv.price_components
+		FROM charger c
+		LEFT JOIN charger_status st ON st.charger_id = c.id
+		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
+		WHERE c.id = $1`, freshExpr)
+
+	var n NearbyCharger
+	var pricesJSON, componentsJSON []byte
+	err := s.Pool.QueryRow(ctx, query, id, originLat, originLon, staleSecs).Scan(
+		&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
+		&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
+		&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NearbyCharger{}, false, nil
+	}
+	if err != nil {
+		return NearbyCharger{}, false, err
+	}
+	n.Prices = decodePrices(pricesJSON)
+	n.Components = json.RawMessage(componentsJSON)
+	return n, true, nil
+}
+
 func decodePrices(b []byte) map[string]float64 {
 	m := map[string]float64{}
 	if len(b) > 0 {

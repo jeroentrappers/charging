@@ -44,18 +44,32 @@ function FocusOn({ to, nonce }: { to: [number, number] | null; nonce: number }) 
   return null
 }
 
-// Reports viewport center + radius (m) after the map settles, plus once on load.
-function Viewport({ onChange }: { onChange: (lat: number, lon: number, radiusM: number) => void }) {
+// Reports viewport center + radius (m) + zoom after the map settles, plus once
+// on load.
+function Viewport({ onChange }: { onChange: (lat: number, lon: number, radiusM: number, zoom: number) => void }) {
   const map = useMapEvents({ moveend: () => emit() })
   function emit() {
     const c = map.getCenter()
     const r = c.distanceTo(map.getBounds().getNorthEast())
-    onChange(c.lat, c.lng, Math.min(Math.round(r), 50000))
+    onChange(c.lat, c.lng, Math.min(Math.round(r), 50000), map.getZoom())
   }
   useEffect(() => {
     emit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  return null
+}
+
+// Sets the view (center + zoom) when `nonce` changes — used to apply a URL/route
+// (deep link, back/forward) to the map.
+function SetViewOnNonce({ to, zoom, nonce }: { to: [number, number] | null; zoom?: number; nonce: number }) {
+  const map = useMap()
+  const last = useRef(-1)
+  useEffect(() => {
+    if (!to || nonce === last.current) return
+    last.current = nonce
+    map.setView(to, zoom ?? map.getZoom())
+  }, [to, zoom, nonce, map])
   return null
 }
 
@@ -73,17 +87,21 @@ function MapClicker({ onPick, markerClick }: { onPick: (lat: number, lon: number
 
 export function MapView(props: {
   initial: [number, number]
+  initialZoom?: number
   recenterTo: [number, number] | null
   recenterNonce: number
   focus: [number, number] | null
   focusNonce: number
+  viewTo: [number, number] | null
+  viewZoom?: number
+  viewNonce: number
   origin: [number, number] | null
   showOrigin: boolean
   accuracyM: number | null
   chargers: Charger[]
   selectedId: number | null
   onSelect: (id: number) => void
-  onViewport: (lat: number, lon: number, radiusM: number) => void
+  onViewport: (lat: number, lon: number, radiusM: number, zoom: number) => void
   onPick: (lat: number, lon: number) => void
 }) {
   const markerClick = useRef(0)
@@ -94,10 +112,11 @@ export function MapView(props: {
 
   return (
     <div className="map">
-      <MapContainer center={props.initial} zoom={13} zoomControl={false} style={{ height: '100%' }}>
+      <MapContainer center={props.initial} zoom={props.initialZoom ?? 13} zoomControl={false} style={{ height: '100%' }}>
         <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <AutoResize />
         <RecenterOnNonce to={props.recenterTo} nonce={props.recenterNonce} />
+        <SetViewOnNonce to={props.viewTo} zoom={props.viewZoom} nonce={props.viewNonce} />
         <FocusOn to={props.focus} nonce={props.focusNonce} />
         <Viewport onChange={props.onViewport} />
         <MapClicker onPick={props.onPick} markerClick={markerClick} />

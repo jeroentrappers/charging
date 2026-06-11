@@ -204,6 +204,7 @@ export const api = {
   priceHistory: (id: number) =>
     get<{ charger_id: number; history: PricePoint[] }>(`/chargers/${id}/price-history`),
   live: (id: number) => get<LiveStatus>(`/chargers/${id}/live`),
+  charger: (id: number, lat?: number, lon?: number) => get<Charger>(`/chargers/${id}`, { lat, lon }),
   overview: () => get<Overview>('/stats/overview'),
   trend: (months = 12) => get<{ trend: TrendPoint[] }>('/stats/price-trend', { months }),
   regions: (by = 'city') => get<{ by: string; regions: PriceAgg[] }>('/stats/regions', { by }),

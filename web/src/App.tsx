@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FindPage } from './FindPage'
-import { API_BASE } from './api'
+import { API_BASE, type Charger } from './api'
 import { LANGS } from './i18n'
+import { buildPath, parseUrl, type NavState } from './url'
 import { SessionBar, FilterBar, sessionKey, type Filters, type CustomSession } from './ui'
 
 const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
@@ -15,7 +16,39 @@ const DEFAULT_CENTER: [number, number] = [51.0543, 3.725]
 
 export default function App() {
   const { t, i18n } = useTranslation()
-  const [tab, setTab] = useState<'find' | 'insights'>('find')
+
+  // URL-driven navigation. `route` mirrors the address bar; `routeNonce` bumps
+  // only on load + back/forward (popstate), so FindPage applies the URL then but
+  // ignores our own pushes (which already updated app state).
+  const [route, setRoute] = useState<NavState>(() => parseUrl(window.location.pathname))
+  const [routeNonce, setRouteNonce] = useState(0)
+  const tab = route.tab
+  useEffect(() => {
+    const onPop = () => {
+      setRoute(parseUrl(window.location.pathname))
+      setRouteNonce((n) => n + 1)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  // navigate updates the address bar + route mirror for a user action (no
+  // routeNonce bump). push=false coalesces rapid updates (map panning).
+  function navigate(next: NavState, push: boolean) {
+    const path = buildPath(next)
+    if (path !== window.location.pathname) {
+      if (push) window.history.pushState(null, '', path)
+      else window.history.replaceState(null, '', path)
+    }
+    setRoute(next)
+  }
+  const setTab = (next: 'find' | 'insights') =>
+    navigate({ tab: next, center: route.center }, true) // keep the map centre; drop any open charger
+  const onCenter = (center: { lat: number; lon: number; zoom: number }) => navigate({ tab: 'find', center }, false)
+  const onOpenCharger = (c: Charger) =>
+    navigate({ tab: 'find', center: route.center, chargerId: c.id, chargerSlug: c.name || c.cpo_id }, true)
+  const onCloseCharger = () => navigate({ tab: 'find', center: route.center }, true)
+
   const [need, setNeed] = useState('best')
   const [speed, setSpeed] = useState('dc150')
   const [custom, setCustom] = useState<CustomSession>({ kWh: 50, powerKW: null })
@@ -109,10 +142,15 @@ export default function App() {
 
       {tab === 'find' ? (
         <FindPage
-          initial={located ?? DEFAULT_CENTER}
+          fallbackCenter={located ?? DEFAULT_CENTER}
           located={located}
           accuracy={accuracy}
           geoNonce={geoNonce}
+          route={route}
+          routeNonce={routeNonce}
+          onCenter={onCenter}
+          onOpenCharger={onOpenCharger}
+          onCloseCharger={onCloseCharger}
           sessionKey={need === 'custom' ? undefined : sessionKey(need, speed)}
           energyKWh={need === 'custom' ? custom.kWh : undefined}
           powerKW={need === 'custom' ? custom.powerKW ?? undefined : undefined}
