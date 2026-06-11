@@ -43,8 +43,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 	c.Start()
 	s.log.Info("scheduler started", "sources", len(srcs))
 
-	// Run a full pass at startup so we don't wait for the first tick.
-	go s.eng.RunAll(ctx, srcs)
+	// Run a full pass at startup so we don't wait for the first tick — but only
+	// for sources that are actually due, so a restart doesn't re-pull large
+	// already-fresh feeds (NL/DE/FR are hundreds of thousands of rows).
+	go s.runStartupCatchup(ctx, srcs)
 	s.ensureCrawlers(ctx, srcs)
 
 	ticker := time.NewTicker(s.reloadEvery)
@@ -68,6 +70,57 @@ func (s *Scheduler) Run(ctx context.Context) {
 			s.ensureCrawlers(ctx, next) // pick up newly-enabled monta sources
 		}
 	}
+}
+
+// runStartupCatchup runs a full price pass at boot, but skips any source that
+// already ran successfully within its poll cadence — so restarting the ingester
+// doesn't re-download + re-ingest large feeds that aren't due yet.
+func (s *Scheduler) runStartupCatchup(ctx context.Context, srcs []source.Source) {
+	var due []source.Source
+	for _, src := range srcs {
+		if s.dueAtStartup(ctx, src) {
+			due = append(due, src)
+		} else {
+			s.log.Info("startup: source still fresh, skipping catch-up", "cpo", src.CPO.ID)
+		}
+	}
+	if len(due) > 0 {
+		s.eng.RunAll(ctx, due)
+	}
+}
+
+// dueAtStartup reports whether a source's price pass should run at boot: yes if
+// it never ran (or the lookup failed), or its last success is older than one
+// full poll interval.
+func (s *Scheduler) dueAtStartup(ctx context.Context, src source.Source) bool {
+	last, found, err := s.eng.Store.LastSuccess(ctx, src.CPO.ID, KindPrice)
+	if err != nil || !found {
+		return true
+	}
+	interval := cronInterval(src.CPO.PollCron)
+	if interval <= 0 {
+		return true
+	}
+	return time.Since(last) >= interval
+}
+
+// cronInterval estimates the gap between consecutive fires of a 5-field cron
+// expression (e.g. daily → 24h, monthly → ~30d). Returns 0 if unparseable.
+func cronInterval(expr string) time.Duration {
+	sched, err := cron.ParseStandard(expr)
+	if err != nil {
+		return 0
+	}
+	now := time.Now()
+	n1 := sched.Next(now)
+	if n1.IsZero() {
+		return 0
+	}
+	n2 := sched.Next(n1)
+	if n2.IsZero() {
+		return 0
+	}
+	return n2.Sub(n1)
 }
 
 // ensureCrawlers starts a background price/status crawl for each ready Monta

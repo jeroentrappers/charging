@@ -116,16 +116,21 @@ export function rankChargers(chargers: Charger[], settings: Settings, now: Date,
       ? customPrice(c.price_components, c.power_kw, c.current_type, settings.charge.kWh, settings.charge.powerKW ?? 0, carMaxKW, now)
       : null
     // The effective price is the cheapest of the ad-hoc price and any selected
-    // membership's blended rate (a flat card applies regardless of operator).
+    // membership's blended rate. A card only prices a charger we actually have a
+    // tariff for — we don't fabricate a price for location-only chargers (e.g.
+    // the DE/FR registries have no price data), which would otherwise show a
+    // misleading flat card rate and flatten the ranking.
     let price = adhoc
     let via: string | undefined
     let estimated = false
-    for (const msp of memberships) {
-      const mp = memberSessionPrice(msp!, c.current_type, settings.charge.kWh)
-      if (price == null || mp < price) {
-        price = mp
-        via = msp!.name
-        estimated = msp!.estimated
+    if (c.price_components) {
+      for (const msp of memberships) {
+        const mp = memberSessionPrice(msp!, c.current_type, settings.charge.kWh)
+        if (price == null || mp < price) {
+          price = mp
+          via = msp!.name
+          estimated = msp!.estimated
+        }
       }
     }
     const det = price != null ? detourCost(c.distance_m, settings) : 0

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -39,6 +40,21 @@ type Engine struct {
 
 	// OnRun, if set, is called after each pass for metrics. Safe for nil.
 	OnRun func(cpoID, kind string, rowsSeen, changes int, dur time.Duration, err error)
+
+	// inflight guards against running the same (source, kind) pass concurrently —
+	// e.g. the startup catch-up racing a cron tick or an admin-triggered run.
+	// That overlap caused duplicate-key churn on the SCD2 tariff path.
+	inflight sync.Map
+}
+
+// acquire reserves a (source, kind) pass. ok is false if one is already running;
+// release frees it. Prevents concurrent passes of the same source+kind.
+func (e *Engine) acquire(cpoID, kind string) (release func(), ok bool) {
+	key := cpoID + "/" + kind
+	if _, loaded := e.inflight.LoadOrStore(key, true); loaded {
+		return func() {}, false
+	}
+	return func() { e.inflight.Delete(key) }, true
 }
 
 func NewEngine(st *store.Store, log *slog.Logger) *Engine {
@@ -72,6 +88,12 @@ func (e *Engine) RunAll(ctx context.Context, sources []source.Source) error {
 
 // RunAvailability refreshes connector availability only (light path).
 func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
+	release, ok := e.acquire(src.CPO.ID, KindAvailability)
+	if !ok {
+		e.Log.Info("skip pass: already running", "cpo", src.CPO.ID, "kind", KindAvailability)
+		return nil
+	}
+	defer release()
 	return e.recordRun(ctx, src.CPO.ID, KindAvailability, func() (int, int, error) {
 		conns, err := feedFor(src).Availability(ctx)
 		if err != nil {
@@ -90,6 +112,12 @@ func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
 // RunPrices runs a full pass: refresh identity/availability and apply tariff
 // change detection.
 func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
+	release, ok := e.acquire(src.CPO.ID, KindPrice)
+	if !ok {
+		e.Log.Info("skip pass: already running", "cpo", src.CPO.ID, "kind", KindPrice)
+		return nil
+	}
+	defer release()
 	return e.recordRun(ctx, src.CPO.ID, KindPrice, func() (int, int, error) {
 		conns, tariffs, err := feedFor(src).Full(ctx)
 		if err != nil {
