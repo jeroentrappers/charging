@@ -68,6 +68,21 @@ button { font: inherit; cursor: pointer; }
 .setting-row input[type="number"] { width: 96px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; text-align: right; }
 .setting-row input[type="checkbox"] { width: 20px; height: 20px; }
 
+/* Time-of-day tariff timeline */
+.timeline { margin: 6px 0 10px; }
+.timeline-bar { display: flex; align-items: stretch; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); min-height: 44px; position: relative; }
+.tl-seg { display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; min-width: 0; border-right: 1px solid rgba(255,255,255,.5); }
+.tl-seg:last-of-type { border-right: 0; }
+.tl-seg.paid { background: #fef3c7; }
+.tl-seg.free { background: #dcfce7; }
+.tl-h { font-size: 11px; font-weight: 700; color: var(--ink); }
+.tl-rate { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tl-end { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: var(--muted); }
+.tl-legend { display: flex; gap: 14px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.tl-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+.tl-dot.paid { background: #f59e0b; }
+.tl-dot.free { background: #22c55e; }
+
 /* ---- session selector (hero control) ---- */
 .controls { background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 14px; z-index: 19; }
 .seg-row { display: flex; gap: 8px; align-items: center; }

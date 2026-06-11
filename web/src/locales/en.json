@@ -80,7 +80,12 @@
     "notEnoughHistory": "Not enough history yet — we record a point whenever the tariff changes.",
     "allSessions": "All sessions",
     "caveat": "Drive-up (ad-hoc) price — your charge card may differ.",
-    "when": "when"
+    "when": "when",
+    "otherwise": "Other times",
+    "allTimes": "Any time",
+    "freeConn": "free to stay",
+    "payConnected": "Pay while plugged in",
+    "freeConnected": "Free while plugged in"
   },
   "comp": {
     "ENERGY": "Energy",

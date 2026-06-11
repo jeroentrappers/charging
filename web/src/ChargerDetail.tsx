@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { api, type Charger, type LiveStatus, type PricePoint, type ReportAgg, type ReportValue, type TariffComponent, type TariffRestrictions } from './api'
+import { api, type Charger, type LiveStatus, type PricePoint, type ReportAgg, type ReportValue, type TariffComponent, type TariffElement, type TariffRestrictions } from './api'
 import { AvailBadge, availOf, ago, eur, plugLabel, REPORT_TYPES } from './ui'
 
 // Human text for a report's typed value (site hours / observed kW / €/kWh).
@@ -50,6 +50,82 @@ function restrictionText(r: TariffRestrictions | undefined, t: TFunction): strin
       : r.min_kwh != null ? t('restr.fromKwh', { n: r.min_kwh }) : t('restr.uptoKwh', { n: r.max_kwh }))
   }
   return parts.join(' · ')
+}
+
+// ---- time-of-day timeline ----
+// Many tariffs charge a per-hour "connection" fee only during the day (free at
+// night). A 24h bar makes that instantly readable.
+
+function parseHour(s?: string): number | null {
+  if (!s) return null
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s)
+  return m ? Number(m[1]) + Number(m[2]) / 60 : null
+}
+function elemWindow(el: TariffElement): { start: number; end: number } | null {
+  const r = el.restrictions
+  if (!r || (!r.start_time && !r.end_time)) return null
+  return { start: parseHour(r.start_time) ?? 0, end: parseHour(r.end_time) ?? 24 }
+}
+function inWindow(w: { start: number; end: number }, h: number): boolean {
+  if (w.start === w.end) return true
+  return w.start < w.end ? h >= w.start && h < w.end : h >= w.start || h < w.end
+}
+// First matching element for a given hour (a window-less element matches always).
+function applicableAt(elements: TariffElement[], h: number): number {
+  for (let i = 0; i < elements.length; i++) {
+    const w = elemWindow(elements[i])
+    if (!w || inWindow(w, h)) return i
+  }
+  const fallback = elements.findIndex((e) => !elemWindow(e))
+  return fallback < 0 ? 0 : fallback
+}
+function compPrice(el: TariffElement, type: string): number {
+  return el.price_components.find((c) => c.type === type)?.price ?? 0
+}
+function hasTimeWindows(elements: TariffElement[]): boolean {
+  return elements.some((e) => elemWindow(e) != null)
+}
+function hh(h: number): string {
+  return String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.round((h % 1) * 60)).padStart(2, '0')
+}
+
+function TariffTimeline({ elements, t }: { elements: TariffElement[]; t: TFunction }) {
+  const slots = Array.from({ length: 24 }, (_, h) => applicableAt(elements, h))
+  const segs: { from: number; to: number; el: number }[] = []
+  for (let h = 0; h < 24; h++) {
+    if (h === 0 || slots[h] !== slots[h - 1]) segs.push({ from: h, to: h + 1, el: slots[h] })
+    else segs[segs.length - 1].to = h + 1
+  }
+  return (
+    <div className="timeline">
+      <div className="timeline-bar">
+        {segs.map((s, i) => {
+          const el = elements[s.el]
+          const paid = compPrice(el, 'TIME') > 0 || compPrice(el, 'PARKING_TIME') > 0
+          const fee = compPrice(el, 'TIME') || compPrice(el, 'PARKING_TIME')
+          return (
+            <div key={i} className={`tl-seg ${paid ? 'paid' : 'free'}`} style={{ flexGrow: s.to - s.from }}
+              title={`${hh(s.from)}–${hh(s.to)}`}>
+              <span className="tl-h">{hh(s.from)}</span>
+              <span className="tl-rate">{paid ? `€${fee.toFixed(2)}${t('unit.hour')}` : t('detail.freeConn')}</span>
+            </div>
+          )
+        })}
+        <span className="tl-end">24:00</span>
+      </div>
+      <div className="tl-legend">
+        <span><i className="tl-dot paid" /> {t('detail.payConnected')}</span>
+        <span><i className="tl-dot free" /> {t('detail.freeConnected')}</span>
+      </div>
+    </div>
+  )
+}
+
+// A clear "when does this apply" header for a tariff element.
+function whenLabel(el: TariffElement, hasWindows: boolean, t: TFunction): string {
+  const txt = restrictionText(el.restrictions, t)
+  if (txt) return `${t('detail.when')} ${txt}`
+  return hasWindows ? t('detail.otherwise') : t('detail.allTimes')
 }
 
 export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose: () => void }) {
@@ -218,11 +294,10 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
         {elements.length > 0 && (
           <>
             <h3 style={{ margin: '12px 0 6px' }}>{t('detail.howBuilt')}</h3>
+            {hasTimeWindows(elements) && <TariffTimeline elements={elements} t={t} />}
             {elements.map((el, i) => (
               <div key={i} className="tariff-el">
-                {el.restrictions && restrictionText(el.restrictions, t) && (
-                  <div className="muted tariff-when">{t('detail.when')} {restrictionText(el.restrictions, t)}</div>
-                )}
+                <div className="muted tariff-when">{whenLabel(el, hasTimeWindows(elements), t)}</div>
                 <table className="matrix">
                   <tbody>
                     {el.price_components.map((c, j) => (

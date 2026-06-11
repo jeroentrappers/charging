@@ -80,7 +80,12 @@
     "notEnoughHistory": "Nog niet genoeg historie — we leggen een punt vast telkens het tarief verandert.",
     "allSessions": "Alle sessies",
     "caveat": "Drive-up (ad-hoc) prijs — je laadpas kan afwijken.",
-    "when": "indien"
+    "when": "indien",
+    "otherwise": "Andere momenten",
+    "allTimes": "Altijd",
+    "freeConn": "gratis aangesloten",
+    "payConnected": "Betalen tijdens aansluiting",
+    "freeConnected": "Gratis aangesloten"
   },
   "comp": {
     "ENERGY": "Energie",

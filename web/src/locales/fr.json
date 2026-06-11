@@ -80,7 +80,12 @@
     "notEnoughHistory": "Pas encore assez d'historique — un point est enregistré à chaque changement de tarif.",
     "allSessions": "Toutes les sessions",
     "caveat": "Prix à l'acte (sans abonnement) — votre carte de recharge peut différer.",
-    "when": "si"
+    "when": "si",
+    "otherwise": "Autres moments",
+    "allTimes": "À tout moment",
+    "freeConn": "branchement gratuit",
+    "payConnected": "Payant pendant le branchement",
+    "freeConnected": "Gratuit pendant le branchement"
   },
   "comp": {
     "ENERGY": "Énergie",
