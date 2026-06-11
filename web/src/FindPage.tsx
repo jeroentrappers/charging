@@ -4,7 +4,7 @@ import { api, type Charger } from './api'
 import { MapView } from './MapView'
 import type { NavState } from './url'
 import type { Settings } from './settings'
-import { AvailBadge, availOf, eur, km, priceOf, type Filters } from './ui'
+import { AvailBadge, availOf, eur, km, plugLabel, priceOf, type Filters } from './ui'
 
 const ChargerDetail = lazy(() => import('./ChargerDetail').then((m) => ({ default: m.ChargerDetail })))
 
@@ -215,7 +215,7 @@ export function FindPage(props: {
               <span>
                 <div className="name">{c.name || c.cpo_id}</div>
                 <div className="sub">
-                  {c.power_kw} kW {c.current_type} · {km(c.distance_m)}
+                  {c.power_kw} kW {c.current_type} · {plugLabel(c.plug_type)} · {km(c.distance_m)}
                   {c.detour_eur != null && c.detour_eur > 0 && <span className="detour"> · +{eur(c.detour_eur)} {t('find.detour')}</span>}
                   {c.avoid && <span className="flag-badge"> · ⚠ {t('report.flagged')}</span>}
                 </div>

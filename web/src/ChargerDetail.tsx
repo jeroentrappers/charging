@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api, type Charger, type LiveStatus, type PricePoint, type ReportAgg, type ReportValue, type TariffComponent, type TariffRestrictions } from './api'
-import { AvailBadge, availOf, ago, eur, REPORT_TYPES } from './ui'
+import { AvailBadge, availOf, ago, eur, plugLabel, REPORT_TYPES } from './ui'
 
 // Human text for a report's typed value (site hours / observed kW / €/kWh).
 function reportValueText(a: ReportAgg, t: TFunction): string {
@@ -168,7 +168,7 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
         <div className="kv">
           <div className="cell"><div className="k">{t('detail.priceThisSession')}</div><div className="v">{eur(charger.session_price_eur ?? charger.comparable_price_eur)}</div></div>
           <div className="cell"><div className="k">{t('detail.power')}</div><div className="v">{charger.power_kw} kW {charger.current_type}</div></div>
-          <div className="cell"><div className="k">{t('detail.plug')}</div><div className="v">{charger.plug_type || '—'}</div></div>
+          <div className="cell"><div className="k">{t('detail.plug')}</div><div className="v">{plugLabel(charger.plug_type)}</div></div>
           <div className="cell"><div className="k">{t('detail.distance')}</div><div className="v">{Math.round(charger.distance_m)} m</div></div>
         </div>
 

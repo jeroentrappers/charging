@@ -11,6 +11,22 @@ export function km(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`
 }
 
+// Friendly plug-type labels. The raw value differs by source (OCPI
+// "IEC_62196_T2" vs DATEX "iec62196T2"), so normalize then map.
+const PLUG_LABELS: Record<string, string> = {
+  IEC62196T2: 'Type 2', // Mennekes
+  IEC62196T2COMBO: 'CCS', // Combo 2
+  IEC62196T1: 'Type 1',
+  IEC62196T3C: 'Type 3C',
+  CHADEMO: 'CHAdeMO',
+  TESLAS: 'Tesla',
+  DOMESTICF: 'Domestic',
+}
+export function plugLabel(raw: string): string {
+  if (!raw) return '—'
+  return PLUG_LABELS[raw.toUpperCase().replace(/[_\s]/g, '')] ?? raw
+}
+
 export type Avail = 'free' | 'busy' | 'unknown'
 
 export function availOf(c: Charger): Avail {

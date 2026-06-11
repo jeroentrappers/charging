@@ -161,7 +161,7 @@ func (s *Store) UpsertCharger(ctx context.Context, c model.Connector) (int64, er
 			postal_code=EXCLUDED.postal_code, city=EXCLUDED.city, private=EXCLUDED.private, last_seen_at=now()
 		RETURNING id`,
 		c.CPOID, c.EVSEUID, c.ConnectorID, c.Lon, c.Lat,
-		c.PowerKW, c.PlugType, c.CurrentType, c.Name, c.Address, c.PostalCode, c.City, model.IsPrivateName(c.Name)).Scan(&id)
+		c.PowerKW, model.NormalizePlug(c.PlugType), c.CurrentType, c.Name, c.Address, c.PostalCode, c.City, model.IsPrivateName(c.Name)).Scan(&id)
 	return id, err
 }
 
@@ -370,7 +370,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		WHERE ST_DWithin(c.geom, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
-		  AND ($5 = '' OR c.plug_type = $5)
+		  AND ($5 = '' OR upper(replace(c.plug_type,'_','')) = upper(replace($5,'_','')))
 		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
 		  AND ($9 OR NOT c.private)
 		ORDER BY dist ASC
