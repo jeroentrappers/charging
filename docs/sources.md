@@ -1,11 +1,28 @@
-# Belgian NAP charging data sources
+# NAP charging data sources (BE + NL/DE/FR)
 
-Catalogue of EV-charging feeds published on Belgium's National Access Point
-([transportdata.be](https://www.transportdata.be/)) under AFIR Article 20, with
-what each takes to consume and how to request access. Adding a source to the
-running system = insert a `cpo` row (+ token env) — the scheduler hot-reloads it.
+Catalogue of EV-charging feeds published on the National Access Points under
+AFIR Article 20, with what each takes to consume and how to request access.
+Adding a source to the running system = insert a `cpo` row (+ token env) — the
+scheduler hot-reloads it.
 
-Last researched: 2026-06-09.
+Last researched: 2026-06-09 (BE), 2026-06-11 (NL/DE/FR expansion).
+
+## Beyond Belgium — wired 2026-06-11 (no paid feeds)
+
+The same AFIR rule means each country's NAP is the backbone. Map coverage is
+broadly free; **ad-hoc price is the scarce thing** (only NL is free + structured
+today). Unpriced chargers map fine and show no comparable price (info-only).
+See the [[eu-data-sources]] memory for the full landscape.
+
+| Source (`cpo` id) | Country | type | Locations | Status | **Ad-hoc price** | Notes |
+|---|---|---|---|---|---|---|
+| **NDW · DOT-NL** (`dotnl`) | 🇳🇱 NL | `ocpi_file_gz` | ✅ ~88k | ✅ | ✅ **structured** | Open OCPI 2.2.1 .json.gz (locations+tariffs); ~226k connectors, ~50% priced, incl. Fastned. Daily poll + hourly status. |
+| **Bundesnetzagentur** (`bnetza`) | 🇩🇪 DE | `bnetza` | ✅ ~134k | ❌ | ❌ | Official registry CSV (Latin-1/`;`), scraped dated URL. Location-only. Monthly. |
+| **transport.data.gouv IRVE** (`irve`) | 🇫🇷 FR | `irve` | ✅ ~230k | ❌ | ❌ (free-text only) | Consolidated GeoJSON, ~585 MB, streamed. Location-only. Monthly. |
+| Eco-Movement / Chargeprice | EU | — | ✅ | ✅ | ✅ | **Commercial — deliberately NOT integrated** (no paid feeds). The all-EU priced backbone if that changes. |
+
+DE/FR price will improve as the AFIR **DATEX II** mandate (14 Apr 2026) matures
+in Mobilithek (DE) and the IRVE-dynamique feed (FR).
 
 ## Which sources expose ad-hoc PRICE? (open-pricing sweep, 2026-06-10)
 
