@@ -10,6 +10,7 @@ import (
 
 	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/pricing"
+	"github.com/appmire/charging/internal/report"
 	"github.com/appmire/charging/internal/store"
 )
 
@@ -122,6 +123,26 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 	for i := range res {
 		s.repriceNow(&res[i], spec, now)
 	}
+
+	// Community reports: attach the active set per candidate and flag chargers to
+	// de-prioritise (corroborated out-of-service / not-public / does-not-exist).
+	ids := make([]int64, len(res))
+	for i := range res {
+		ids[i] = res[i].ID
+	}
+	if reps, err := s.st.ReportsForIDs(ctx, ids); err != nil {
+		s.log.Warn("cheapest: report flags", "err", err)
+	} else if len(reps) > 0 {
+		rnow := time.Now().UTC()
+		for i := range res {
+			if raws := reps[res[i].ID]; len(raws) > 0 {
+				aggs := report.Aggregate(rnow, raws)
+				res[i].Reports = aggs
+				res[i].Avoid = report.Avoid(aggs)
+			}
+		}
+	}
+
 	sortByLivePrice(res, spec.selecting())
 	if len(res) > in.Limit {
 		res = res[:in.Limit]
@@ -206,6 +227,11 @@ func sortByLivePrice(res []store.NearbyCharger, selecting bool) {
 		return c.PriceEUR
 	}
 	sort.SliceStable(res, func(i, j int) bool {
+		// Corroborated-bad chargers sink below everything else (but are never
+		// hidden).
+		if res[i].Avoid != res[j].Avoid {
+			return !res[i].Avoid
+		}
 		pi, pj := eff(res[i]), eff(res[j])
 		if (pi == nil) != (pj == nil) {
 			return pi != nil // priced before unpriced

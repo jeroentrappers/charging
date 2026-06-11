@@ -43,6 +43,7 @@ type server struct {
 	apiBasePath     string
 	engine          *ingest.Engine
 	live            *liveService
+	reportLimiter   *ipLimiter
 }
 
 func main() {
@@ -90,6 +91,8 @@ func main() {
 		}
 	}
 	s.live = newLiveService(montaClient, s.vehicle, log, s.engine)
+	// Public report submissions: per-IP token bucket (burst then ~1 / 3s).
+	s.reportLimiter = newIPLimiter(3*time.Second, 8)
 
 	// Bulk dataset export: regenerate the open static dumps on a schedule and
 	// serve them from exportDir (see routes()).
@@ -153,6 +156,8 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	}
 	api := humachi.New(r, cfg)
 	s.registerPublic(api)
+	s.registerReports(api)
+	s.registerReportsAdmin(api, s.adminGuard(api))
 	s.registerAdmin(api)
 
 	r.Get("/docs", scalarDocs(basePath))

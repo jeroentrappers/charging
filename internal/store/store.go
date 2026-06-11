@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/appmire/charging/internal/model"
+	"github.com/appmire/charging/internal/report"
 )
 
 type Store struct{ Pool *pgxpool.Pool }
@@ -316,6 +317,8 @@ type NearbyCharger struct {
 	StatusAt     *time.Time         `json:"status_updated_at"`
 	Stale        bool               `json:"availability_stale"` // status older than the freshness window
 	Components   json.RawMessage    `json:"-"`                  // structured tariff, for request-time (time-of-day) pricing
+	Reports      []report.Agg       `json:"reports,omitempty"`  // active community reports (set by the API layer)
+	Avoid        bool               `json:"avoid,omitempty"`    // de-prioritised by corroborated flag reports
 }
 
 type NearbyQuery struct {
