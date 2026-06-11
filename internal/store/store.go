@@ -315,12 +315,12 @@ type NearbyCharger struct {
 	Prices       map[string]float64 `json:"comparable_prices"` // per-session profile prices
 	Currency     string             `json:"currency"`
 	StatusAt     *time.Time         `json:"status_updated_at"`
-	Stale        bool               `json:"availability_stale"`   // status older than the freshness window
-	Components   json.RawMessage    `json:"-"`                    // structured tariff, for request-time (time-of-day) pricing
-	Reports      []report.Agg       `json:"reports,omitempty"`    // active community reports (set by the API layer)
-	Avoid        bool               `json:"avoid,omitempty"`      // de-prioritised by corroborated flag reports
-	DetourEUR    *float64           `json:"detour_eur,omitempty"` // estimated round-trip detour cost (energy+time) when requested
-	Private      bool               `json:"private,omitempty"`    // home / peer-to-peer charger (excluded from public search by default)
+	Stale        bool               `json:"availability_stale"`         // status older than the freshness window
+	Components   json.RawMessage    `json:"price_components,omitempty"` // structured tariff (client-side / request-time pricing)
+	Reports      []report.Agg       `json:"reports,omitempty"`          // active community reports (set by the API layer)
+	Avoid        bool               `json:"avoid,omitempty"`            // de-prioritised by corroborated flag reports
+	DetourEUR    *float64           `json:"detour_eur,omitempty"`       // estimated round-trip detour cost (energy+time) when requested
+	Private      bool               `json:"private,omitempty"`          // home / peer-to-peer charger (excluded from public search by default)
 }
 
 type NearbyQuery struct {

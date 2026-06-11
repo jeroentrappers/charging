@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type Charger } from './api'
 import { MapView } from './MapView'
+import { rankChargers } from './pricing'
 import type { NavState } from './url'
 import type { Settings } from './settings'
 import { AvailBadge, availOf, eur, km, plugLabel, priceOf, type Filters } from './ui'
@@ -12,6 +13,7 @@ const ChargerDetail = lazy(() => import('./ChargerDetail').then((m) => ({ defaul
 // deliberately NOT tied to the visible map area, so zooming/panning the map
 // doesn't shrink or grow it.
 const SEARCH_RADIUS_M = 50000
+const CANDIDATE_POOL = 200 // nearest candidates fetched; the client ranks + trims
 const RESULT_LIMIT = 50
 
 interface Viewport { lat: number; lon: number }
@@ -32,7 +34,7 @@ export function FindPage(props: {
   const { t } = useTranslation()
   const [vp, setVp] = useState<Viewport | null>(null)
   const [manualOrigin, setManualOrigin] = useState<[number, number] | null>(null)
-  const [chargers, setChargers] = useState<Charger[]>([])
+  const [raw, setRaw] = useState<Charger[]>([]) // geo candidates from the server
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -70,35 +72,30 @@ export function FindPage(props: {
   const radius = SEARCH_RADIUS_M
 
   // Latest values for the (nonce-keyed) URL-apply effect, without making them deps.
-  const chargersRef = useRef(chargers)
-  chargersRef.current = chargers
+  const candidatesRef = useRef(raw)
+  candidatesRef.current = raw
   const originRef = useRef(origin)
   originRef.current = origin
 
-  const { car, charge, detour } = props.settings
+  // Fetch the geo candidate pool from the server — only when the origin, radius
+  // or filters change. Pricing/detour/ranking happens client-side below, so
+  // tweaking the car / charging profile / detour never refetches.
   useEffect(() => {
     const t = setTimeout(async () => {
       setLoading(true)
       setError(false)
       try {
-        const r = await api.cheapest({
+        const r = await api.nearby({
           lat: oLat,
           lon: oLon,
           radius,
-          energy_kwh: charge.kWh,
-          power_kw: charge.powerKW ?? undefined,
-          usable_kwh: car.usableKWh,
-          consumption_kwh100: car.consumptionKWh100,
-          detour: detour.enabled,
-          detour_price: detour.refPrice,
-          detour_eur_per_h: detour.eurPerHour,
           available: props.filters.available,
           include_private: props.filters.includePrivate,
           min_power: props.filters.minPower || undefined,
           plug: props.filters.plug || undefined,
-          limit: RESULT_LIMIT,
+          limit: CANDIDATE_POOL,
         })
-        setChargers(r.results)
+        setRaw(r.results)
       } catch {
         setError(true)
       } finally {
@@ -106,7 +103,14 @@ export function FindPage(props: {
       }
     }, 300)
     return () => clearTimeout(t)
-  }, [oLat, oLon, radius, charge.kWh, charge.powerKW, car.usableKWh, car.consumptionKWh100, detour.enabled, detour.refPrice, detour.eurPerHour, props.filters])
+  }, [oLat, oLon, radius, props.filters])
+
+  // Price + detour + rank entirely on the client; re-ranks instantly when the
+  // car / charging profile / detour settings change (no network round-trip).
+  const chargers = useMemo(
+    () => rankChargers(raw, props.settings, new Date(), RESULT_LIMIT),
+    [raw, props.settings],
+  )
 
   // Refresh the open detail's data from new results, but keep the snapshot if
   // the charger isn't in the latest set.
@@ -129,13 +133,13 @@ export function FindPage(props: {
     }
     detailOpenRef.current = true
     setSelectedId(id)
-    const inList = chargersRef.current.find((c) => c.id === id)
+    const inList = candidatesRef.current.find((c) => c.id === id)
     if (inList) {
       setDetailCharger(inList)
       setFocusNonce((n) => n + 1)
     } else {
       api
-        .charger(id, originRef.current[0], originRef.current[1], car.usableKWh, car.consumptionKWh100)
+        .charger(id, originRef.current[0], originRef.current[1], props.settings.car.usableKWh, props.settings.car.consumptionKWh100)
         .then((c) => {
           setDetailCharger(c)
           setView({ to: [c.lat, c.lon] })

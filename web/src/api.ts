@@ -34,6 +34,7 @@ export interface Charger {
   reports?: ReportAgg[] // active community reports
   avoid?: boolean // de-prioritised by corroborated flag reports
   detour_eur?: number | null // estimated round-trip detour cost added to the ranking
+  price_components?: TariffStruct // structured tariff (from /chargers/nearby, for client-side pricing)
 }
 
 // One report type's value payload (only some types carry one).
@@ -206,9 +207,23 @@ export interface LiveStatus {
   currency?: string
 }
 
+export interface NearbyParams {
+  lat: number
+  lon: number
+  radius?: number
+  available?: boolean
+  include_private?: boolean
+  min_power?: number
+  plug?: string
+  limit?: number
+}
+
 export const api = {
   cheapest: (p: CheapestParams) =>
     get<{ results: Charger[]; count: number }>('/chargers/cheapest', { ...p }),
+  // Geo-only candidates (with structured tariffs) for client-side pricing/ranking.
+  nearby: (p: NearbyParams) =>
+    get<{ results: Charger[]; count: number }>('/chargers/nearby', { ...p }),
   sessions: () => get<{ sessions: SessionProfile[] }>('/sessions'),
   priceHistory: (id: number) =>
     get<{ charger_id: number; history: PricePoint[] }>(`/chargers/${id}/price-history`),

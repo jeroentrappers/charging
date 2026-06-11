@@ -19,7 +19,9 @@ func (s *server) registerPublic(api huma.API) {
 	huma.Get(api, "/sessions", s.opSessions, tag("Comparison"),
 		summary("List comparison session profiles"))
 	huma.Get(api, "/chargers/cheapest", s.opCheapest, tag("Chargers"),
-		summary("Find the cheapest chargers nearby"))
+		summary("Find the cheapest chargers nearby (server-ranked)"))
+	huma.Get(api, "/chargers/nearby", s.opNearby, tag("Chargers"),
+		summary("Nearest chargers with structured tariffs (for client-side pricing/ranking)"))
 	huma.Get(api, "/chargers/{id}", s.opGetCharger, tag("Chargers"),
 		summary("Get a charger by id (for shareable deep links)"))
 	huma.Get(api, "/chargers/{id}/price-history", s.opPriceHistory, tag("Chargers"),
@@ -151,24 +153,7 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 		s.repriceNow(&res[i], spec, vehicle, now)
 	}
 
-	// Community reports: attach the active set per candidate and flag chargers to
-	// de-prioritise (corroborated out-of-service / not-public / does-not-exist).
-	ids := make([]int64, len(res))
-	for i := range res {
-		ids[i] = res[i].ID
-	}
-	if reps, err := s.st.ReportsForIDs(ctx, ids); err != nil {
-		s.log.Warn("cheapest: report flags", "err", err)
-	} else if len(reps) > 0 {
-		rnow := time.Now().UTC()
-		for i := range res {
-			if raws := reps[res[i].ID]; len(raws) > 0 {
-				aggs := report.Aggregate(rnow, raws)
-				res[i].Reports = aggs
-				res[i].Avoid = report.Avoid(aggs)
-			}
-		}
-	}
+	s.attachReports(ctx, res)
 
 	// Estimated round-trip detour cost (extra energy + time), added to the price
 	// for ranking when requested.
@@ -197,12 +182,86 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 	if res == nil {
 		res = []store.NearbyCharger{}
 	}
+	for i := range res {
+		res[i].Components = nil // this endpoint already priced server-side; keep it lean
+	}
 
 	out := &cheapestOut{}
 	out.Body.Query = queryEcho(nq, in.Limit, spec)
 	out.Body.Count = len(res)
 	out.Body.Results = res
 	return out, nil
+}
+
+// ---- GET /chargers/nearby (geo-only; the client prices + ranks) ----
+
+type nearbyIn struct {
+	Lat            float64 `query:"lat" required:"true" doc:"Origin latitude"`
+	Lon            float64 `query:"lon" required:"true" doc:"Origin longitude"`
+	Radius         float64 `query:"radius" default:"50000" doc:"Search radius in metres"`
+	MinPower       float64 `query:"min_power" doc:"Only chargers rated at least this many kW"`
+	Plug           string  `query:"plug" doc:"OCPI connector standard"`
+	Available      bool    `query:"available" doc:"Only chargers currently reported free"`
+	IncludePrivate bool    `query:"include_private" doc:"Include private (home / peer-to-peer) chargers"`
+	Limit          int     `query:"limit" default:"200" minimum:"1" maximum:"500" doc:"Maximum candidates to return"`
+}
+
+type nearbyOut struct {
+	Body struct {
+		Count   int                   `json:"count"`
+		Results []store.NearbyCharger `json:"results"`
+	}
+}
+
+// opNearby returns the nearest candidates (distance order) with their structured
+// tariff + community reports, so the client can compute per-car, time-of-day
+// prices + detour and rank locally — no server-side pricing.
+func (s *server) opNearby(ctx context.Context, in *nearbyIn) (*nearbyOut, error) {
+	radius := in.Radius
+	if radius <= 0 {
+		radius = 50000
+	}
+	res, err := s.st.CheapestNearby(ctx, store.NearbyQuery{
+		Lat: in.Lat, Lon: in.Lon, RadiusM: radius,
+		MinPowerKW: in.MinPower, PlugType: in.Plug, OnlyAvail: in.Available,
+		IncludePrivate: in.IncludePrivate, StaleAfter: s.staleAfter, Limit: in.Limit,
+	})
+	if err != nil {
+		s.log.Error("nearby query", "err", err)
+		return nil, huma.Error500InternalServerError("query failed")
+	}
+	s.attachReports(ctx, res)
+	if res == nil {
+		res = []store.NearbyCharger{}
+	}
+	out := &nearbyOut{}
+	out.Body.Count = len(res)
+	out.Body.Results = res
+	return out, nil
+}
+
+// attachReports fills each candidate's active community reports + avoid flag.
+func (s *server) attachReports(ctx context.Context, res []store.NearbyCharger) {
+	ids := make([]int64, len(res))
+	for i := range res {
+		ids[i] = res[i].ID
+	}
+	reps, err := s.st.ReportsForIDs(ctx, ids)
+	if err != nil {
+		s.log.Warn("attach reports", "err", err)
+		return
+	}
+	if len(reps) == 0 {
+		return
+	}
+	now := time.Now().UTC()
+	for i := range res {
+		if raws := reps[res[i].ID]; len(raws) > 0 {
+			aggs := report.Aggregate(now, raws)
+			res[i].Reports = aggs
+			res[i].Avoid = report.Avoid(aggs)
+		}
+	}
 }
 
 // priceSpec selects how each candidate's effective price is computed: a named
