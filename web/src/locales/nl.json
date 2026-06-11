@@ -123,5 +123,31 @@
     "min": "Min",
     "max": "Max"
   },
-  "lang": { "label": "Taal" }
+  "lang": { "label": "Taal" },
+  "report": {
+    "community": "Meldingen van gebruikers",
+    "none": "Nog geen meldingen.",
+    "add": "Probleem melden",
+    "submit": "Verzenden",
+    "thanks": "Bedankt — geregistreerd.",
+    "flagged": "gemelde problemen",
+    "byN_one": "{{count}} melding",
+    "byN_other": "{{count}} meldingen",
+    "hoursVal": "sluit om {{close}}",
+    "kwVal": "~{{kw}} kW gemeten",
+    "ph": { "time": "UU:MM", "kw": "kW", "price": "€/kWh" },
+    "type": {
+      "out_of_service": "Buiten dienst",
+      "back_in_service": "Weer in dienst",
+      "spot_blocked": "Plaats geblokkeerd (auto/bezet)",
+      "not_public": "Niet echt publiek",
+      "access_blocked": "Toegang geblokkeerd (poort/pas)",
+      "site_hours": "Locatie sluit 's nachts",
+      "slower_than_rated": "Trager dan aangegeven",
+      "price_incorrect": "Prijs klopt niet",
+      "wrong_location": "Verkeerde locatie",
+      "does_not_exist": "Bestaat niet",
+      "confirmed_ok": "Bevestigd OK"
+    }
+  }
 }

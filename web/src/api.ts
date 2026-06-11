@@ -31,6 +31,26 @@ export interface Charger {
   currency: string
   status_updated_at: string | null
   availability_stale: boolean
+  reports?: ReportAgg[] // active community reports
+  avoid?: boolean // de-prioritised by corroborated flag reports
+}
+
+// One report type's value payload (only some types carry one).
+export interface ReportValue {
+  close?: string
+  open?: string
+  kw?: number
+  price?: number
+}
+
+// Aggregated active community report for a charger.
+export interface ReportAgg {
+  type: string
+  group: string
+  count: number
+  last_at: string
+  value?: ReportValue
+  flags: boolean
 }
 
 export interface SessionProfile {
@@ -121,6 +141,37 @@ async function get<T>(path: string, params?: Record<string, string | number | bo
   return res.json() as Promise<T>
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return res.json() as Promise<T>
+}
+
+// Stable anonymous client id (localStorage) so a user's reports dedupe across
+// IP changes without any login.
+function clientId(): string {
+  try {
+    let id = localStorage.getItem('charging.cid')
+    if (!id) {
+      id = (crypto.randomUUID?.() ?? String(Math.random()).slice(2))
+      localStorage.setItem('charging.cid', id)
+    }
+    return id
+  } catch {
+    return ''
+  }
+}
+
+export interface ReportsResult {
+  charger_id: number
+  reports: ReportAgg[]
+  avoid: boolean
+}
+
 export interface CheapestParams {
   lat: number
   lon: number
@@ -157,4 +208,7 @@ export const api = {
   trend: (months = 12) => get<{ trend: TrendPoint[] }>('/stats/price-trend', { months }),
   regions: (by = 'city') => get<{ by: string; regions: PriceAgg[] }>('/stats/regions', { by }),
   sessionStats: () => get<{ sessions: SessionStat[] }>('/stats/sessions'),
+  reports: (id: number) => get<ReportsResult>(`/chargers/${id}/reports`),
+  addReport: (id: number, type: string, value?: ReportValue) =>
+    post<ReportsResult>(`/chargers/${id}/reports`, { type, value, client_id: clientId() }),
 }

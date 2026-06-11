@@ -2,8 +2,18 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { api, type Charger, type LiveStatus, type PricePoint, type TariffComponent, type TariffRestrictions } from './api'
-import { AvailBadge, availOf, ago, eur } from './ui'
+import { api, type Charger, type LiveStatus, type PricePoint, type ReportAgg, type ReportValue, type TariffComponent, type TariffRestrictions } from './api'
+import { AvailBadge, availOf, ago, eur, REPORT_TYPES } from './ui'
+
+// Human text for a report's typed value (site hours / observed kW / €/kWh).
+function reportValueText(a: ReportAgg, t: TFunction): string {
+  const v = a.value
+  if (!v) return ''
+  if (a.type === 'site_hours' && (v.close || v.open)) return t('report.hoursVal', { close: v.close ?? '—', open: v.open || '—' })
+  if (a.type === 'slower_than_rated' && v.kw) return t('report.kwVal', { kw: v.kw })
+  if (a.type === 'price_incorrect' && v.price != null) return `€${v.price}/kWh`
+  return ''
+}
 
 function isIdle(type: string): boolean {
   return type === 'PARKING_TIME'
@@ -47,6 +57,11 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
   const [history, setHistory] = useState<PricePoint[] | null>(null)
   const [live, setLive] = useState<LiveStatus | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
+  const [reports, setReports] = useState<ReportAgg[]>(charger.reports ?? [])
+  const [pending, setPending] = useState<string | null>(null) // value-type awaiting input
+  const [inputVal, setInputVal] = useState('')
+  const [sending, setSending] = useState(false)
+  const [thanks, setThanks] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -67,6 +82,52 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
     refreshLive()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [charger.id])
+
+  // Community reports: seed from the list payload, then fetch the authoritative
+  // active set.
+  useEffect(() => {
+    setReports(charger.reports ?? [])
+    setPending(null)
+    let alive = true
+    api.reports(charger.id).then((r) => alive && setReports(r.reports)).catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [charger.id, charger.reports])
+
+  function submitReport(type: string, value?: ReportValue) {
+    setSending(true)
+    api
+      .addReport(charger.id, type, value)
+      .then((r) => {
+        setReports(r.reports)
+        setThanks(true)
+        setTimeout(() => setThanks(false), 2500)
+      })
+      .catch(() => {})
+      .finally(() => {
+        setSending(false)
+        setPending(null)
+        setInputVal('')
+      })
+  }
+
+  function chooseType(rt: { key: string; value?: 'time' | 'kw' | 'price' }) {
+    if (rt.value) {
+      setPending(pending === rt.key ? null : rt.key)
+      setInputVal('')
+    } else {
+      submitReport(rt.key)
+    }
+  }
+
+  function confirmValue(rt: { key: string; value?: 'time' | 'kw' | 'price' }) {
+    let value: ReportValue | undefined
+    if (rt.value === 'time') value = inputVal ? { close: inputVal } : undefined
+    else if (rt.value === 'kw') value = inputVal ? { kw: Number(inputVal) } : undefined
+    else if (rt.value === 'price') value = inputVal ? { price: Number(inputVal) } : undefined
+    submitReport(rt.key, value)
+  }
 
   const chart = (history ?? [])
     .filter((h) => h.comparable_price_eur != null)
@@ -109,6 +170,49 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
           <div className="cell"><div className="k">{t('detail.power')}</div><div className="v">{charger.power_kw} kW {charger.current_type}</div></div>
           <div className="cell"><div className="k">{t('detail.plug')}</div><div className="v">{charger.plug_type || '—'}</div></div>
           <div className="cell"><div className="k">{t('detail.distance')}</div><div className="v">{Math.round(charger.distance_m)} m</div></div>
+        </div>
+
+        {/* Community feedback — shown alongside operator data, never replacing it. */}
+        <h3 style={{ margin: '12px 0 6px' }}>{t('report.community')}</h3>
+        {reports.length > 0 ? (
+          <ul className="reports">
+            {reports.map((r) => (
+              <li key={r.type} className={r.flags ? 'rep flag' : 'rep'}>
+                <span className="rep-label">{t(`report.type.${r.type}`, r.type)}</span>
+                {reportValueText(r, t) && <span className="rep-val"> · {reportValueText(r, t)}</span>}
+                <span className="rep-meta"> · {t('report.byN', { count: r.count })} · {ago(r.last_at, t)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted" style={{ fontSize: 13, margin: '0 0 6px' }}>{t('report.none')}</p>
+        )}
+
+        <div className="report-actions">
+          <span className="seg-label">{t('report.add')}</span>
+          <div className="report-chips">
+            {REPORT_TYPES.map((rt) => (
+              <span key={rt.key} className="report-chip-wrap">
+                <button className={`chip ${pending === rt.key ? 'on' : ''}`} disabled={sending} onClick={() => chooseType(rt)}>
+                  {t(`report.type.${rt.key}`, rt.key)}
+                </button>
+                {pending === rt.key && rt.value && (
+                  <span className="report-input">
+                    <input
+                      autoFocus
+                      type={rt.value === 'time' ? 'time' : 'number'}
+                      inputMode={rt.value === 'time' ? undefined : 'decimal'}
+                      placeholder={t(`report.ph.${rt.value}`)}
+                      value={inputVal}
+                      onChange={(e) => setInputVal(e.target.value)}
+                    />
+                    <button className="btn primary" disabled={sending} onClick={() => confirmValue(rt)}>{t('report.submit')}</button>
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+          {thanks && <div className="report-thanks">✓ {t('report.thanks')}</div>}
         </div>
 
         {elements.length > 0 && (

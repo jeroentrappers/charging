@@ -124,10 +124,10 @@ export function MapView(props: {
               center={[c.lat, c.lon]}
               radius={sel ? 12 : 8}
               pathOptions={{
-                color: sel ? '#0f172a' : '#ffffff',
-                weight: sel ? 3 : 1.5,
+                color: sel ? '#0f172a' : c.avoid ? '#b91c1c' : '#ffffff',
+                weight: sel ? 3 : c.avoid ? 2.5 : 1.5,
                 fillColor: priceColor(priceOf(c), min, max),
-                fillOpacity: c.availability_stale ? 0.45 : 0.95,
+                fillOpacity: c.availability_stale || c.avoid ? 0.45 : 0.95,
               }}
               eventHandlers={{
                 click: () => {

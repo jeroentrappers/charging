@@ -123,5 +123,31 @@
     "min": "Min",
     "max": "Max"
   },
-  "lang": { "label": "Langue" }
+  "lang": { "label": "Langue" },
+  "report": {
+    "community": "Signalements des utilisateurs",
+    "none": "Aucun signalement.",
+    "add": "Signaler un problème",
+    "submit": "Envoyer",
+    "thanks": "Merci — enregistré.",
+    "flagged": "problèmes signalés",
+    "byN_one": "{{count}} signalement",
+    "byN_other": "{{count}} signalements",
+    "hoursVal": "ferme à {{close}}",
+    "kwVal": "~{{kw}} kW constaté",
+    "ph": { "time": "HH:MM", "kw": "kW", "price": "€/kWh" },
+    "type": {
+      "out_of_service": "Hors service",
+      "back_in_service": "De nouveau en service",
+      "spot_blocked": "Place bloquée (occupée)",
+      "not_public": "Pas vraiment public",
+      "access_blocked": "Accès bloqué (barrière/badge)",
+      "site_hours": "Le site ferme la nuit",
+      "slower_than_rated": "Plus lent qu'annoncé",
+      "price_incorrect": "Prix incorrect",
+      "wrong_location": "Mauvais emplacement",
+      "does_not_exist": "N'existe pas",
+      "confirmed_ok": "Confirmé OK"
+    }
+  }
 }

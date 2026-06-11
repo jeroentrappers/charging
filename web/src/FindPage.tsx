@@ -138,7 +138,10 @@ export function FindPage(props: {
               <span className="price">{eur(priceOf(c))}</span>
               <span>
                 <div className="name">{c.name || c.cpo_id}</div>
-                <div className="sub">{c.power_kw} kW {c.current_type} · {km(c.distance_m)}</div>
+                <div className="sub">
+                  {c.power_kw} kW {c.current_type} · {km(c.distance_m)}
+                  {c.avoid && <span className="flag-badge"> · ⚠ {t('report.flagged')}</span>}
+                </div>
               </span>
               <span className="right"><AvailBadge a={availOf(c)} /></span>
             </button>

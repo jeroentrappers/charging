@@ -134,6 +134,23 @@ export function SessionBar(props: {
   )
 }
 
+// Report types shown in the charger detail, ordered for the "report an issue"
+// UI. `value` indicates which typed input to collect. Labels come from i18n
+// (report.type.<key>). Mirrors the backend registry in internal/report.
+export const REPORT_TYPES: { key: string; group: string; value?: 'time' | 'kw' | 'price' }[] = [
+  { key: 'out_of_service', group: 'status' },
+  { key: 'back_in_service', group: 'status' },
+  { key: 'spot_blocked', group: 'status' },
+  { key: 'not_public', group: 'access' },
+  { key: 'access_blocked', group: 'access' },
+  { key: 'site_hours', group: 'access', value: 'time' },
+  { key: 'slower_than_rated', group: 'performance', value: 'kw' },
+  { key: 'price_incorrect', group: 'pricing', value: 'price' },
+  { key: 'wrong_location', group: 'data' },
+  { key: 'does_not_exist', group: 'data' },
+  { key: 'confirmed_ok', group: 'positive' },
+]
+
 export interface Filters {
   available: boolean
   minPower: number
