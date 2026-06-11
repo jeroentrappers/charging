@@ -221,12 +221,35 @@ export interface NearbyParams {
   limit?: number
 }
 
+export interface AlongRouteParams {
+  from_lat: number
+  from_lon: number
+  to_lat: number
+  to_lon: number
+  buffer?: number
+  available?: boolean
+  include_private?: boolean
+  min_power?: number
+  plug?: string
+  limit?: number
+}
+
+export interface RouteGeometry {
+  points: { lat: number; lon: number }[]
+  distance_m: number
+  duration_s: number
+}
+
 export const api = {
   cheapest: (p: CheapestParams) =>
     get<{ results: Charger[]; count: number }>('/chargers/cheapest', { ...p }),
   // Geo-only candidates (with structured tariffs) for client-side pricing/ranking.
   nearby: (p: NearbyParams) =>
     get<{ results: Charger[]; count: number }>('/chargers/nearby', { ...p }),
+  // Corridor search: chargers along the driving route from→to (off-route
+  // distance in distance_m), plus the route polyline to draw.
+  alongRoute: (p: AlongRouteParams) =>
+    get<{ route: RouteGeometry | null; results: Charger[]; count: number }>('/chargers/along-route', { ...p }),
   sessions: () => get<{ sessions: SessionProfile[] }>('/sessions'),
   priceHistory: (id: number) =>
     get<{ charger_id: number; history: PricePoint[] }>(`/chargers/${id}/price-history`),

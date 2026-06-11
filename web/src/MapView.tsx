@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Circle, Marker, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Circle, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import type { Charger } from './api'
 import { priceColor, priceOf } from './ui'
@@ -88,6 +88,18 @@ function SetViewOnNonce({ to, zoom, nonce }: { to: [number, number] | null; zoom
   return null
 }
 
+// Fits the map to the whole trip route when it (re)loads.
+function FitRoute({ route, nonce }: { route: [number, number][] | null; nonce: number }) {
+  const map = useMap()
+  const last = useRef(-1)
+  useEffect(() => {
+    if (!route || route.length < 2 || nonce === last.current) return
+    last.current = nonce
+    map.fitBounds(route as L.LatLngBoundsLiteral, { padding: [40, 40] })
+  }, [route, nonce, map])
+  return null
+}
+
 // A click on the map background (not on a charger) drops the origin pin.
 function MapClicker({ onPick, markerClick }: { onPick: (lat: number, lon: number) => void; markerClick: MutableRefObject<number> }) {
   useMapEvents({
@@ -118,6 +130,9 @@ export function MapView(props: {
   onSelect: (id: number) => void
   onViewport: (lat: number, lon: number, radiusM: number, zoom: number) => void
   onPick: (lat: number, lon: number) => void
+  route?: [number, number][] | null // trip route polyline (lat,lon)
+  dest?: [number, number] | null // trip destination
+  routeNonce?: number // bumps when a new route loads, to fit bounds
 }) {
   const markerClick = useRef(0)
   const [min, max] = useMemo(() => {
@@ -135,6 +150,19 @@ export function MapView(props: {
         <FocusOn to={props.focus} nonce={props.focusNonce} />
         <Viewport onChange={props.onViewport} />
         <MapClicker onPick={props.onPick} markerClick={markerClick} />
+        <FitRoute route={props.route ?? null} nonce={props.routeNonce ?? 0} />
+
+        {/* Trip route + destination */}
+        {props.route && props.route.length > 1 && (
+          <Polyline positions={props.route} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.65 }} />
+        )}
+        {props.dest && (
+          <Marker
+            position={props.dest}
+            icon={L.divIcon({ className: 'price-pin-icon', html: '<span class="dest-pin">🏁</span>', iconSize: [0, 0] })}
+            zIndexOffset={500}
+          />
+        )}
 
         {/* Origin ("you are here" / chosen point) — anchored to coordinates, so
             it pans with the map. Distances are measured from here. */}

@@ -25,3 +25,6 @@ coverage.*
 docker-compose.override.yml
 docker-compose.*.local.yml
 docker-compose.appmire.yml
+
+# OSRM bind-mounted data (downloaded/processed on the host)
+osrm-data/

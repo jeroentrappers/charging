@@ -11,7 +11,7 @@ services:
     image: ghcr.io/project-osrm/osrm-backend:latest
     command: osrm-routed --algorithm mld --max-table-size 8000 /data/belgium-latest.osrm
     volumes:
-      - osrm-data:/data
+      - ./osrm-data:/data
     expose:
       - "5000"
     restart: unless-stopped
@@ -20,6 +20,3 @@ services:
   api:
     environment:
       OSRM_URL: http://osrm:5000
-
-volumes:
-  osrm-data:
