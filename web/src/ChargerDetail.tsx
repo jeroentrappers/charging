@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api, type Charger, type LiveStatus, type PricePoint, type ReportAgg, type ReportValue, type TariffComponent, type TariffElement, type TariffRestrictions } from './api'
-import { AvailBadge, availOf, ago, eur, plugLabel, REPORT_TYPES } from './ui'
+import { AvailBadge, availOf, ago, eur, plugLabel, sourceConfidence, REPORT_TYPES } from './ui'
 
 // Human text for a report's typed value (site hours / observed kW / €/kWh).
 function reportValueText(a: ReportAgg, t: TFunction): string {
@@ -247,6 +247,18 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
           <div className="cell"><div className="k">{t('detail.plug')}</div><div className="v">{plugLabel(charger.plug_type)}</div></div>
           <div className="cell"><div className="k">{t('detail.distance')}</div><div className="v">{Math.round(charger.distance_m)} m</div></div>
         </div>
+
+        {/* Where the price came from + how fresh — so users can judge trust. */}
+        {charger.price_updated_at && (
+          <p className="provenance">
+            {t('detail.priceConfirmed', { ago: ago(charger.price_updated_at, t) })}
+            {charger.source && <> · {t('detail.viaSource', { source: charger.source })}</>}
+            {' '}
+            <span className={`conf conf-${sourceConfidence(charger.source_type)}`}>
+              {t(`confidence.${sourceConfidence(charger.source_type)}`)}
+            </span>
+          </p>
+        )}
 
         {/* Community feedback — shown alongside operator data, never replacing it. */}
         <h3 style={{ margin: '12px 0 6px' }}>{t('report.community')}</h3>

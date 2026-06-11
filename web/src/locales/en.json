@@ -98,7 +98,9 @@
     "allTimes": "Any time",
     "freeConn": "free to stay",
     "payConnected": "Pay while plugged in",
-    "freeConnected": "Free while plugged in"
+    "freeConnected": "Free while plugged in",
+    "priceConfirmed": "Price confirmed {{ago}}",
+    "viaSource": "via {{source}}"
   },
   "comp": {
     "ENERGY": "Energy",
@@ -218,5 +220,9 @@
     "light": "Light",
     "dark": "Dark",
     "system": "System"
+  },
+  "confidence": {
+    "direct": "operator-direct",
+    "aggregator": "aggregated"
   }
 }

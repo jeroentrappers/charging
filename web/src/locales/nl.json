@@ -98,7 +98,9 @@
     "allTimes": "Altijd",
     "freeConn": "gratis aangesloten",
     "payConnected": "Betalen tijdens aansluiting",
-    "freeConnected": "Gratis aangesloten"
+    "freeConnected": "Gratis aangesloten",
+    "priceConfirmed": "Prijs bevestigd {{ago}}",
+    "viaSource": "via {{source}}"
   },
   "comp": {
     "ENERGY": "Energie",
@@ -218,5 +220,9 @@
     "light": "Licht",
     "dark": "Donker",
     "system": "Systeem"
+  },
+  "confidence": {
+    "direct": "rechtstreeks van uitbater",
+    "aggregator": "geaggregeerd"
   }
 }

@@ -98,7 +98,9 @@
     "allTimes": "À tout moment",
     "freeConn": "branchement gratuit",
     "payConnected": "Payant pendant le branchement",
-    "freeConnected": "Gratuit pendant le branchement"
+    "freeConnected": "Gratuit pendant le branchement",
+    "priceConfirmed": "Prix confirmé {{ago}}",
+    "viaSource": "via {{source}}"
   },
   "comp": {
     "ENERGY": "Énergie",
@@ -218,5 +220,9 @@
     "light": "Clair",
     "dark": "Sombre",
     "system": "Système"
+  },
+  "confidence": {
+    "direct": "direct opérateur",
+    "aggregator": "agrégé"
   }
 }

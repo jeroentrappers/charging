@@ -35,6 +35,9 @@ export interface Charger {
   avoid?: boolean // de-prioritised by corroborated flag reports
   detour_eur?: number | null // estimated round-trip detour cost added to the ranking
   price_components?: TariffStruct // structured tariff (from /chargers/nearby, for client-side pricing)
+  price_updated_at?: string | null // when the tariff was last confirmed
+  source?: string // operator / data-source name
+  source_type?: string // ocpi (direct) | road | monta | … → confidence
 }
 
 // One report type's value payload (only some types carry one).

@@ -37,6 +37,12 @@ export function availOf(c: Charger): Avail {
   return c.available_count > 0 ? 'free' : 'busy'
 }
 
+// Trust level of a price by how we sourced it: OCPI is a direct operator feed;
+// everything else is an open-data / aggregator feed.
+export function sourceConfidence(sourceType?: string): 'direct' | 'aggregator' {
+  return sourceType === 'ocpi' ? 'direct' : 'aggregator'
+}
+
 export function ago(iso: string | null, t: TFunction): string {
   if (!iso) return t('time.unknown')
   const s = (Date.now() - new Date(iso).getTime()) / 1000
