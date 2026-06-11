@@ -123,7 +123,10 @@ export default function App() {
         </label>
         <div className="header-links">
           <button className="hlink hlink-btn" onClick={() => setShowSettings(true)} aria-label={t('settings.title')} title={t('settings.title')}>
-            <svg viewBox="0 0 24 24" aria-hidden><path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 4a6.96 6.96 0 00-.14-1.36l2.03-1.58-2-3.46-2.39.96a7 7 0 00-2.35-1.36L15.6 1h-4l-.49 2.84a7 7 0 00-2.35 1.36l-2.39-.96-2 3.46 2.03 1.58A6.96 6.96 0 003.26 12c0 .46.05.92.14 1.36L1.37 14.94l2 3.46 2.39-.96c.7.58 1.5 1.05 2.35 1.36L8.6 23h4l.49-2.84a7 7 0 002.35-1.36l2.39.96 2-3.46-2.03-1.58c.09-.44.14-.9.14-1.36z"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="16" x2="20" y2="16" />
+              <circle cx="9" cy="8" r="2.4" fill="var(--surface)" /><circle cx="15" cy="16" r="2.4" fill="var(--surface)" />
+            </svg>
           </button>
           <a className="hlink" href={`${API_BASE}/docs`} target="_blank" rel="noreferrer">{t('nav.apiDocs')}</a>
           <a className="hlink" href={GITHUB_URL} target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub">
