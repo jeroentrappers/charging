@@ -176,7 +176,9 @@
     "note": "Saved in your browser. The detour adds the round-trip's extra energy and time to the ranking.",
     "display": "Display",
     "language": "Language",
-    "theme": "Theme"
+    "theme": "Theme",
+    "carModel": "Car model",
+    "customCar": "Custom / other"
   },
   "lang": {
     "label": "Language"

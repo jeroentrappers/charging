@@ -176,7 +176,9 @@
     "note": "Opgeslagen in je browser. De omweg telt de extra energie en tijd van de heen-en-terugrit mee in de rangschikking.",
     "display": "Weergave",
     "language": "Taal",
-    "theme": "Thema"
+    "theme": "Thema",
+    "carModel": "Automodel",
+    "customCar": "Aangepast / ander"
   },
   "lang": {
     "label": "Taal"

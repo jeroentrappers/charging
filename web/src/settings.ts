@@ -5,7 +5,14 @@ import { useEffect, useState } from 'react'
 // profile is "how much energy, how fast", and detour adds the cost of driving
 // out of the way.
 export interface Settings {
-  car: { usableKWh: number; consumptionKWh100: number }
+  car: {
+    usableKWh: number
+    consumptionKWh100: number
+    modelId?: string // picked CarModel id, or undefined for a custom/manual car
+    plugs?: string[] // canonical OCPI plug types the car accepts (for compat filter)
+    maxAcKw?: number
+    maxDcKw?: number
+  }
   charge: { kWh: number; powerKW: number | null } // energy to add; powerKW null = as fast as possible
   detour: { enabled: boolean; refPrice: number; eurPerHour: number }
 }

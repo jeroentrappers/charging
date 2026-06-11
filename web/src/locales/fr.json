@@ -176,7 +176,9 @@
     "note": "Enregistré dans votre navigateur. Le détour ajoute au classement l'énergie et le temps de l'aller-retour.",
     "display": "Affichage",
     "language": "Langue",
-    "theme": "Thème"
+    "theme": "Thème",
+    "carModel": "Modèle de voiture",
+    "customCar": "Personnalisé / autre"
   },
   "lang": {
     "label": "Langue"

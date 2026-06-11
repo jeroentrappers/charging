@@ -4,6 +4,7 @@ import type { Charger } from './api'
 import { energyPresets, type Settings } from './settings'
 import { LANGS } from './i18n'
 import type { Theme } from './theme'
+import { CARS, carLabel, carPlugs } from './cars'
 
 export function eur(n: number | null | undefined): string {
   return n == null ? '—' : '€' + n.toFixed(2)
@@ -219,6 +220,7 @@ export function ProfileBar(props: {
 }
 
 const THEMES: Theme[] = ['light', 'dark', 'system']
+const MAKES = [...new Set(CARS.map((c) => c.make))] // distinct makes, in dataset order
 
 // SettingsPanel edits display preferences (language, theme) and the persisted
 // car parameters + detour weighting.
@@ -262,14 +264,46 @@ export function SettingsPanel(props: {
 
         <h3 style={{ margin: '12px 0 6px' }}>{t('settings.car')}</h3>
         <label className="setting-row">
+          <span>{t('settings.carModel')}</span>
+          <select
+            value={car.modelId ?? ''}
+            onChange={(e) => {
+              const c = CARS.find((x) => x.id === e.target.value)
+              if (!c) {
+                props.onChange({ car: { ...car, modelId: undefined } })
+                return
+              }
+              props.onChange({
+                car: {
+                  usableKWh: c.usableKWh,
+                  consumptionKWh100: c.consumptionKWh100,
+                  modelId: c.id,
+                  plugs: carPlugs(c),
+                  maxAcKw: c.acKw,
+                  maxDcKw: c.dcKw,
+                },
+              })
+            }}
+          >
+            <option value="">{t('settings.customCar')}</option>
+            {MAKES.map((make) => (
+              <optgroup key={make} label={make}>
+                {CARS.filter((c) => c.make === make).map((c) => (
+                  <option key={c.id} value={c.id}>{carLabel(c)}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label className="setting-row">
           <span>{t('settings.battery')}</span>
           <input type="number" min={1} step={1} value={car.usableKWh}
-            onChange={(e) => props.onChange({ car: { ...car, usableKWh: num(e.target.value, 1) } })} />
+            onChange={(e) => props.onChange({ car: { ...car, usableKWh: num(e.target.value, 1), modelId: undefined } })} />
         </label>
         <label className="setting-row">
           <span>{t('settings.consumption')}</span>
           <input type="number" min={1} step={0.5} value={car.consumptionKWh100}
-            onChange={(e) => props.onChange({ car: { ...car, consumptionKWh100: num(e.target.value, 1) } })} />
+            onChange={(e) => props.onChange({ car: { ...car, consumptionKWh100: num(e.target.value, 1), modelId: undefined } })} />
         </label>
 
         <h3 style={{ margin: '12px 0 6px' }}>{t('settings.detour')}</h3>
