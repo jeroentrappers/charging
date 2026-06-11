@@ -190,6 +190,7 @@ export interface CheapestParams {
   detour_price?: number
   detour_eur_per_h?: number
   available?: boolean
+  include_private?: boolean
   min_power?: number
   plug?: string
   limit?: number

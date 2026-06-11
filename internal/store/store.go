@@ -152,16 +152,16 @@ func (s *Store) UpsertCharger(ctx context.Context, c model.Connector) (int64, er
 	var id int64
 	err := s.Pool.QueryRow(ctx, `
 		INSERT INTO charger
-			(cpo_id, evse_uid, connector_id, geom, power_kw, plug_type, current_type, name, address, postal_code, city, last_seen_at)
+			(cpo_id, evse_uid, connector_id, geom, power_kw, plug_type, current_type, name, address, postal_code, city, private, last_seen_at)
 		VALUES
-			($1,$2,$3, ST_SetSRID(ST_MakePoint($4,$5),4326)::geography, $6,$7,$8,$9,$10,$11,$12, now())
+			($1,$2,$3, ST_SetSRID(ST_MakePoint($4,$5),4326)::geography, $6,$7,$8,$9,$10,$11,$12,$13, now())
 		ON CONFLICT (cpo_id, evse_uid, connector_id) DO UPDATE SET
 			geom=EXCLUDED.geom, power_kw=EXCLUDED.power_kw, plug_type=EXCLUDED.plug_type,
 			current_type=EXCLUDED.current_type, name=EXCLUDED.name, address=EXCLUDED.address,
-			postal_code=EXCLUDED.postal_code, city=EXCLUDED.city, last_seen_at=now()
+			postal_code=EXCLUDED.postal_code, city=EXCLUDED.city, private=EXCLUDED.private, last_seen_at=now()
 		RETURNING id`,
 		c.CPOID, c.EVSEUID, c.ConnectorID, c.Lon, c.Lat,
-		c.PowerKW, c.PlugType, c.CurrentType, c.Name, c.Address, c.PostalCode, c.City).Scan(&id)
+		c.PowerKW, c.PlugType, c.CurrentType, c.Name, c.Address, c.PostalCode, c.City, model.IsPrivateName(c.Name)).Scan(&id)
 	return id, err
 }
 
@@ -191,7 +191,7 @@ func (s *Store) ChargersToRefresh(ctx context.Context, cpoID string, limit int) 
 		SELECT c.id, c.evse_uid, COALESCE(c.power_kw,0)::float8, COALESCE(c.current_type,'')
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
-		WHERE c.cpo_id = $1
+		WHERE c.cpo_id = $1 AND NOT c.private
 		ORDER BY st.updated_at ASC NULLS FIRST
 		LIMIT $2`, cpoID, limit)
 	if err != nil {
@@ -320,6 +320,7 @@ type NearbyCharger struct {
 	Reports      []report.Agg       `json:"reports,omitempty"`    // active community reports (set by the API layer)
 	Avoid        bool               `json:"avoid,omitempty"`      // de-prioritised by corroborated flag reports
 	DetourEUR    *float64           `json:"detour_eur,omitempty"` // estimated round-trip detour cost (energy+time) when requested
+	Private      bool               `json:"private,omitempty"`    // home / peer-to-peer charger (excluded from public search by default)
 }
 
 type NearbyQuery struct {
@@ -330,6 +331,9 @@ type NearbyQuery struct {
 	PlugType   string  `json:"plug_type"`    // "" = no filter
 	OnlyAvail  bool    `json:"only_available"`
 	Session    string  `json:"session"` // profile key to sort/return by; "" = headline
+	// IncludePrivate keeps private (home / peer-to-peer) chargers in the results;
+	// by default they're excluded from the public search.
+	IncludePrivate bool `json:"include_private"`
 	// StaleAfter: availability older than this counts as unknown (excluded when
 	// OnlyAvail) and flagged Stale. Zero disables staleness handling.
 	StaleAfter time.Duration `json:"stale_after"`
@@ -360,7 +364,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
 		       st.updated_at,
 		       (NOT %s) AS stale,
-		       tv.price_components
+		       tv.price_components, c.private
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
@@ -368,11 +372,12 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
 		  AND ($5 = '' OR c.plug_type = $5)
 		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
+		  AND ($9 OR NOT c.private)
 		ORDER BY dist ASC
 		LIMIT $7`, freshExpr, freshExpr)
 
 	rows, err := s.Pool.Query(ctx, query,
-		q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs)
+		q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs, q.IncludePrivate)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +388,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		var pricesJSON, componentsJSON []byte
 		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
-			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON); err != nil {
+			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private); err != nil {
 			return nil, err
 		}
 		n.Prices = decodePrices(pricesJSON)
@@ -413,7 +418,7 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 		            ELSE ST_Distance(c.geom, ST_SetSRID(ST_MakePoint($3::float8, $2::float8),4326)::geography) END AS dist,
 		       COALESCE(st.available_count,0),
 		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
-		       st.updated_at, (NOT %s) AS stale, tv.price_components
+		       st.updated_at, (NOT %s) AS stale, tv.price_components, c.private
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
@@ -424,7 +429,7 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 	err := s.Pool.QueryRow(ctx, query, id, originLat, originLon, staleSecs).Scan(
 		&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 		&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
-		&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON)
+		&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NearbyCharger{}, false, nil
 	}

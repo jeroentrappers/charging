@@ -93,6 +93,7 @@ export function FindPage(props: {
           detour_price: detour.refPrice,
           detour_eur_per_h: detour.eurPerHour,
           available: props.filters.available,
+          include_private: props.filters.includePrivate,
           min_power: props.filters.minPower || undefined,
           plug: props.filters.plug || undefined,
           limit: RESULT_LIMIT,

@@ -60,15 +60,16 @@ func (s *server) opSessions(_ context.Context, _ *struct{}) (*sessionsOut, error
 // ---- GET /chargers/cheapest ----
 
 type cheapestIn struct {
-	Lat       float64 `query:"lat" required:"true" doc:"Origin latitude"`
-	Lon       float64 `query:"lon" required:"true" doc:"Origin longitude"`
-	Radius    float64 `query:"radius" default:"5000" doc:"Search radius in metres"`
-	MinPower  float64 `query:"min_power" doc:"Only chargers rated at least this many kW"`
-	Plug      string  `query:"plug" doc:"OCPI connector standard, e.g. IEC_62196_T2_COMBO"`
-	Available bool    `query:"available" doc:"Only chargers currently reported free"`
-	Session   string  `query:"session" doc:"Standard comparison profile key (see GET /sessions)"`
-	EnergyKWh float64 `query:"energy_kwh" doc:"Custom session: energy to add to the battery (kWh, 1-250). Overrides 'session'."`
-	PowerKW   float64 `query:"power_kw" doc:"Custom session: target power (kW, 1-400). Omit (or 0) for as-fast-as-possible."`
+	Lat            float64 `query:"lat" required:"true" doc:"Origin latitude"`
+	Lon            float64 `query:"lon" required:"true" doc:"Origin longitude"`
+	Radius         float64 `query:"radius" default:"5000" doc:"Search radius in metres"`
+	MinPower       float64 `query:"min_power" doc:"Only chargers rated at least this many kW"`
+	Plug           string  `query:"plug" doc:"OCPI connector standard, e.g. IEC_62196_T2_COMBO"`
+	Available      bool    `query:"available" doc:"Only chargers currently reported free"`
+	IncludePrivate bool    `query:"include_private" doc:"Include private (home / peer-to-peer) chargers"`
+	Session        string  `query:"session" doc:"Standard comparison profile key (see GET /sessions)"`
+	EnergyKWh      float64 `query:"energy_kwh" doc:"Custom session: energy to add to the battery (kWh, 1-250). Overrides 'session'."`
+	PowerKW        float64 `query:"power_kw" doc:"Custom session: target power (kW, 1-400). Omit (or 0) for as-fast-as-possible."`
 	// Car parameters for the price calc (0 = server default vehicle).
 	UsableKWh   float64 `query:"usable_kwh" doc:"Car usable battery (kWh) for the price calc"`
 	Consumption float64 `query:"consumption_kwh100" doc:"Car consumption (kWh/100km)"`
@@ -126,12 +127,13 @@ func (s *server) opCheapest(ctx context.Context, in *cheapestIn) (*cheapestOut, 
 	}
 	nq := store.NearbyQuery{
 		Lat: in.Lat, Lon: in.Lon, RadiusM: radius,
-		MinPowerKW: in.MinPower,
-		PlugType:   in.Plug,
-		OnlyAvail:  in.Available,
-		Session:    spec.session,
-		StaleAfter: s.staleAfter,
-		Limit:      pool,
+		MinPowerKW:     in.MinPower,
+		PlugType:       in.Plug,
+		OnlyAvail:      in.Available,
+		IncludePrivate: in.IncludePrivate,
+		Session:        spec.session,
+		StaleAfter:     s.staleAfter,
+		Limit:          pool,
 	}
 	res, err := s.st.CheapestNearby(ctx, nq)
 	if err != nil {

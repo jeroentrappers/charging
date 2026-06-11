@@ -43,6 +43,7 @@
   },
   "filters": {
     "available": "Disponible maintenant",
+    "includePrivate": "Inclure privé/domicile",
     "anyPower": "Toutes puissances",
     "minPower": "≥ {{kw}} kW",
     "anyPlug": "Toutes prises",

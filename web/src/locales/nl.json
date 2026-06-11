@@ -43,6 +43,7 @@
   },
   "filters": {
     "available": "Nu beschikbaar",
+    "includePrivate": "Incl. thuis/privé",
     "anyPower": "Alle vermogens",
     "minPower": "≥ {{kw}} kW",
     "anyPlug": "Alle stekkers",

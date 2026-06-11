@@ -52,7 +52,7 @@ export default function App() {
 
   const [settings, patchSettings] = useSettings()
   const [showSettings, setShowSettings] = useState(false)
-  const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '' })
+  const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '', includePrivate: false })
   const [located, setLocated] = useState<[number, number] | null>(null)
   const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
   const [geoNote, setGeoNote] = useState('')

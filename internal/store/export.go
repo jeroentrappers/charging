@@ -28,7 +28,8 @@ type ExportCharger struct {
 	PriceEUR       *float64           `json:"comparable_price_eur"`
 	Prices         map[string]float64 `json:"comparable_prices,omitempty"`
 	Currency       string             `json:"currency"`
-	Components     json.RawMessage    `json:"-"` // structured tariff (parsed by the exporter)
+	Private        bool               `json:"private"` // home / peer-to-peer charger
+	Components     json.RawMessage    `json:"-"`       // structured tariff (parsed by the exporter)
 }
 
 // ExportAll streams every charger with its current open tariff version and
@@ -42,7 +43,7 @@ func (s *Store) ExportAll(ctx context.Context) ([]ExportCharger, error) {
 		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
 		       COALESCE(st.status,''), COALESCE(st.available_count,0), st.updated_at,
 		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb),
-		       COALESCE(tv.currency,'EUR'), tv.price_components
+		       COALESCE(tv.currency,'EUR'), c.private, tv.price_components
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
@@ -60,7 +61,7 @@ func (s *Store) ExportAll(ctx context.Context) ([]ExportCharger, error) {
 			&e.Name, &e.Address, &e.PostalCode, &e.City,
 			&e.Lat, &e.Lon, &e.PowerKW, &e.PlugType, &e.CurrentType,
 			&e.Status, &e.AvailableCount, &e.StatusAt,
-			&e.PriceEUR, &e.Prices, &e.Currency, &e.Components,
+			&e.PriceEUR, &e.Prices, &e.Currency, &e.Private, &e.Components,
 		); err != nil {
 			return nil, err
 		}

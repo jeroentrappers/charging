@@ -255,6 +255,7 @@ export interface Filters {
   available: boolean
   minPower: number
   plug: string
+  includePrivate: boolean
 }
 
 const PLUGS = [
@@ -286,6 +287,9 @@ export function FilterBar({ f, onChange }: { f: Filters; onChange: (f: Filters) 
           ))}
         </select>
       </label>
+      <button className={`chip ${f.includePrivate ? 'on' : ''}`} onClick={() => onChange({ ...f, includePrivate: !f.includePrivate })}>
+        {f.includePrivate ? '✓ ' : ''}{t('filters.includePrivate')}
+      </button>
     </div>
   )
 }
