@@ -1,0 +1,25 @@
+# OSRM overlay — self-hosted driving-route engine for corridor search
+# (GET /chargers/along-route). Compose it alongside the others:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.appmire.yml \
+#                  -f docker-compose.osrm.yml ...
+#
+# One-time data prep (downloads + processes the Belgium extract into the
+# osrm-data volume) BEFORE first `up`:  ./scripts/osrm-prep.sh
+services:
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    command: osrm-routed --algorithm mld --max-table-size 8000 /data/belgium-latest.osrm
+    volumes:
+      - osrm-data:/data
+    expose:
+      - "5000"
+    restart: unless-stopped
+
+  # The api reaches OSRM in-network; this turns on route/corridor search.
+  api:
+    environment:
+      OSRM_URL: http://osrm:5000
+
+volumes:
+  osrm-data:

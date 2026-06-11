@@ -43,6 +43,10 @@ type Config struct {
 	ExportDir        string
 	ExportFullEvery  time.Duration
 	ExportAvailEvery time.Duration
+
+	// OSRMURL is the base URL of a self-hosted osrm-routed server (e.g.
+	// http://osrm:5000). Empty disables route/corridor search.
+	OSRMURL string
 }
 
 func Load() Config {
@@ -64,6 +68,7 @@ func Load() Config {
 		ExportDir:              env("EXPORT_DIR", "./export"),
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
+		OSRMURL:                env("OSRM_URL", ""),
 	}
 }
 

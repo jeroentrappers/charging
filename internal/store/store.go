@@ -451,6 +451,62 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 	return n, true, nil
 }
 
+// ChargersAlongRoute returns chargers within bufferM metres of the given route
+// line (a WKT LINESTRING in lon lat order, SRID 4326), with DistanceM set to the
+// off-route distance (how far the charger sits from the line). The caller prices
+// each and ranks by price + deviation. Ordered by off-route distance.
+func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM float64, q NearbyQuery) ([]NearbyCharger, error) {
+	if q.Limit <= 0 || q.Limit > 1000 {
+		q.Limit = 300
+	}
+	staleSecs := q.StaleAfter.Seconds()
+	const freshExpr = `($7 <= 0 OR (st.updated_at IS NOT NULL AND st.updated_at > now() - make_interval(secs => $7)))`
+	query := fmt.Sprintf(`
+		WITH route AS (SELECT ST_SetSRID(ST_GeomFromText($1),4326)::geography AS line)
+		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
+		       ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
+		       COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
+		       ST_Distance(c.geom, route.line) AS dist,
+		       COALESCE(st.available_count,0),
+		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
+		       st.updated_at, (NOT %s) AS stale, tv.price_components, c.private,
+		       COALESCE(tv.source_last_updated, tv.observed_from), COALESCE(p.name,''), COALESCE(p.source_type,'')
+		FROM charger c
+		CROSS JOIN route
+		LEFT JOIN charger_status st ON st.charger_id = c.id
+		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
+		LEFT JOIN cpo p ON p.id = c.cpo_id
+		WHERE ST_DWithin(c.geom, route.line, $2)
+		  AND ($3 = 0 OR COALESCE(c.power_kw,0) >= $3)
+		  AND ($4 = '' OR upper(replace(c.plug_type,'_','')) = upper(replace($4,'_','')))
+		  AND (NOT $5 OR (COALESCE(st.available_count,0) > 0 AND %s))
+		  AND ($8 OR NOT c.private)
+		ORDER BY dist ASC
+		LIMIT $6`, freshExpr, freshExpr)
+
+	rows, err := s.Pool.Query(ctx, query,
+		lineWKT, bufferM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs, q.IncludePrivate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NearbyCharger
+	for rows.Next() {
+		var n NearbyCharger
+		var pricesJSON, componentsJSON []byte
+		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
+			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
+			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private,
+			&n.PriceUpdated, &n.Source, &n.SourceType); err != nil {
+			return nil, err
+		}
+		n.Prices = decodePrices(pricesJSON)
+		n.Components = json.RawMessage(componentsJSON)
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 func decodePrices(b []byte) map[string]float64 {
 	m := map[string]float64{}
 	if len(b) > 0 {

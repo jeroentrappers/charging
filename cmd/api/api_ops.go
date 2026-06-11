@@ -22,6 +22,8 @@ func (s *server) registerPublic(api huma.API) {
 		summary("Find the cheapest chargers nearby (server-ranked)"))
 	huma.Get(api, "/chargers/nearby", s.opNearby, tag("Chargers"),
 		summary("Nearest chargers with structured tariffs (for client-side pricing/ranking)"))
+	huma.Get(api, "/chargers/along-route", s.opAlongRoute, tag("Chargers"),
+		summary("Find chargers along a driving route (corridor search)"))
 	huma.Get(api, "/chargers/{id}", s.opGetCharger, tag("Chargers"),
 		summary("Get a charger by id (for shareable deep links)"))
 	huma.Get(api, "/chargers/{id}/price-history", s.opPriceHistory, tag("Chargers"),

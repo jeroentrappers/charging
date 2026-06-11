@@ -28,6 +28,7 @@ import (
 	"github.com/appmire/charging/internal/monta"
 	"github.com/appmire/charging/internal/ocpi"
 	"github.com/appmire/charging/internal/pricing"
+	"github.com/appmire/charging/internal/routing"
 	"github.com/appmire/charging/internal/store"
 )
 
@@ -47,6 +48,7 @@ type server struct {
 	reportLimiter   *ipLimiter
 	publicURL       string
 	ocpiParty       ocpi.Party
+	router          routing.Router // optional; nil disables route/corridor search
 }
 
 func main() {
@@ -81,6 +83,10 @@ func main() {
 		apiBasePath:     cfg.APIBasePath,
 		publicURL:       cfg.PublicURL,
 		ocpiParty:       ocpi.Party{CountryCode: cfg.OCPICountry, PartyID: cfg.OCPIPartyID, Name: cfg.OCPIPartyName},
+	}
+	if cfg.OSRMURL != "" {
+		s.router = routing.New(cfg.OSRMURL)
+		log.Info("route/corridor search enabled", "osrm", cfg.OSRMURL)
 	}
 	s.engine = ingest.NewEngine(st, log)
 	s.engine.Vehicle = s.vehicle
