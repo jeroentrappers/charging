@@ -53,7 +53,7 @@ export default function App() {
   const [settings, patchSettings] = useSettings()
   const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
-  const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '', includePrivate: false })
+  const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '', includePrivate: false, plugCompatible: false })
   const [located, setLocated] = useState<[number, number] | null>(null)
   const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
   const [geoNote, setGeoNote] = useState('')
@@ -134,7 +134,7 @@ export default function App() {
           <ProfileBar car={settings.car} charge={settings.charge} onCharge={(charge) => patchSettings({ charge })} />
           <div className="filters">
             <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
-            <FilterBarInline filters={filters} setFilters={setFilters} />
+            <FilterBarInline filters={filters} setFilters={setFilters} carPlugs={settings.car.plugs} />
           </div>
           {geoNote && <div className="geo-note">{t(geoNote)}</div>}
         </div>
@@ -180,6 +180,6 @@ export default function App() {
 
 // FilterBar renders its own .filters row; here we only want the chips, so reuse
 // it directly (the extra wrapper above hosts the Locate button alongside).
-function FilterBarInline({ filters, setFilters }: { filters: Filters; setFilters: (f: Filters) => void }) {
-  return <FilterBar f={filters} onChange={setFilters} />
+function FilterBarInline({ filters, setFilters, carPlugs }: { filters: Filters; setFilters: (f: Filters) => void; carPlugs?: string[] }) {
+  return <FilterBar f={filters} onChange={setFilters} carPlugs={carPlugs} />
 }

@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Circle, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Circle, Marker, useMap, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
 import type { Charger } from './api'
 import { priceColor, priceOf } from './ui'
+
+// A color-coded price pill anchored on the charger's coordinate. Showing the
+// price right on the map (not just a dot) makes the cheapest options pop before
+// the user even reads the list.
+function pricePin(c: Charger, color: string, sel: boolean): L.DivIcon {
+  const p = priceOf(c)
+  const label = p == null ? '–' : `€${Math.round(p)}`
+  const cls = ['price-pin', sel && 'sel', c.avoid && 'avoid', c.availability_stale && 'stale'].filter(Boolean).join(' ')
+  return L.divIcon({
+    className: 'price-pin-icon',
+    html: `<span class="${cls}" style="background:${color}">${label}</span>`,
+    iconSize: [0, 0],
+  })
+}
 
 // Keeps Leaflet's internal size in sync when the map container resizes (the
 // mobile split, orientation changes) — otherwise tiles grey out.
@@ -138,16 +153,11 @@ export function MapView(props: {
         {props.chargers.map((c) => {
           const sel = c.id === props.selectedId
           return (
-            <CircleMarker
+            <Marker
               key={c.id}
-              center={[c.lat, c.lon]}
-              radius={sel ? 12 : 8}
-              pathOptions={{
-                color: sel ? '#0f172a' : c.avoid ? '#b91c1c' : '#ffffff',
-                weight: sel ? 3 : c.avoid ? 2.5 : 1.5,
-                fillColor: priceColor(priceOf(c), min, max),
-                fillOpacity: c.availability_stale || c.avoid ? 0.45 : 0.95,
-              }}
+              position={[c.lat, c.lon]}
+              icon={pricePin(c, priceColor(priceOf(c), min, max), sel)}
+              zIndexOffset={sel ? 1000 : 0}
               eventHandlers={{
                 click: () => {
                   markerClick.current = Date.now()

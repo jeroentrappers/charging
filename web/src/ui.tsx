@@ -337,6 +337,7 @@ export interface Filters {
   minPower: number
   plug: string
   includePrivate: boolean
+  plugCompatible: boolean // only chargers whose plug fits the selected car
 }
 
 const PLUGS = [
@@ -347,13 +348,18 @@ const PLUGS = [
 ]
 const POWERS = [0, 22, 50, 150]
 
-export function FilterBar({ f, onChange }: { f: Filters; onChange: (f: Filters) => void }) {
+export function FilterBar({ f, onChange, carPlugs }: { f: Filters; onChange: (f: Filters) => void; carPlugs?: string[] }) {
   const { t } = useTranslation()
   return (
     <div className="filters">
       <button className={`chip ${f.available ? 'on' : ''}`} onClick={() => onChange({ ...f, available: !f.available })}>
         {f.available ? '✓ ' : ''}{t('filters.available')}
       </button>
+      {carPlugs && carPlugs.length > 0 && (
+        <button className={`chip ${f.plugCompatible ? 'on' : ''}`} onClick={() => onChange({ ...f, plugCompatible: !f.plugCompatible })}>
+          {f.plugCompatible ? '✓ ' : ''}{t('filters.fitsCar')}
+        </button>
+      )}
       <label className={`chip ${f.minPower ? 'on' : ''}`}>
         <select value={f.minPower} onChange={(e) => onChange({ ...f, minPower: Number(e.target.value) })}>
           {POWERS.map((v) => (

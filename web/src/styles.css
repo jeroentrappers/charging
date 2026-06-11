@@ -148,6 +148,20 @@ button { font: inherit; cursor: pointer; }
 .map { position: relative; flex: 3 1 0; min-height: 0; z-index: 0; } /* z-index:0 contains Leaflet's high-z panes */
 .leaflet-container { height: 100%; width: 100%; background: #dde3ea; }
 
+/* ---- color-coded price pins ---- */
+.leaflet-div-icon { background: transparent; border: 0; } /* reset Leaflet's default white box */
+.price-pin {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+  font-size: 12px; font-weight: 800; color: #fff; padding: 2px 7px; border-radius: 10px;
+  border: 1.5px solid #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.4);
+  font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.price-pin.sel { border-color: var(--ink); outline: 2px solid var(--ink); }
+.price-pin.avoid { border-color: #b91c1c; }
+.price-pin.stale, .price-pin.avoid { opacity: 0.6; }
+[data-theme='dark'] .price-pin { border-color: #0b1220; box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6); }
+[data-theme='dark'] .price-pin.sel { border-color: #e5e9f0; outline-color: #e5e9f0; }
+
 /* Hint shown over the map until a location (geolocation or a tapped point) is set. */
 .map-hint {
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 600;

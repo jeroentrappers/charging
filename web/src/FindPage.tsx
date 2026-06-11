@@ -107,10 +107,15 @@ export function FindPage(props: {
 
   // Price + detour + rank entirely on the client; re-ranks instantly when the
   // car / charging profile / detour settings change (no network round-trip).
-  const chargers = useMemo(
-    () => rankChargers(raw, props.settings, new Date(), RESULT_LIMIT),
-    [raw, props.settings],
-  )
+  // "Fits my car" narrows the pool to plugs the selected car accepts.
+  const chargers = useMemo(() => {
+    const plugs = props.settings.car.plugs
+    const pool =
+      props.filters.plugCompatible && plugs && plugs.length > 0
+        ? raw.filter((c) => plugs.includes(c.plug_type))
+        : raw
+    return rankChargers(pool, props.settings, new Date(), RESULT_LIMIT)
+  }, [raw, props.settings, props.filters.plugCompatible])
 
   // Refresh the open detail's data from new results, but keep the snapshot if
   // the charger isn't in the latest set.

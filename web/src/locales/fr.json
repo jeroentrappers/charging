@@ -55,7 +55,8 @@
       "type2": "Type 2",
       "ccs": "CCS",
       "chademo": "CHAdeMO"
-    }
+    },
+    "fitsCar": "Compatible"
   },
   "find": {
     "searching": "Recherche…",
