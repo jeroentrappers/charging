@@ -375,7 +375,26 @@ type NearbyQuery struct {
 	// OnlyAvail) and flagged Stale. Zero disables staleness handling.
 	StaleAfter time.Duration `json:"stale_after"`
 	Limit      int           `json:"limit"`
+	// IncludeDuplicates keeps cross-source duplicates — a blanket location-only
+	// register row (bnetza/irve) co-located with a richer priced+live source.
+	// By default those register rows are hidden (see supersededByRicherSource).
+	IncludeDuplicates bool `json:"include_duplicates"`
 }
+
+// supersededByRicherSource is a SQL boolean (referencing the charger alias `c`
+// and cpo alias `p`) that is TRUE when a row is a redundant cross-source
+// duplicate: it comes from a blanket location-only register (bnetza/irve) AND a
+// richer source — one carrying ad-hoc price + live status — already covers the
+// same physical spot (within 40 m, same normalised plug). We hide the register
+// copy so e.g. a GP JOULE site published via both BNetzA and the Mobilithek
+// AFIR push appears once, as the priced version. Rich sources are never hidden.
+const supersededByRicherSource = `
+	COALESCE(p.source_type,'') IN ('bnetza','irve') AND EXISTS (
+		SELECT 1 FROM charger dc JOIN cpo dp ON dp.id = dc.cpo_id
+		 WHERE dp.source_type NOT IN ('bnetza','irve')
+		   AND dc.id <> c.id
+		   AND ST_DWithin(dc.geom, c.geom, 40)
+		   AND upper(replace(COALESCE(dc.plug_type,''),'_','')) = upper(replace(COALESCE(c.plug_type,''),'_','')))`
 
 // CheapestNearby returns candidate chargers within radius (and matching the
 // filters), ordered by distance (nearest first), including the structured
@@ -412,11 +431,12 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		  AND ($5 = '' OR upper(replace(c.plug_type,'_','')) = upper(replace($5,'_','')))
 		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
 		  AND ($9 OR NOT c.private)
+		  AND ($10 OR NOT (%s))
 		ORDER BY dist ASC
-		LIMIT $7`, freshExpr, freshExpr)
+		LIMIT $7`, freshExpr, freshExpr, supersededByRicherSource)
 
 	rows, err := s.Pool.Query(ctx, query,
-		q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs, q.IncludePrivate)
+		q.Lat, q.Lon, q.RadiusM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs, q.IncludePrivate, q.IncludeDuplicates)
 	if err != nil {
 		return nil, err
 	}

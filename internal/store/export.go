@@ -87,6 +87,7 @@ func (s *Store) ExportStream(ctx context.Context, fn func(ExportCharger) error) 
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		LEFT JOIN cpo p ON p.id = c.cpo_id
+		WHERE NOT (`+supersededByRicherSource+`)
 		ORDER BY p.country, c.postal_code, c.cpo_id, c.evse_uid, c.connector_id`)
 	if err != nil {
 		return err
