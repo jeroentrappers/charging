@@ -38,3 +38,10 @@ compose_files:
 # merged BENELUX+DE+FR extract here later — this box has the headroom.
 osrm_region_name: belgium-latest
 osrm_region_url: https://download.geofabrik.de/europe/belgium-latest.osm.pbf
+
+# Firewall: ufw is the single firewall. SSH stays restricted to these source
+# IPs (migrated from the box's old nftables allow-list). The old nft dyndns
+# refresh is retired, so update this list when an IP changes.
+ssh_allow_ips:
+  - 87.66.4.201      # primary admin / control node
+  - 94.110.48.221    # secondary (was nftables ssh_dyndns, via hq.appmire.be)

@@ -46,24 +46,119 @@
     state: present
     update_cache: true
 
+- name: Configure Docker DNS (host uses systemd-resolved 127.0.0.53, unusable in containers)
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+    content: |
+      {
+        "dns": ["185.12.64.1", "185.12.64.2", "1.1.1.1"]
+      }
+  register: docker_daemon_cfg
+
 - name: Enable + start docker
   ansible.builtin.systemd:
     name: docker
     enabled: true
     state: started
 
-- name: Firewall — allow SSH, HTTP, HTTPS
+- name: Restart docker if daemon config changed
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  when: docker_daemon_cfg is changed
+
+# --- Firewall: ufw is the single firewall. Migrate the box's nftables
+#     allow-list into ufw, then retire nftables so they don't compete. ------
+- name: ufw — default deny incoming
+  community.general.ufw: { direction: incoming, policy: deny }
+
+- name: ufw — default allow outgoing
+  community.general.ufw: { direction: outgoing, policy: allow }
+
+# ufw defaults the FORWARD chain to DROP, blocking Docker container egress.
+# Allow routed traffic; Docker's DOCKER-USER chain still governs exposure.
+- name: ufw — allow routed traffic (Docker container egress)
+  community.general.ufw: { direction: routed, policy: allow }
+
+- name: ufw — SSH restricted to the allow-list (migrated from nftables)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item }}"
+    to_port: "{{ ansible_port | default(22) }}"
+    proto: tcp
+  loop: "{{ ssh_allow_ips }}"
+
+- name: ufw — public web (HTTP/HTTPS, v4+v6)
   community.general.ufw:
     rule: allow
     port: "{{ item }}"
     proto: tcp
-  loop: ["{{ ansible_port | default(22) }}", "80", "443"]
+  loop: ["80", "443"]
 
-- name: Firewall — default deny incoming, enable
-  community.general.ufw:
-    state: enabled
-    direction: incoming
-    policy: deny
+- name: ufw — enable
+  community.general.ufw: { state: enabled }
+
+- name: ufw — capture status
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+
+# SAFETY GATE: never retire nftables unless ufw is active AND already permits
+# SSH from the primary admin IP — otherwise we'd lock ourselves out.
+- name: ufw — assert SSH allow-list is live before retiring nftables
+  ansible.builtin.assert:
+    that:
+      - "'Status: active' in ufw_status.stdout"
+      - "ssh_allow_ips[0] in ufw_status.stdout"
+      - "'22' in ufw_status.stdout"
+    fail_msg: "ufw not safely configured for SSH; refusing to retire nftables"
+
+# Retire the competing nftables firewall. Its ExecStop is `nft flush ruleset`,
+# which would wipe ufw + Docker tables too — neutralize that first, then delete
+# only its inet filter table (the input/forward DROP that blocks us).
+- name: nftables — systemd drop-in dir
+  ansible.builtin.file:
+    path: /etc/systemd/system/nftables.service.d
+    state: directory
+    mode: "0755"
+
+- name: nftables — neutralize flush-on-stop
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nftables.service.d/override.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStop=
+      ExecStop=/bin/true
+  register: nft_override
+
+- name: nftables — reload systemd if override changed
+  ansible.builtin.systemd: { daemon_reload: true }
+  when: nft_override is changed
+
+- name: nftables — delete the input/forward-DROP table (ufw now owns filtering)
+  ansible.builtin.shell: |
+    if nft list table inet filter >/dev/null 2>&1; then nft delete table inet filter; echo removed; fi
+  register: nft_del
+  changed_when: "'removed' in nft_del.stdout"
+
+- name: nftables — stop, disable, mask the service
+  ansible.builtin.systemd:
+    name: nftables
+    state: stopped
+    enabled: false
+    masked: true
+
+- name: nftables — disable the now-defunct dyndns SSH updater (wrote to nft sets)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - update-ssh-dyndns.timer
+    - update-ssh-dyndns.service
+  failed_when: false
 
 # --- deploy user can drive docker + owns the deploy dir ------------------
 - name: Add deploy user to the docker group
