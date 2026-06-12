@@ -1,0 +1,6 @@
+# Galaxy collections used by the playbooks.
+#   ansible-galaxy collection install -r requirements.yml
+---
+collections:
+  - name: community.general   # ufw
+  - name: ansible.posix       # (reserved; rsync uses the raw command module)

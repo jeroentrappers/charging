@@ -1,0 +1,41 @@
+# Secrets for the charging stack. Copy to vault.yml and encrypt:
+#
+#   cd deploy/ansible
+#   cp group_vars/charging/vault.yml.example group_vars/charging/vault.yml
+#   # fill in real values (pull them from appmire4-web:/opt/charging/.env), then:
+#   ansible-vault encrypt group_vars/charging/vault.yml
+#
+# vault.yml and .vault-pass are gitignored. Only this .example is committed.
+---
+# .env contents. Rendered verbatim by roles/charging/templates/env.j2.
+# DATABASE_URL is overridden to the compose DB by docker-compose.prod.yml, so
+# the value here only matters for tooling run outside compose.
+charging_env:
+  DATABASE_URL: "postgres://charging:charging@db:5432/charging?sslmode=disable"
+  ENERGYVISION_TOKEN: "CHANGE_ME"
+  MONTA_CREDS: "CHANGE_ME"
+  API_ADDR: ":8080"
+  API_BASE_PATH: "/api"
+  CORS_ORIGINS: "https://charging.appmire.be"
+  ADMIN_TOKEN: "CHANGE_ME"
+  WEB_API_BASE: "https://charging.appmire.be/api"
+  VEHICLE_USABLE_KWH: "77"
+  VEHICLE_CONSUMPTION_KWH100: "18"
+  AVAILABILITY_STALE_AFTER: "30m"
+  PRICE_STALE_AFTER: "168h"
+  METRICS_ADDR: ":9090"
+  EXPORT_DIR: "/data/export"
+  EXPORT_FULL_EVERY: "2h"
+  EXPORT_AVAIL_EVERY: "1h"
+  PUBLIC_URL: "https://charging.appmire.be"
+  MOBILITHEK_PUSH_TOKEN: "CHANGE_ME"
+
+# Mobilithek consumer-pull mTLS client cert (PEM). Paste the full blocks.
+mob_cert_pem: |
+  -----BEGIN CERTIFICATE-----
+  CHANGE_ME
+  -----END CERTIFICATE-----
+mob_key_pem: |
+  -----BEGIN PRIVATE KEY-----
+  CHANGE_ME
+  -----END PRIVATE KEY-----

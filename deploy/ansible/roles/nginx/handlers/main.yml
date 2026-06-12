@@ -1,0 +1,12 @@
+---
+- name: reload nginx
+  ansible.builtin.command: nginx -t
+  register: nginx_test
+  changed_when: false
+  notify: do reload nginx
+
+- name: do reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: nginx_test.rc == 0

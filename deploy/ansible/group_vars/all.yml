@@ -1,0 +1,40 @@
+# Non-secret deployment vars. Secrets are in group_vars/charging/vault.yml
+# (encrypted with ansible-vault) — see vault.yml.example for the full list.
+---
+charging_repo: "git@github.com:jeroentrappers/charging.git"
+charging_branch: master
+charging_dir: /opt/charging
+
+# Public hostname this box answers on. Validate-first rollout: a throwaway
+# subdomain now; flip to charging.appmire.be once the DNS records move here.
+# (Also update WEB_API_BASE / PUBLIC_URL / CORS_ORIGINS in vault.yml to match,
+# then re-run `site.yml --tags app,nginx` at cutover.)
+charging_domain: charging-hetz1.appmire.be
+certbot_email: jeroen.trappers@secutec.com
+enable_tls: true
+
+# How the working tree gets onto the box:
+#   rsync  – push the local checkout (no GitHub creds needed on the box)
+#   git    – clone/pull {{ charging_repo }} (needs a deploy key on the box)
+deploy_mode: rsync
+
+# How secrets land on the box:
+#   vault  – render .env + certs from group_vars/charging/vault.yml
+#   copy   – upload deploy/ansible/files/{env,mob-cert.pem,mob-key.pem} (gitignored)
+secrets_mode: vault
+
+# This Hetzner box is amd64, so the official PostGIS image works (appmire4-web
+# is arm64 and needs the imresamu mirror). Ports stay on loopback — nginx is
+# the only public entry, same as appmire4-web.
+db_image: "postgis/postgis:17-3.5"
+api_loopback_port: 8081
+web_loopback_port: 5173
+compose_files:
+  - docker-compose.prod.yml
+  - docker-compose.osrm.yml
+  - docker-compose.hetz1.yml   # rendered by the charging role (host override)
+
+# OSRM routing extract. Belgium-only today (matches appmire4-web); bump to a
+# merged BENELUX+DE+FR extract here later — this box has the headroom.
+osrm_region_name: belgium-latest
+osrm_region_url: https://download.geofabrik.de/europe/belgium-latest.osm.pbf

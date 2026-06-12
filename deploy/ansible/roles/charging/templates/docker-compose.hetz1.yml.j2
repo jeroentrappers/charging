@@ -1,0 +1,13 @@
+# Host override for {{ inventory_hostname }} — rendered by Ansible, do not edit.
+# amd64 box: official PostGIS image (appmire4-web is arm64 + needs a mirror).
+# Ports bound to loopback only; nginx is the public entry. !override replaces
+# the prod port lists (compose otherwise concatenates them).
+services:
+  db:
+    image: {{ db_image }}
+  api:
+    ports: !override
+      - "127.0.0.1:{{ api_loopback_port }}:8080"
+  web:
+    ports: !override
+      - "127.0.0.1:{{ web_loopback_port }}:80"

@@ -1,0 +1,120 @@
+# One-time data migration: copy the live PostgreSQL DB (user feedback, price
+# reports, SCD2 tariff + availability history — everything not re-ingestible)
+# from appmire4-web to the new box. Safe to re-run; it overwrites the target DB.
+#
+#   ansible-playbook migrate-data.yml
+#
+# Run AFTER site.yml has the stack up on the target. pg_dump -Fc is a single
+# consistent snapshot, so the source keeps serving during the dump. Do the final
+# run during a quiet window (or right before DNS cutover) to minimise the gap.
+---
+- name: Dump DB on the source box
+  hosts: source
+  gather_facts: true
+  vars:
+    dump_remote: "/tmp/charging-{{ ansible_date_time.iso8601_basic_short }}.dump"
+    dump_local: "/tmp/charging-migrate.dump"
+  tasks:
+    - name: pg_dump (custom format) from the db container
+      ansible.builtin.shell:
+        cmd: >-
+          docker exec -i $(docker compose -f {{ charging_dir }}/docker-compose.prod.yml ps -q db)
+          pg_dump -U charging -Fc charging > {{ dump_remote }}
+      changed_when: true
+
+    - name: Report dump size
+      ansible.builtin.stat:
+        path: "{{ dump_remote }}"
+      register: dump_stat
+
+    - name: Show size
+      ansible.builtin.debug:
+        msg: "dump = {{ (dump_stat.stat.size / 1048576) | round(1) }} MB"
+
+    - name: Fetch dump to the control node
+      ansible.builtin.fetch:
+        src: "{{ dump_remote }}"
+        dest: "{{ dump_local }}"
+        flat: true
+
+    - name: Remove dump from source
+      ansible.builtin.file:
+        path: "{{ dump_remote }}"
+        state: absent
+
+- name: Restore DB on the target box
+  hosts: charging
+  # Unprivileged: drives docker via the docker group, same as site.yml.
+  vars:
+    dump_local: "/tmp/charging-migrate.dump"
+    dump_remote: "/tmp/charging-migrate.dump"
+    compose_cmd: "docker compose {{ compose_files | map('regex_replace', '^', '-f ') | join(' ') }}"
+  tasks:
+    - name: Copy dump to target
+      ansible.builtin.copy:
+        src: "{{ dump_local }}"
+        dest: "{{ dump_remote }}"
+        mode: "0600"
+
+    - name: Stop writers (api, ingest) during restore
+      ansible.builtin.command:
+        chdir: "{{ charging_dir }}"
+        cmd: "{{ compose_cmd }} stop api ingest"
+      changed_when: true
+
+    - name: Ensure db is up + healthy
+      ansible.builtin.command:
+        chdir: "{{ charging_dir }}"
+        cmd: "{{ compose_cmd }} up -d db"
+      changed_when: false
+
+    - name: Wait for db ready
+      ansible.builtin.command:
+        chdir: "{{ charging_dir }}"
+        cmd: "{{ compose_cmd }} exec -T db pg_isready -U charging -d charging"
+      register: pgready
+      retries: 20
+      delay: 3
+      until: pgready.rc == 0
+      changed_when: false
+
+    - name: pg_restore (clean + recreate objects from the dump)
+      ansible.builtin.shell:
+        cmd: >-
+          docker exec -i $({{ compose_cmd }} ps -q db)
+          pg_restore -U charging -d charging --clean --if-exists --no-owner --no-privileges
+          < {{ dump_remote }}
+        chdir: "{{ charging_dir }}"
+      register: restore
+      # pg_restore warns on DROP of not-yet-existing objects (expected on a
+      # fresh target) — treat non-fatal stderr as success.
+      failed_when: restore.rc != 0 and 'errors ignored on restore' not in restore.stderr
+      changed_when: true
+
+    - name: Restart writers
+      ansible.builtin.command:
+        chdir: "{{ charging_dir }}"
+        cmd: "{{ compose_cmd }} up -d"
+      changed_when: true
+
+    - name: Remove dump from target
+      ansible.builtin.file:
+        path: "{{ dump_remote }}"
+        state: absent
+
+    - name: Sanity-count restored data (charger_report = user feedback)
+      ansible.builtin.shell:
+        cmd: >-
+          docker exec -i $({{ compose_cmd }} ps -q db)
+          psql -U charging -d charging -tA -c
+          "select 'charger_report='||count(*) from charger_report
+           union all select 'tariff_version='||count(*) from tariff_version
+           union all select 'charger='||count(*) from charger
+           union all select 'cpo='||count(*) from cpo;"
+        chdir: "{{ charging_dir }}"
+      register: counts
+      changed_when: false
+
+    - name: Show row counts
+      ansible.builtin.debug:
+        var: counts.stdout_lines

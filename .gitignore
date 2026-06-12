@@ -31,3 +31,9 @@ osrm-data/
 
 # mTLS client certs / secrets (Mobilithek etc.) — never commit
 secrets/
+
+# Ansible secrets. The vault PASSWORD and copy-mode plain files never get
+# committed; group_vars/charging/vault.yml IS committed but only ever encrypted
+# (ansible-vault). Never `ansible-vault decrypt` it in place.
+deploy/ansible/.vault-pass
+deploy/ansible/files/

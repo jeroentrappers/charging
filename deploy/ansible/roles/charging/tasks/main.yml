@@ -1,0 +1,121 @@
+# Code + secrets + OSRM data + compose up. Idempotent; re-run to ship updates.
+---
+- name: Ensure deploy dir
+  ansible.builtin.file:
+    path: "{{ charging_dir }}"
+    state: directory
+    mode: "0755"
+
+# --- code ---------------------------------------------------------------
+- name: Push working tree (rsync)
+  when: deploy_mode == 'rsync'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    chdir: "{{ playbook_dir }}/../.."
+    argv:
+      - rsync
+      - -az
+      - --delete
+      # excluded paths on the box are preserved (no --delete-excluded): .env,
+      # secrets/, osrm-data/ keep their state across deploys.
+      - --exclude=.git
+      - --exclude=.env
+      - --exclude=secrets
+      - --exclude=osrm-data
+      - --exclude=bin
+      - --exclude=data
+      - --exclude=web/node_modules
+      - --exclude=web/dist
+      - --exclude=deploy/ansible/.vault-pass
+      - --exclude=deploy/ansible/group_vars/charging/vault.yml
+      - -e
+      - "ssh -p {{ ansible_port | default(22) }} -i {{ ansible_ssh_private_key_file }} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+      - "./"
+      - "{{ ansible_user }}@{{ ansible_host }}:{{ charging_dir }}/"
+  register: rsync_out
+  changed_when: "rsync_out.stdout | length > 0"
+
+- name: Clone/update repo (git)
+  when: deploy_mode == 'git'
+  ansible.builtin.git:
+    repo: "{{ charging_repo }}"
+    dest: "{{ charging_dir }}"
+    version: "{{ charging_branch }}"
+    accept_hostkey: true
+
+# --- host compose override (amd64 image + loopback ports) ---------------
+- name: Render host compose override
+  ansible.builtin.template:
+    src: docker-compose.hetz1.yml.j2
+    dest: "{{ charging_dir }}/docker-compose.hetz1.yml"
+    mode: "0644"
+
+# --- secrets ------------------------------------------------------------
+- name: Render .env (vault)
+  when: secrets_mode == 'vault'
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ charging_dir }}/.env"
+    mode: "0600"
+
+- name: Ensure secrets dir
+  ansible.builtin.file:
+    path: "{{ charging_dir }}/secrets"
+    state: directory
+    mode: "0700"
+
+- name: Write Mobilithek mTLS cert + key (vault)
+  when: secrets_mode == 'vault'
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ charging_dir }}/secrets/{{ item.name }}"
+    mode: "0600"
+  loop:
+    - { name: mob-cert.pem, content: "{{ mob_cert_pem }}" }
+    - { name: mob-key.pem, content: "{{ mob_key_pem }}" }
+  no_log: true
+
+- name: Upload secrets from local files (copy mode)
+  when: secrets_mode == 'copy'
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ charging_dir }}/{{ item.dest }}"
+    mode: "0600"
+  loop:
+    - { src: files/env, dest: .env }
+    - { src: files/mob-cert.pem, dest: secrets/mob-cert.pem }
+    - { src: files/mob-key.pem, dest: secrets/mob-key.pem }
+
+# --- OSRM data (one-time / on region change) ----------------------------
+- name: Check for processed OSRM graph
+  ansible.builtin.stat:
+    path: "{{ charging_dir }}/osrm-data/{{ osrm_region_name }}.osrm.cell_metrics"
+  register: osrm_graph
+
+- name: Prepare OSRM data (download + extract/partition/customize)
+  when: not osrm_graph.stat.exists
+  ansible.builtin.command:
+    chdir: "{{ charging_dir }}"
+    cmd: ./scripts/osrm-prep.sh
+  environment:
+    COMPOSE: "docker compose {{ compose_files | map('regex_replace', '^', '-f ') | join(' ') }}"
+    PBF_URL: "{{ osrm_region_url }}"
+  changed_when: true
+
+# --- build + run --------------------------------------------------------
+- name: Build + start the stack
+  ansible.builtin.command:
+    chdir: "{{ charging_dir }}"
+    cmd: "docker compose {{ compose_files | map('regex_replace', '^', '-f ') | join(' ') }} up -d --build"
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreate' in compose_up.stderr"
+
+- name: Wait for API health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ api_loopback_port }}/healthz"
+    status_code: 200
+  register: health
+  retries: 20
+  delay: 6
+  until: health.status == 200

@@ -1,0 +1,21 @@
+# Deploy the charging stack to a host. Idempotent — safe to re-run for updates.
+#
+#   cd deploy/ansible
+#   ansible-playbook site.yml                 # full deploy
+#   ansible-playbook site.yml --tags app       # just rebuild/redeploy the stack
+#   ansible-playbook site.yml --tags nginx     # just the vhost + TLS
+---
+- name: Charging stack
+  hosts: charging
+  # Runs as the unprivileged `ansible` user. System tasks (bootstrap, nginx)
+  # escalate with sudo; the charging role runs unprivileged and drives docker
+  # via the docker group — same shape as appmire4-web's deploy user.
+  roles:
+    - role: bootstrap   # docker engine, firewall, base packages
+      become: true
+      tags: [bootstrap]
+    - role: charging    # code, secrets, OSRM data, compose up (as ansible)
+      tags: [app]
+    - role: nginx       # reverse proxy + certbot TLS
+      become: true
+      tags: [nginx]

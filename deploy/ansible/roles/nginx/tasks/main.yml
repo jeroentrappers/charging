@@ -1,0 +1,71 @@
+# Public reverse proxy + TLS. Coexists with other vhosts on a shared host: it
+# only manages charging's own site file and obtains its own cert.
+---
+- name: Install nginx + certbot
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable + start nginx
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Does a TLS cert already exist?
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ charging_domain }}/fullchain.pem"
+  register: tls_cert
+
+# Pass 1: render the vhost. Without a cert it's HTTP-only (so the box is
+# reachable and certbot --nginx can validate); with a cert it's full TLS.
+- name: Render charging vhost
+  ansible.builtin.template:
+    src: charging.conf.j2
+    dest: "/etc/nginx/sites-available/{{ charging_domain }}"
+    mode: "0644"
+  vars:
+    have_cert: "{{ tls_cert.stat.exists }}"
+  notify: reload nginx
+
+- name: Enable charging vhost
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ charging_domain }}"
+    dest: "/etc/nginx/sites-enabled/{{ charging_domain }}"
+    state: link
+  notify: reload nginx
+
+- name: Apply nginx changes now (needed before certbot)
+  ansible.builtin.meta: flush_handlers
+
+# Pass 2: obtain the cert (only if missing), then re-render with the TLS block.
+- name: Obtain TLS cert
+  when: enable_tls and not tls_cert.stat.exists
+  ansible.builtin.command:
+    argv:
+      - certbot
+      - certonly
+      - --nginx
+      - --non-interactive
+      - --agree-tos
+      - -m
+      - "{{ certbot_email }}"
+      - -d
+      - "{{ charging_domain }}"
+  register: certbot_run
+  changed_when: "'Congratulations' in certbot_run.stdout or 'Successfully received' in certbot_run.stdout"
+
+- name: Re-render charging vhost with TLS
+  when: enable_tls
+  ansible.builtin.template:
+    src: charging.conf.j2
+    dest: "/etc/nginx/sites-available/{{ charging_domain }}"
+    mode: "0644"
+  vars:
+    have_cert: true
+  notify: reload nginx
