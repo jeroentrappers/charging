@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -45,7 +46,41 @@ type Engine struct {
 	// e.g. the startup catch-up racing a cron tick or an admin-triggered run.
 	// That overlap caused duplicate-key churn on the SCD2 tariff path.
 	inflight sync.Map
+
+	// sigCache remembers the last-seen per-connector signature for each
+	// (source, kind), so a pass only writes connectors that actually changed
+	// since the previous poll — a "diff" of the feed. This keeps even frequent
+	// polls of huge feeds (NL ≈ 226k connectors) cheap when little changed.
+	sigMu    sync.Mutex
+	sigCache map[string]map[string]uint64
 }
+
+// connectorSig hashes the fields a pass would write (identity + status, plus the
+// tariff for a price pass). Unchanged signature ⇒ nothing to do for that row.
+func connectorSig(c model.Connector, tariffHash string) uint64 {
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%.2f\x00%s\x00%s\x00%s\x00%.6f\x00%.6f\x00%s\x00%s",
+		c.EVSEUID, c.ConnectorID, c.EVSEStatus, c.PowerKW, c.PlugType, c.CurrentType,
+		c.Name, c.Lat, c.Lon, c.TariffID, tariffHash)
+	return h.Sum64()
+}
+
+func (e *Engine) prevSigs(key string) map[string]uint64 {
+	e.sigMu.Lock()
+	defer e.sigMu.Unlock()
+	return e.sigCache[key]
+}
+
+func (e *Engine) storeSigs(key string, m map[string]uint64) {
+	e.sigMu.Lock()
+	defer e.sigMu.Unlock()
+	if e.sigCache == nil {
+		e.sigCache = map[string]map[string]uint64{}
+	}
+	e.sigCache[key] = m
+}
+
+func connKey(c model.Connector) string { return c.EVSEUID + "\x00" + c.ConnectorID }
 
 // acquire reserves a (source, kind) pass. ok is false if one is already running;
 // release frees it. Prevents concurrent passes of the same source+kind.
@@ -99,13 +134,27 @@ func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
 		if err != nil {
 			return 0, 0, fmt.Errorf("availability %s: %w", src.CPO.ID, err)
 		}
+		cacheKey := src.CPO.ID + "/" + KindAvailability
+		prev := e.prevSigs(cacheKey)
+		next := make(map[string]uint64, len(conns))
+		changed := 0
 		for _, conn := range conns {
+			k := connKey(conn)
+			sig := connectorSig(conn, "")
+			if old, ok := prev[k]; ok && old == sig {
+				next[k] = sig // unchanged since last poll — skip the DB write
+				continue
+			}
 			if _, err := e.upsertConnector(ctx, conn); err != nil {
 				e.Log.Error("upsert connector", "cpo", src.CPO.ID,
 					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
+				continue // don't cache → retry next pass
 			}
+			next[k] = sig
+			changed++
 		}
-		return len(conns), 0, nil
+		e.storeSigs(cacheKey, next)
+		return len(conns), changed, nil
 	})
 }
 
@@ -123,13 +172,30 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 		if err != nil {
 			return 0, 0, fmt.Errorf("full pass %s: %w", src.CPO.ID, err)
 		}
+		cacheKey := src.CPO.ID + "/" + KindPrice
+		prev := e.prevSigs(cacheKey)
+		next := make(map[string]uint64, len(conns))
 		changes := 0
 		for _, conn := range conns {
+			// Include the tariff content in the signature, so a row is reprocessed
+			// when its identity, status, OR price changes.
+			tariffHash := ""
+			if conn.TariffID != "" {
+				if t, ok := tariffs[conn.TariffID]; ok {
+					tariffHash = t.Hash()
+				}
+			}
+			k := connKey(conn)
+			sig := connectorSig(conn, tariffHash)
+			if old, ok := prev[k]; ok && old == sig {
+				next[k] = sig // unchanged identity + status + tariff — skip all DB work
+				continue
+			}
 			id, err := e.upsertConnector(ctx, conn)
 			if err != nil {
 				e.Log.Error("upsert connector", "cpo", src.CPO.ID,
 					"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", err)
-				continue
+				continue // don't cache → retry next pass
 			}
 			ch, err := e.processTariff(ctx, id, conn, tariffs)
 			if err != nil {
@@ -140,7 +206,9 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 			if ch {
 				changes++
 			}
+			next[k] = sig
 		}
+		e.storeSigs(cacheKey, next)
 		return len(conns), changes, nil
 	})
 }

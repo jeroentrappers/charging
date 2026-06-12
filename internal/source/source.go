@@ -114,9 +114,9 @@ func Seeds() []store.CPO {
 			OCPIVersion: "2.2.1",
 			SourceType:  "ocpi_file_gz",
 			Country:     "NL",
-			PollCron:    "0 4 * * *",   // daily price refresh
-			StatusCron:  "0 */6 * * *", // availability 4×/day — an 18 MB file + 226k upserts is too heavy to run hourly on a small box
-			Enabled:     true,          // open data, no key required
+			PollCron:    "0 4 * * *", // daily price refresh
+			StatusCron:  "0 * * * *", // hourly availability — cheap now: the engine diffs the feed and only writes connectors that changed
+			Enabled:     true,        // open data, no key required
 		},
 		{
 			// 🇩🇪 DE Bundesnetzagentur Ladesäulenregister — official national
