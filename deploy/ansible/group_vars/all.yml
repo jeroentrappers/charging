@@ -39,9 +39,11 @@ compose_files:
 osrm_region_name: belgium-latest
 osrm_region_url: https://download.geofabrik.de/europe/belgium-latest.osm.pbf
 
-# Firewall: ufw is the single firewall. SSH stays restricted to these source
-# IPs (migrated from the box's old nftables allow-list). The old nft dyndns
-# refresh is retired, so update this list when an IP changes.
+# Firewall: ufw is the single firewall. SSH stays restricted to source IPs.
+# ssh_allow_ips = permanent static allow-list (the safety net, never auto-pruned).
 ssh_allow_ips:
   - 87.66.4.201      # primary admin / control node
-  - 94.110.48.221    # secondary (was nftables ssh_dyndns, via hq.appmire.be)
+
+# Dynamic allow-list: a timer resolves this host and maintains comment-tagged
+# ufw SSH rules for it (ported from the box's old nftables ssh_dyndns updater).
+ssh_dyndns_host: hq.appmire.be

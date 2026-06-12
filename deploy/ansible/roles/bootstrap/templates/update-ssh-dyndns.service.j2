@@ -1,0 +1,9 @@
+# Managed by Ansible (bootstrap role).
+[Unit]
+Description=Refresh ufw SSH allow rules from {{ ssh_dyndns_host }} (dyndns)
+After=network-online.target ufw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/update-ssh-dyndns.sh {{ ssh_dyndns_host }}

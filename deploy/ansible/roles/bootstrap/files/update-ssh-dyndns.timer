@@ -1,0 +1,11 @@
+# Managed by Ansible (bootstrap role).
+[Unit]
+Description=Periodic refresh of the ufw ssh-dyndns allow rules
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

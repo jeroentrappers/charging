@@ -89,6 +89,15 @@
     proto: tcp
   loop: "{{ ssh_allow_ips }}"
 
+# Guard: never leave SSH world-open. Remove any blanket "allow <port>/tcp from
+# anywhere" rule — SSH must only ever be reachable from the allow-list + dyndns.
+- name: ufw — ensure SSH is NOT open to the world
+  community.general.ufw:
+    rule: allow
+    port: "{{ ansible_port | default(22) }}"
+    proto: tcp
+    delete: true
+
 - name: ufw — public web (HTTP/HTTPS, v4+v6)
   community.general.ufw:
     rule: allow
@@ -150,15 +159,43 @@
     enabled: false
     masked: true
 
-- name: nftables — disable the now-defunct dyndns SSH updater (wrote to nft sets)
+# Dynamic SSH allow-list: ported from the box's old nftables ssh_dyndns updater
+# to ufw. A timer resolves {{ ssh_dyndns_host }} and maintains comment-tagged
+# ufw allow rules for it (static rules in ssh_allow_ips are never touched).
+- name: dyndns — install ufw updater script
+  ansible.builtin.copy:
+    src: update-ssh-dyndns.sh
+    dest: /usr/local/sbin/update-ssh-dyndns.sh
+    mode: "0755"
+
+- name: dyndns — install systemd service
+  ansible.builtin.template:
+    src: update-ssh-dyndns.service.j2
+    dest: /etc/systemd/system/update-ssh-dyndns.service
+    mode: "0644"
+  register: dyndns_service
+
+- name: dyndns — install systemd timer
+  ansible.builtin.copy:
+    src: update-ssh-dyndns.timer
+    dest: /etc/systemd/system/update-ssh-dyndns.timer
+    mode: "0644"
+  register: dyndns_timer
+
+- name: dyndns — reload systemd if units changed
+  ansible.builtin.systemd: { daemon_reload: true }
+  when: dyndns_service is changed or dyndns_timer is changed
+
+- name: dyndns — enable + start the timer
   ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: stopped
-    enabled: false
-  loop:
-    - update-ssh-dyndns.timer
-    - update-ssh-dyndns.service
-  failed_when: false
+    name: update-ssh-dyndns.timer
+    enabled: true
+    state: started
+
+- name: dyndns — run once now to apply current IP(s)
+  ansible.builtin.command: /usr/local/sbin/update-ssh-dyndns.sh {{ ssh_dyndns_host }}
+  register: dyndns_run
+  changed_when: "'->' in dyndns_run.stdout"
 
 # --- deploy user can drive docker + owns the deploy dir ------------------
 - name: Add deploy user to the docker group
