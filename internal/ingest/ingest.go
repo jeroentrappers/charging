@@ -82,6 +82,17 @@ func (e *Engine) storeSigs(key string, m map[string]uint64) {
 
 func connKey(c model.Connector) string { return c.EVSEUID + "\x00" + c.ConnectorID }
 
+// availabilitySig hashes only what an availability pass persists: the status
+// (which also drives available_count). Identity changes are deliberately ignored
+// here — they're refreshed by the daily price pass — so we write a row only when
+// a connector's actual availability changed. We keep no availability history
+// (charger_status is current-only), so skipping unchanged status loses nothing.
+func availabilitySig(c model.Connector) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(c.EVSEStatus))
+	return h.Sum64()
+}
+
 // acquire reserves a (source, kind) pass. ok is false if one is already running;
 // release frees it. Prevents concurrent passes of the same source+kind.
 func (e *Engine) acquire(cpoID, kind string) (release func(), ok bool) {
@@ -140,9 +151,9 @@ func (e *Engine) RunAvailability(ctx context.Context, src source.Source) error {
 		changed := 0
 		for _, conn := range conns {
 			k := connKey(conn)
-			sig := connectorSig(conn, "")
+			sig := availabilitySig(conn) // status-only: write only on a real availability change
 			if old, ok := prev[k]; ok && old == sig {
-				next[k] = sig // unchanged since last poll — skip the DB write
+				next[k] = sig // unchanged status since last poll — skip the DB write
 				continue
 			}
 			if _, err := e.upsertConnector(ctx, conn); err != nil {
