@@ -46,6 +46,7 @@
     }
   },
   "filters": {
+    "title": "Filters",
     "available": "Available now",
     "includePrivate": "Include home/private",
     "anyPower": "Any power",

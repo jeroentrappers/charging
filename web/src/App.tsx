@@ -54,36 +54,46 @@ export default function App() {
   const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '', includePrivate: false, plugCompatible: false })
+  const [filtersOpen, setFiltersOpen] = useState(false) // collapsed by default to give the list room (esp. mobile)
   const [located, setLocated] = useState<[number, number] | null>(null)
   const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
   const [geoNote, setGeoNote] = useState('')
   const [geoNonce, setGeoNonce] = useState(0) // bumps on each explicit locate -> recenter + re-follow geo
   const watchId = useRef<number | null>(null)
+  const bestAccuracy = useRef<number>(Infinity) // smallest accuracy radius seen this locate cycle
 
-  // Live updates while the user moves; doesn't recenter the map (the pin moves).
+  // Accept a GPS reading only if it's the first fix of this cycle or strictly
+  // more accurate than the best so far. This refines the location as the fix
+  // converges, then stops moving it on sub-metre jitter — so the list isn't
+  // re-queried on every watchPosition tick. Re-tapping "locate" re-acquires.
+  function acceptFix(p: GeolocationPosition) {
+    if (p.coords.accuracy >= bestAccuracy.current) return
+    bestAccuracy.current = p.coords.accuracy
+    setLocated([p.coords.latitude, p.coords.longitude])
+    setAccuracy(p.coords.accuracy)
+  }
+
+  // Live refinement: only nudges the location when accuracy improves.
   function startWatch() {
     if (watchId.current != null || !navigator.geolocation) return
     watchId.current = navigator.geolocation.watchPosition(
-      (p) => {
-        setLocated([p.coords.latitude, p.coords.longitude])
-        setAccuracy(p.coords.accuracy)
-      },
+      acceptFix,
       () => {},
       { enableHighAccuracy: true, maximumAge: 10000 },
     )
   }
 
-  // Explicit locate: get a fix now, recenter the map, and start following.
+  // Explicit locate: get a fix now, recenter the map, and start refining.
   function locate() {
     if (!navigator.geolocation) {
       setGeoNote('geo.notSupported')
       return
     }
     setGeoNote('geo.locating')
+    bestAccuracy.current = Infinity // fresh cycle: re-acquire from scratch
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        setLocated([p.coords.latitude, p.coords.longitude])
-        setAccuracy(p.coords.accuracy)
+        acceptFix(p)
         setGeoNote('')
         setGeoNonce((n) => n + 1)
         startWatch()
@@ -134,8 +144,25 @@ export default function App() {
           <ProfileBar car={settings.car} charge={settings.charge} onCharge={(charge) => patchSettings({ charge })} />
           <div className="filters">
             <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
-            <FilterBarInline filters={filters} setFilters={setFilters} carPlugs={settings.car.plugs} />
+            {(() => {
+              const n =
+                (filters.available ? 1 : 0) +
+                (filters.plugCompatible ? 1 : 0) +
+                (filters.minPower ? 1 : 0) +
+                (filters.plug ? 1 : 0) +
+                (filters.includePrivate ? 1 : 0)
+              return (
+                <button
+                  className={`chip ${n ? 'on' : ''}`}
+                  aria-expanded={filtersOpen}
+                  onClick={() => setFiltersOpen((o) => !o)}
+                >
+                  {t('filters.title')}{n ? ` · ${n}` : ''} {filtersOpen ? '▾' : '▸'}
+                </button>
+              )
+            })()}
           </div>
+          {filtersOpen && <FilterBarInline filters={filters} setFilters={setFilters} carPlugs={settings.car.plugs} />}
           {geoNote && <div className="geo-note">{t(geoNote)}</div>}
         </div>
       )}

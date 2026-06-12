@@ -46,6 +46,7 @@
     }
   },
   "filters": {
+    "title": "Filters",
     "available": "Nu beschikbaar",
     "includePrivate": "Incl. thuis/privé",
     "anyPower": "Alle vermogens",
