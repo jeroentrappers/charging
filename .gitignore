@@ -28,3 +28,6 @@ docker-compose.appmire.yml
 
 # OSRM bind-mounted data (downloaded/processed on the host)
 osrm-data/
+
+# mTLS client certs / secrets (Mobilithek etc.) — never commit
+secrets/
