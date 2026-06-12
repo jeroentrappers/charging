@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -61,19 +62,26 @@ func (s *server) mobilithekPush(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	snippet := body
-	if len(snippet) > 12000 {
-		snippet = snippet[:12000]
-	}
-	s.log.Info("mobilithek push received",
-		"bytes", len(body), "gzip", gz,
-		"content_type", r.Header.Get("Content-Type"),
-		"last_modified", r.Header.Get("Last-Modified"),
-		"saved", saved, "snippet", string(snippet))
+	// Ack immediately, then parse + ingest asynchronously: a full static table
+	// is ~1 MB / thousands of connectors and would otherwise block past
+	// Mobilithek's webhook timeout. The engine serializes pushes internally.
+	// Snapshot pushes re-send, so a dropped async ingest self-heals.
+	go func(body []byte, gz bool, saved string) {
+		kind, n, ierr := s.engine.IngestMobilithekPush(context.Background(), body)
+		if ierr != nil {
+			snippet := body
+			if len(snippet) > 4000 {
+				snippet = snippet[:4000]
+			}
+			s.log.Error("mobilithek push ingest", "bytes", len(body), "gzip", gz, "saved", saved, "err", ierr, "snippet", string(snippet))
+		} else {
+			s.log.Info("mobilithek push", "bytes", len(body), "gzip", gz, "kind", kind, "rows", n, "saved", saved)
+		}
+	}(body, gz, saved)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"ok","received_bytes":%d}`, len(body))
+	w.WriteHeader(http.StatusAccepted)
+	fmt.Fprintf(w, `{"status":"accepted","bytes":%d}`, len(body))
 }
 
 // mobilithekPing is a GET reachability check (no token) so the endpoint URL can

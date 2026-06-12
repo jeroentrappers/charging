@@ -167,6 +167,37 @@ func (s *Store) UpsertCharger(ctx context.Context, c model.Connector) (int64, er
 	return id, err
 }
 
+// EVSEConnector is a charger row needed to apply a status/price update keyed by
+// (cpo, evse) — i.e. all connectors of one refill point.
+type EVSEConnector struct {
+	ID          int64
+	ConnectorID string
+	PowerKW     float64
+	CurrentType string
+}
+
+// ChargersForEVSE returns the connectors of one EVSE/refill-point, so a pushed
+// status (which references the refill point, not individual connectors) can be
+// applied to all of them.
+func (s *Store) ChargersForEVSE(ctx context.Context, cpoID, evseUID string) ([]EVSEConnector, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id, COALESCE(connector_id,''), COALESCE(power_kw,0)::float8, COALESCE(current_type,'')
+		 FROM charger WHERE cpo_id=$1 AND evse_uid=$2`, cpoID, evseUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EVSEConnector
+	for rows.Next() {
+		var e EVSEConnector
+		if err := rows.Scan(&e.ID, &e.ConnectorID, &e.PowerKW, &e.CurrentType); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpsertStatus(ctx context.Context, chargerID int64, status string, availableCount int) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO charger_status (charger_id, status, available_count, updated_at)

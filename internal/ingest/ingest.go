@@ -53,6 +53,10 @@ type Engine struct {
 	// polls of huge feeds (NL ≈ 226k connectors) cheap when little changed.
 	sigMu    sync.Mutex
 	sigCache map[string]map[string]uint64
+
+	// mobMu serializes Mobilithek consumer-push ingests (table/status snapshots)
+	// so concurrent pushes don't race the SCD2 tariff path.
+	mobMu sync.Mutex
 }
 
 // connectorSig hashes the fields a pass would write (identity + status, plus the
