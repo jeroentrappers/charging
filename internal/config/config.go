@@ -47,6 +47,15 @@ type Config struct {
 	// OSRMURL is the base URL of a self-hosted osrm-routed server (e.g.
 	// http://osrm:5000). Empty disables route/corridor search.
 	OSRMURL string
+
+	// MobilithekPushToken authenticates inbound Mobilithek webhook pushes
+	// (the token is embedded in the registered callback URL). Empty disables
+	// the push receiver.
+	MobilithekPushToken string
+
+	// MobilithekCaptureDir, if set, is where raw push payloads are written
+	// (for building/validating the parser). Empty = log a snippet only.
+	MobilithekCaptureDir string
 }
 
 func Load() Config {
@@ -69,6 +78,8 @@ func Load() Config {
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
 		OSRMURL:                env("OSRM_URL", ""),
+		MobilithekPushToken:    os.Getenv("MOBILITHEK_PUSH_TOKEN"),
+		MobilithekCaptureDir:   env("MOBILITHEK_CAPTURE_DIR", ""),
 	}
 }
 

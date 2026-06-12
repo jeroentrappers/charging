@@ -49,6 +49,9 @@ type server struct {
 	publicURL       string
 	ocpiParty       ocpi.Party
 	router          routing.Router // optional; nil disables route/corridor search
+
+	mobilithekToken      string // shared token for the inbound Mobilithek webhook
+	mobilithekCaptureDir string // where to save pushed payloads (optional)
 }
 
 func main() {
@@ -76,13 +79,15 @@ func main() {
 			UsableKWh:         cfg.VehicleUsableKWh,
 			ConsumptionKWh100: cfg.VehicleConsumption,
 		},
-		staleAfter:      cfg.AvailabilityStaleAfter,
-		priceStaleAfter: cfg.PriceStaleAfter,
-		adminToken:      cfg.AdminToken,
-		exportDir:       cfg.ExportDir,
-		apiBasePath:     cfg.APIBasePath,
-		publicURL:       cfg.PublicURL,
-		ocpiParty:       ocpi.Party{CountryCode: cfg.OCPICountry, PartyID: cfg.OCPIPartyID, Name: cfg.OCPIPartyName},
+		staleAfter:           cfg.AvailabilityStaleAfter,
+		priceStaleAfter:      cfg.PriceStaleAfter,
+		adminToken:           cfg.AdminToken,
+		exportDir:            cfg.ExportDir,
+		apiBasePath:          cfg.APIBasePath,
+		publicURL:            cfg.PublicURL,
+		ocpiParty:            ocpi.Party{CountryCode: cfg.OCPICountry, PartyID: cfg.OCPIPartyID, Name: cfg.OCPIPartyName},
+		mobilithekToken:      cfg.MobilithekPushToken,
+		mobilithekCaptureDir: cfg.MobilithekCaptureDir,
 	}
 	if cfg.OSRMURL != "" {
 		s.router = routing.New(cfg.OSRMURL)
@@ -176,6 +181,13 @@ func (s *server) routes(corsOrigins string) http.Handler {
 
 	// OCPI eMSP: credentials-handshake + push-receiver endpoints (own token auth).
 	r.Mount("/ocpi", s.ocpiHandler())
+
+	// Mobilithek consumer-push (webhook): the broker POSTs AFIR DATEX II JSON
+	// here. Auth is the shared token in the URL (?token=…) — only Mobilithek,
+	// which we hand the tokenized URL to, can post. GET is an open reachability
+	// ping for the "test" tooling.
+	r.Post("/mobilithek/push", s.mobilithekPush)
+	r.Get("/mobilithek/push", s.mobilithekPing)
 
 	// Open bulk dataset dumps (static files regenerated on a schedule). Served
 	// with gzip + short caching so a CDN can absorb "give me everything" load.
