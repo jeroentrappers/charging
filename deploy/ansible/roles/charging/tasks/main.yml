@@ -89,6 +89,18 @@
 
 # --- OSRM data (one-time / on graph change). Cross-country merge can take a
 #     while (download ~10 GB + extract/partition/customize); plenty of RAM. -----
+# The prep runs unprivileged (curl/osmium write the .pbf + merged graph), but
+# osrm-* containers write .osrm files as root. Make the dir + any prior
+# root-owned files writable by the deploy user so re-prep can overwrite them.
+- name: Ensure osrm-data is owned by the deploy user
+  become: true
+  ansible.builtin.file:
+    path: "{{ charging_dir }}/osrm-data"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    recurse: true
+
 - name: Check for processed OSRM graph
   ansible.builtin.stat:
     path: "{{ charging_dir }}/osrm-data/{{ osrm_graph }}.osrm.cell_metrics"
