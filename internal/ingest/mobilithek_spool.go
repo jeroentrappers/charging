@@ -170,6 +170,9 @@ func (e *Engine) spoolController(ctx context.Context, dir string, minW, maxW int
 				e.Log.Info("mobilithek spool autoscaled", "workers", want, "backlog", depth)
 				last = want
 			}
+			if e.OnSpoolStats != nil {
+				e.OnSpoolStats(depth, len(stops), dirCount(spoolSub(dir, "failed")))
+			}
 		}
 	}
 }
@@ -236,6 +239,9 @@ func (e *Engine) spoolWorker(ctx context.Context, dir string, stop <-chan struct
 		case kind == "":
 			e.toFailed(path, failed, name, "unhandled: payload matched no known AFIR publication")
 		default:
+			if kind == "table" && e.TableArchiveDir != "" {
+				e.archiveTable(body)
+			}
 			_ = os.Remove(path) // done
 		}
 	}
@@ -264,6 +270,21 @@ func claimOldest(inc, proc string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// archiveTable saves a copy of a table push (latest per content hash) for
+// offline inspection of a source's structure.
+func (e *Engine) archiveTable(body []byte) {
+	if err := os.MkdirAll(e.TableArchiveDir, 0o755); err != nil {
+		return
+	}
+	ext := "json"
+	if firstNonSpace(body) == '<' {
+		ext = "xml"
+	}
+	h := fnv.New64a()
+	_, _ = h.Write(body)
+	_ = os.WriteFile(filepath.Join(e.TableArchiveDir, fmt.Sprintf("table-%016x.%s", h.Sum64(), ext)), body, 0o644)
 }
 
 // toFailed quarantines a push for investigation, with a reason sidecar.

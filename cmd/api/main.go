@@ -103,6 +103,10 @@ func main() {
 	// Durable Mobilithek push queue: the webhook enqueues to mobilithekSpoolDir;
 	// these workers drain it into the DB, decoupled from the broker.
 	if s.mobilithekSpoolDir != "" {
+		s.engine.OnSpoolStats = metrics.SpoolStats // /metrics gauges
+		if s.mobilithekCaptureDir != "" {
+			s.engine.TableArchiveDir = s.mobilithekCaptureDir + "/tables" // debug: latest table per source
+		}
 		// Autoscale between 1 and mobilithekWorkers based on backlog.
 		s.engine.RunSpoolWorkers(context.Background(), s.mobilithekSpoolDir, 1, s.mobilithekWorkers)
 	}

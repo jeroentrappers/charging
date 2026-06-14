@@ -42,6 +42,14 @@ type Engine struct {
 	// OnRun, if set, is called after each pass for metrics. Safe for nil.
 	OnRun func(cpoID, kind string, rowsSeen, changes int, dur time.Duration, err error)
 
+	// OnSpoolStats, if set, receives the spool backlog / worker / failed counts
+	// each autoscaler tick (for metrics). Safe for nil.
+	OnSpoolStats func(backlog, workers, failed int)
+
+	// TableArchiveDir, if set, gets a copy of each successfully-ingested table
+	// push (latest per content hash) for offline inspection. Debug aid.
+	TableArchiveDir string
+
 	// inflight guards against running the same (source, kind) pass concurrently —
 	// e.g. the startup catch-up racing a cron tick or an admin-triggered run.
 	// That overlap caused duplicate-key churn on the SCD2 tariff path.

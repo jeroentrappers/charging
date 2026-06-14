@@ -36,7 +36,28 @@ var (
 		Help:    "Ingestion pass duration.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"cpo", "kind"})
+
+	spoolBacklog = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "charging_mobilithek_spool_backlog",
+		Help: "Pending Mobilithek pushes in the spool (incoming).",
+	})
+	spoolWorkers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "charging_mobilithek_spool_workers",
+		Help: "Active Mobilithek spool drainer workers (autoscaled).",
+	})
+	spoolFailed = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "charging_mobilithek_spool_failed",
+		Help: "Quarantined Mobilithek pushes awaiting investigation.",
+	})
 )
+
+// SpoolStats records the current Mobilithek push-spool state. Wire it to
+// ingest.Engine.OnSpoolStats.
+func SpoolStats(backlog, workers, failed int) {
+	spoolBacklog.Set(float64(backlog))
+	spoolWorkers.Set(float64(workers))
+	spoolFailed.Set(float64(failed))
+}
 
 // Observe records the outcome of one ingestion pass. Matches the signature of
 // ingest.Engine.OnRun. now is passed in to keep it testable/deterministic.
