@@ -1,0 +1,15 @@
+# Managed by Ansible (charging role). Monthly cross-country OSRM graph rebuild.
+[Unit]
+Description=Rebuild + swap the OSRM routing graph ({{ osrm_graph }})
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ ansible_user }}
+WorkingDirectory={{ charging_dir }}
+Environment="OSRM_GRAPH={{ osrm_graph }}"
+Environment="OSRM_REGIONS={{ osrm_regions }}"
+Environment="COMPOSE=docker compose {{ compose_files | map('regex_replace', '^', '-f ') | join(' ') }}"
+ExecStart={{ charging_dir }}/scripts/osrm-refresh.sh
+TimeoutStartSec=7200

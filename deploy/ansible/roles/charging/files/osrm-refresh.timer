@@ -1,0 +1,11 @@
+# Managed by Ansible (charging role).
+[Unit]
+Description=Monthly OSRM routing graph refresh
+
+[Timer]
+OnCalendar=*-*-01 04:00:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

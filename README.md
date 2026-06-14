@@ -274,6 +274,12 @@ OSRM_GRAPH=eu-west OSRM_REGIONS="europe/belgium europe/netherlands europe/luxemb
 $COMPOSE up -d osrm             # sets OSRM_URL on the api → enables /chargers/along-route
 ```
 
+The road graph is built once; it doesn't auto-update with a normal deploy (the
+prep is skipped if the graph exists). To keep it current, `scripts/osrm-refresh.sh`
+rebuilds `<graph>-next` aside and swaps it in with only a brief osrm restart —
+the Ansible deploy installs it behind a **monthly** systemd timer
+(`osrm-refresh.timer`). Run it on demand with `systemctl start osrm-refresh.service`.
+
 ## Testing
 
 ```bash

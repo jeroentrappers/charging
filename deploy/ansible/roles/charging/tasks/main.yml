@@ -135,3 +135,32 @@
   retries: 20
   delay: 6
   until: health.status == 200
+
+# --- monthly OSRM graph refresh (rebuild <graph>-next aside, swap, restart) ---
+- name: OSRM refresh — install service
+  become: true
+  ansible.builtin.template:
+    src: osrm-refresh.service.j2
+    dest: /etc/systemd/system/osrm-refresh.service
+    mode: "0644"
+  register: osrm_refresh_service
+
+- name: OSRM refresh — install timer
+  become: true
+  ansible.builtin.copy:
+    src: osrm-refresh.timer
+    dest: /etc/systemd/system/osrm-refresh.timer
+    mode: "0644"
+  register: osrm_refresh_timer
+
+- name: OSRM refresh — reload systemd if units changed
+  become: true
+  ansible.builtin.systemd: { daemon_reload: true }
+  when: osrm_refresh_service is changed or osrm_refresh_timer is changed
+
+- name: OSRM refresh — enable + start the monthly timer
+  become: true
+  ansible.builtin.systemd:
+    name: osrm-refresh.timer
+    enabled: true
+    state: started
