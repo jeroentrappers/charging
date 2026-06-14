@@ -19,6 +19,12 @@ export interface MSP {
 
 export const MSPS: MSP[] = [
   { id: 'flat-cheap', name: 'Flat card (cheaper AC)', acEurKWh: 0.39, dcEurKWh: 0.59, sessionFee: 0, estimated: true },
+  // Mobiflow (BE): no activation/subscription; quotes avg AC €0.50, DC €0.65 on
+  // its own network, roaming tariffs vary. https://mobiflow.be/nl/faq/hoeveel-kost-de-mobiflow-laadpas/
+  { id: 'mobiflow', name: 'Mobiflow', acEurKWh: 0.5, dcEurKWh: 0.65, sessionFee: 0, estimated: true },
+  // Stroohm (BE): €0.05/kWh + €0.20/session on top of the CPO price. Modelled on
+  // typical BE public averages (AC €0.40, DC €0.65) + the markup. https://www.stroohm.be/help/hoeveel-kost-publiek-laden/
+  { id: 'stroohm', name: 'Stroohm', acEurKWh: 0.45, dcEurKWh: 0.7, sessionFee: 0.2, estimated: true },
   { id: 'shell-recharge', name: 'Shell Recharge', acEurKWh: 0.55, dcEurKWh: 0.69, sessionFee: 0, estimated: true },
   { id: 'chargemap', name: 'Chargemap Pass', acEurKWh: 0.5, dcEurKWh: 0.65, sessionFee: 0.5, estimated: true },
   { id: 'plugsurfing', name: 'Plugsurfing', acEurKWh: 0.55, dcEurKWh: 0.69, sessionFee: 0, estimated: true },
