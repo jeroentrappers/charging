@@ -24,6 +24,7 @@
       - --exclude=secrets
       - --exclude=osrm-data
       - --exclude=capture
+      - --exclude=spool
       - --exclude=bin
       - --exclude=data
       - --exclude=web/node_modules
@@ -51,6 +52,15 @@
     src: docker-compose.hetz1.yml.j2
     dest: "{{ charging_dir }}/docker-compose.hetz1.yml"
     mode: "0644"
+
+# Durable push spool: world-writable so the unprivileged api container can write
+# (incoming/processing/failed are created by the worker).
+- name: Ensure Mobilithek spool dir
+  become: true
+  ansible.builtin.file:
+    path: "{{ charging_dir }}/spool"
+    state: directory
+    mode: "0777"
 
 # Debug capture dir: world-writable so the unprivileged api container can write
 # pushes into the bind mount. Only when capture is enabled.

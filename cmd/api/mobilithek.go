@@ -6,13 +6,15 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/appmire/charging/internal/ingest"
 )
 
 // mobilithekPush receives Mobilithek consumer-push (webhook) deliveries: the
@@ -47,39 +49,27 @@ func (s *server) mobilithekPush(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Optionally persist the full payload (for parser development).
-	saved := ""
-	if s.mobilithekCaptureDir != "" {
-		if err := os.MkdirAll(s.mobilithekCaptureDir, 0o755); err == nil {
-			// Name by a content hash so distinct payloads (per source/kind) land
-			// in distinct files; identical re-pushes dedupe. (Last-Modified is
-			// usually empty here, which made every push overwrite one file.)
-			h := fnv.New32a()
-			h.Write(body)
-			name := fmt.Sprintf("push-%08x.json", h.Sum32())
-			p := filepath.Join(s.mobilithekCaptureDir, name)
-			if werr := os.WriteFile(p, body, 0o644); werr == nil {
-				saved = p
-			}
+	// Durably enqueue to the spool; independent worker(s) ingest into the DB
+	// (decoupled from the broker, restart-safe, bounded). A 202 here means the
+	// push is persisted. Backpressure → 503 so the broker retries.
+	if s.mobilithekSpoolDir != "" {
+		switch err := ingest.SpoolPush(s.mobilithekSpoolDir, body); {
+		case errors.Is(err, ingest.ErrSpoolFull):
+			http.Error(w, "spool full, retry later", http.StatusServiceUnavailable)
+			return
+		case err != nil:
+			s.log.Error("mobilithek spool enqueue", "err", err)
+			http.Error(w, "spool error", http.StatusInternalServerError)
+			return
 		}
+	} else {
+		// No spool configured (dev): ingest inline in a goroutine, ack first.
+		go func(body []byte) {
+			if _, _, ierr := s.engine.IngestMobilithekPush(context.Background(), body); ierr != nil {
+				s.log.Error("mobilithek push ingest", "bytes", len(body), "err", ierr)
+			}
+		}(body)
 	}
-
-	// Ack immediately, then parse + ingest asynchronously: a full static table
-	// is ~1 MB / thousands of connectors and would otherwise block past
-	// Mobilithek's webhook timeout. The engine serializes pushes internally.
-	// Snapshot pushes re-send, so a dropped async ingest self-heals.
-	go func(body []byte, gz bool, saved string) {
-		kind, n, ierr := s.engine.IngestMobilithekPush(context.Background(), body)
-		if ierr != nil {
-			snippet := body
-			if len(snippet) > 4000 {
-				snippet = snippet[:4000]
-			}
-			s.log.Error("mobilithek push ingest", "bytes", len(body), "gzip", gz, "saved", saved, "err", ierr, "snippet", string(snippet))
-		} else {
-			s.log.Info("mobilithek push", "bytes", len(body), "gzip", gz, "kind", kind, "rows", n, "saved", saved)
-		}
-	}(body, gz, saved)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

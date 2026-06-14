@@ -56,6 +56,13 @@ type Config struct {
 	// MobilithekCaptureDir, if set, is where raw push payloads are written
 	// (for building/validating the parser). Empty = log a snippet only.
 	MobilithekCaptureDir string
+
+	// MobilithekSpoolDir, if set, makes the webhook durably enqueue each push
+	// there; worker(s) drain it into the DB (decoupled, restart-safe). Empty
+	// falls back to inline ingest in a goroutine.
+	MobilithekSpoolDir string
+	// MobilithekWorkers is how many spool drainers run (default 1).
+	MobilithekWorkers int
 }
 
 func Load() Config {
@@ -80,6 +87,8 @@ func Load() Config {
 		OSRMURL:                env("OSRM_URL", ""),
 		MobilithekPushToken:    os.Getenv("MOBILITHEK_PUSH_TOKEN"),
 		MobilithekCaptureDir:   env("MOBILITHEK_CAPTURE_DIR", ""),
+		MobilithekSpoolDir:     env("MOBILITHEK_SPOOL_DIR", ""),
+		MobilithekWorkers:      envInt("MOBILITHEK_WORKERS", 1),
 	}
 }
 
@@ -103,6 +112,15 @@ func envFloat(key string, def float64) float64 {
 	if v := os.Getenv(key); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
+		}
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
 		}
 	}
 	return def

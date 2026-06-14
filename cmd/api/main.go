@@ -52,6 +52,8 @@ type server struct {
 
 	mobilithekToken      string // shared token for the inbound Mobilithek webhook
 	mobilithekCaptureDir string // where to save pushed payloads (optional)
+	mobilithekSpoolDir   string // durable push queue; empty = inline goroutine
+	mobilithekWorkers    int    // spool drainers
 }
 
 func main() {
@@ -88,6 +90,8 @@ func main() {
 		ocpiParty:            ocpi.Party{CountryCode: cfg.OCPICountry, PartyID: cfg.OCPIPartyID, Name: cfg.OCPIPartyName},
 		mobilithekToken:      cfg.MobilithekPushToken,
 		mobilithekCaptureDir: cfg.MobilithekCaptureDir,
+		mobilithekSpoolDir:   cfg.MobilithekSpoolDir,
+		mobilithekWorkers:    cfg.MobilithekWorkers,
 	}
 	if cfg.OSRMURL != "" {
 		s.router = routing.New(cfg.OSRMURL)
@@ -95,6 +99,12 @@ func main() {
 	}
 	s.engine = ingest.NewEngine(st, log)
 	s.engine.Vehicle = s.vehicle
+
+	// Durable Mobilithek push queue: the webhook enqueues to mobilithekSpoolDir;
+	// these workers drain it into the DB, decoupled from the broker.
+	if s.mobilithekSpoolDir != "" {
+		s.engine.RunSpoolWorkers(context.Background(), s.mobilithekSpoolDir, s.mobilithekWorkers)
+	}
 
 	// On-demand live status: build a Monta client if creds are available (DB
 	// token for the "monta" source, else MONTA_CREDS). Without them the
