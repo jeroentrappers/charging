@@ -141,7 +141,6 @@ export default function App() {
 
       {tab === 'find' && (
         <div className="controls">
-          <ProfileBar car={settings.car} charge={settings.charge} onCharge={(charge) => patchSettings({ charge })} />
           <div className="filters">
             <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
             {(() => {
@@ -162,7 +161,14 @@ export default function App() {
               )
             })()}
           </div>
-          {filtersOpen && <FilterBarInline filters={filters} setFilters={setFilters} carPlugs={settings.car.plugs} />}
+          {/* Energy + Speed (ProfileBar) and the filter chips fold away by
+              default to keep the header small; the Filters toggle reveals them. */}
+          {filtersOpen && (
+            <div className="filter-panel">
+              <ProfileBar car={settings.car} charge={settings.charge} onCharge={(charge) => patchSettings({ charge })} />
+              <FilterBarInline filters={filters} setFilters={setFilters} carPlugs={settings.car.plugs} />
+            </div>
+          )}
           {geoNote && <div className="geo-note">{t(geoNote)}</div>}
         </div>
       )}

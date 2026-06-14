@@ -62,7 +62,7 @@ button { font: inherit; cursor: pointer; }
 /* ---- header ---- */
 .topbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; background: var(--surface);
+  padding: 7px 14px; background: var(--surface);
   border-bottom: 1px solid var(--line); z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
@@ -149,7 +149,7 @@ button { font: inherit; cursor: pointer; }
 .tl-dot.free { background: #22c55e; }
 
 /* ---- session selector (hero control) ---- */
-.controls { background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 14px; z-index: 19; }
+.controls { background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px 14px; z-index: 19; }
 .seg-row { display: flex; gap: 8px; align-items: center; }
 .seg-row + .seg-row { margin-top: 8px; }
 .seg-label { font-size: 12px; color: var(--muted); min-width: 64px; }
@@ -167,7 +167,9 @@ button { font: inherit; cursor: pointer; }
 .seg-input input::-webkit-outer-spin-button,
 .seg-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .seg-input span { font-size: 12px; color: var(--muted); }
-.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Energy/Speed + filter chips, revealed under the Filters toggle. */
+.filter-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
 .geo-note { font-size: 12px; color: var(--amber); margin-top: 6px; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
