@@ -55,7 +55,8 @@
 # Debug capture dir: world-writable so the unprivileged api container can write
 # pushes into the bind mount. Only when capture is enabled.
 - name: Ensure capture dir (when mobilithek_capture)
-  when: mobilithek_capture | default(false)
+  when: mobilithek_capture | default(false) | bool
+  become: true
   ansible.builtin.file:
     path: "{{ charging_dir }}/capture"
     state: directory
