@@ -87,12 +87,10 @@ func (s *Store) ExportStream(ctx context.Context, fn func(ExportCharger) error) 
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		LEFT JOIN cpo p ON p.id = c.cpo_id
-		-- NOTE: cross-source dedup (supersededByRicherSource) is intentionally NOT
-		-- applied here. As a correlated per-row spatial subquery it's fine for the
-		-- radius-bounded nearby query but ~45M-cost over the full table (it ran
-		-- >20s on ~528k rows). When we want dedup in the bulk export, precompute a
-		-- superseded flag on the charger row (refresh on a schedule / after rich
-		-- pushes) and filter on it here — that keeps the export fast.
+		-- Cross-source dedup: drop register chargers that a richer source covers
+		-- (precomputed by RecomputeSuperseded, refreshed before each full export —
+		-- the per-row spatial subquery is too slow over the whole table).
+		WHERE NOT c.superseded
 		ORDER BY p.country, c.postal_code, c.cpo_id, c.evse_uid, c.connector_id`)
 	if err != nil {
 		return err

@@ -118,6 +118,14 @@ func (s *Snapshotter) GenerateFull(ctx context.Context) error {
 		return err
 	}
 
+	// Refresh cross-source dedup flags so the dump doesn't double-count chargers
+	// covered by both a register feed and a richer source.
+	if n, err := s.Store.RecomputeSuperseded(ctx); err != nil {
+		s.Log.Warn("export: recompute superseded", "err", err)
+	} else {
+		s.Log.Info("export: dedup recomputed", "superseded", n)
+	}
+
 	files, regions, total, priced, err := s.writeRegions(now, func(yield func(store.ExportCharger) error) error {
 		return s.Store.ExportStream(ctx, yield)
 	})

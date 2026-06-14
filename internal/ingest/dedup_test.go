@@ -73,7 +73,11 @@ func TestCrossSourceDedup(t *testing.T) {
 		t.Error("IncludeDuplicates should keep the co-located BNetzA dup")
 	}
 
-	// Export applies the same suppression (always on).
+	// Export dedup is flag-based: recompute, then the co-located BNetzA dup is
+	// dropped from the export (the lone one is kept).
+	if _, err := st.RecomputeSuperseded(ctx); err != nil {
+		t.Fatalf("recompute superseded: %v", err)
+	}
 	seen := map[string]bool{}
 	if err := st.ExportStream(ctx, func(e store.ExportCharger) error {
 		seen[e.EVSEUID] = true
@@ -82,7 +86,7 @@ func TestCrossSourceDedup(t *testing.T) {
 		t.Fatalf("export: %v", err)
 	}
 	if seen["bn-dup"] {
-		t.Error("export included the co-located BNetzA duplicate")
+		t.Error("export included the co-located BNetzA duplicate (should be superseded)")
 	}
 	if !seen["cp-1"] || !seen["bn-lone"] {
 		t.Errorf("export missing expected chargers: cp-1=%v bn-lone=%v", seen["cp-1"], seen["bn-lone"])
