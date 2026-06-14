@@ -14,6 +14,7 @@ package datex
 // objects with no aegi* energy publication; that parses to Kind="" and is ignored.
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 
@@ -272,37 +273,57 @@ type jafirPayload struct {
 	StatusPublication *jafirStatusPublication `json:"aegiEnergyInfrastructureStatusPublication"`
 }
 
+// jafirContainer locates the payload regardless of envelope: publishers send
+// either {"payload":…} (GP JOULE, Grid) or {"messageContainer":{"payload":…}}
+// (EnBW, Tesla, SMATRICS, …). The payload itself may be a single object or an
+// ARRAY of publication objects.
 type jafirContainer struct {
-	Payload json.RawMessage `json:"payload"`
+	Payload          json.RawMessage `json:"payload"`
+	MessageContainer *struct {
+		Payload json.RawMessage `json:"payload"`
+	} `json:"messageContainer"`
 }
 
-// ParseAFIRJSON decodes one Mobilithek AFIR JSON MessageContainer. payload may be
-// an object (real AFIR) or an array (synthetic test → Kind=""). Never panics on
-// missing fields.
+// ParseAFIRJSON decodes one Mobilithek AFIR JSON message. Handles both envelope
+// shapes and an object- or array-valued payload. A payload carrying no known
+// aegi* publication (e.g. the synthetic test push) yields Kind="". Never panics.
 func ParseAFIRJSON(data []byte) (*AFIRDoc, error) {
 	var c jafirContainer
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
 	doc := &AFIRDoc{Tariffs: map[string]model.Tariff{}}
-	if len(c.Payload) == 0 {
-		return doc, nil
+
+	raw := c.Payload
+	if len(bytes.TrimSpace(raw)) == 0 && c.MessageContainer != nil {
+		raw = c.MessageContainer.Payload
 	}
-	// payload as array → synthetic test publication; ignore.
-	if c.Payload[0] == '[' {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
 		return doc, nil
 	}
 
-	var p jafirPayload
-	if err := json.Unmarshal(c.Payload, &p); err != nil {
-		return nil, err
+	// payload may be one object or an array of publication objects.
+	var elems []json.RawMessage
+	if raw[0] == '[' {
+		if err := json.Unmarshal(raw, &elems); err != nil {
+			return nil, err
+		}
+	} else {
+		elems = []json.RawMessage{raw}
 	}
 
-	switch {
-	case p.TablePublication != nil:
-		jafirBuildTable(doc, p.TablePublication)
-	case p.StatusPublication != nil:
-		jafirBuildStatus(doc, p.StatusPublication)
+	for _, e := range elems {
+		var p jafirPayload
+		if err := json.Unmarshal(e, &p); err != nil {
+			continue // skip a malformed element, keep the rest
+		}
+		switch {
+		case p.TablePublication != nil:
+			jafirBuildTable(doc, p.TablePublication)
+		case p.StatusPublication != nil:
+			jafirBuildStatus(doc, p.StatusPublication)
+		}
 	}
 	return doc, nil
 }

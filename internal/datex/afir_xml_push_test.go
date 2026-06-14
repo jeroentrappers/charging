@@ -114,3 +114,30 @@ func TestParseAFIRJSON_StationLevelLocation(t *testing.T) {
 		t.Errorf("operator=%q want Grid and Co.", doc.Operator)
 	}
 }
+
+// EnBW/Tesla/SMATRICS shape: messageContainer wrapper + array payload.
+const jsonMsgContainerArray = `{"messageContainer":{"payload":[{"profileNameG":"AFIR Energy Infrastructure",
+"aegiEnergyInfrastructureStatusPublication":{"publicationCreator":{"country":"DE","nationalIdentifier":"DE-NAP-EnBWAG"},
+"energyInfrastructureSiteStatus":[{"reference":{"idG":"s1"},"energyInfrastructureStationStatus":[{"reference":{"idG":"st1"},
+"refillPointStatus":[{"aegiElectricChargingPointStatus":{"reference":{"idG":"cp-7"},"status":{"value":"available"}}}]}]}]}}]}}`
+
+func TestParseAFIR_MessageContainerArray(t *testing.T) {
+	doc, err := ParseAFIR([]byte(jsonMsgContainerArray))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if doc.Kind != "status" {
+		t.Fatalf("kind=%q want status (messageContainer+array envelope)", doc.Kind)
+	}
+	if doc.Creator.NationalIdentifier != "DE-NAP-EnBWAG" {
+		t.Errorf("creator=%q", doc.Creator.NationalIdentifier)
+	}
+	if len(doc.Statuses) != 1 || doc.Statuses[0].EVSEUID != "cp-7" {
+		t.Errorf("statuses=%+v", doc.Statuses)
+	}
+	// The synthetic test (array, no aegi publication) still yields Kind="".
+	tdoc, _ := ParseAFIR([]byte(`{"payload":[{"commonGenericPublication":{}}]}`))
+	if tdoc.Kind != "" {
+		t.Errorf("synthetic test kind=%q want empty", tdoc.Kind)
+	}
+}
