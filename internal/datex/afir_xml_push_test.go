@@ -91,7 +91,7 @@ const jsonStationLevel = `{"payload":{"aegiEnergyInfrastructureTablePublication"
 "publicationCreator":{"country":"de","nationalIdentifier":"Grid and Co."},
 "energyInfrastructureTable":[{"idG":"t","energyInfrastructureSite":[{"idG":"s",
 "energyInfrastructureStation":[{"idG":"st","totalMaximumPower":22000,
-"locationReference":{"locAreaLocation":{"coordinatesForDisplay":{"latitude":52.5,"longitude":13.4}}},
+"locationReference":{"locPointLocation":{"pointByCoordinates":{"pointCoordinates":{"latitude":52.5,"longitude":13.4}}}},
 "operator":{"afacAnOrganisation":{"name":{"values":[{"value":"Grid and Co."}]}}},
 "refillPoint":[{"aegiElectricChargingPoint":{"idG":"cp-9","currentType":{"value":"ac"},
 "connector":[{"connectorType":{"value":"iec62196T2"},"maxPowerAtSocket":22000}],

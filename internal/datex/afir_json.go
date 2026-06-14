@@ -127,23 +127,55 @@ type jafirStation struct {
 // OR the station level depending on the publisher — e.g. GP JOULE puts them on
 // the site, Grid and Co. on the station. The builder prefers station, falls
 // back to site.
+type jafirCoords struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+// jafirLocBody is one location wrapper. AFIR uses two interchangeably
+// (locAreaLocation, locPointLocation) and two coordinate forms
+// (coordinatesForDisplay, pointByCoordinates>pointCoordinates) — publishers mix
+// and match, so we accept all combinations.
+type jafirLocBody struct {
+	CoordinatesForDisplay jafirCoords `json:"coordinatesForDisplay"`
+	PointByCoordinates    struct {
+		PointCoordinates jafirCoords `json:"pointCoordinates"`
+	} `json:"pointByCoordinates"`
+	LocLocationExtensionG struct {
+		FacilityLocation struct {
+			Address jafirAddress `json:"address"`
+		} `json:"FacilityLocation"`
+	} `json:"locLocationExtensionG"`
+}
+
 type jafirLocRef struct {
-	LocAreaLocation struct {
-		CoordinatesForDisplay struct {
-			Latitude  float64 `json:"latitude"`
-			Longitude float64 `json:"longitude"`
-		} `json:"coordinatesForDisplay"`
-		LocLocationExtensionG struct {
-			FacilityLocation struct {
-				Address jafirAddress `json:"address"`
-			} `json:"FacilityLocation"`
-		} `json:"locLocationExtensionG"`
-	} `json:"locAreaLocation"`
+	LocAreaLocation  jafirLocBody `json:"locAreaLocation"`
+	LocPointLocation jafirLocBody `json:"locPointLocation"`
+}
+
+func (l jafirLocRef) coords() jafirCoords {
+	for _, b := range []jafirLocBody{l.LocAreaLocation, l.LocPointLocation} {
+		if b.CoordinatesForDisplay.Latitude != 0 && b.CoordinatesForDisplay.Longitude != 0 {
+			return b.CoordinatesForDisplay
+		}
+		if p := b.PointByCoordinates.PointCoordinates; p.Latitude != 0 && p.Longitude != 0 {
+			return p
+		}
+	}
+	return jafirCoords{}
 }
 
 func (l jafirLocRef) hasCoords() bool {
-	c := l.LocAreaLocation.CoordinatesForDisplay
+	c := l.coords()
 	return c.Latitude != 0 && c.Longitude != 0
+}
+
+func (l jafirLocRef) address() jafirAddress {
+	a := l.LocAreaLocation.LocLocationExtensionG.FacilityLocation.Address
+	if a.Postcode == "" && a.City.first() == "" && len(a.AddressLine) == 0 {
+		a = l.LocPointLocation.LocLocationExtensionG.FacilityLocation.Address
+	}
+	return a
 }
 
 type jafirOperator struct {
@@ -288,11 +320,11 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 				if !loc.hasCoords() {
 					loc = site.LocationReference
 				}
-				coords := loc.LocAreaLocation.CoordinatesForDisplay
+				coords := loc.coords()
 				if coords.Latitude == 0 || coords.Longitude == 0 {
 					continue // no usable coordinates at either level
 				}
-				addr := loc.LocAreaLocation.LocLocationExtensionG.FacilityLocation.Address
+				addr := loc.address()
 				street := jafirStreetLine(addr)
 				operator := st.Operator.name()
 				if operator == "" {
