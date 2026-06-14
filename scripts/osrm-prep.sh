@@ -26,8 +26,10 @@ mkdir -p "$DATA_DIR"
 pbfs=()
 for r in $REGIONS; do
 	base="$(basename "$r")-latest.osm.pbf"
-	echo "==> download ${r} (resumable)"
-	curl -fSL -C - --retry 3 -o "$DATA_DIR/$base" "https://download.geofabrik.de/${r}-latest.osm.pbf"
+	echo "==> download ${r}"
+	# Fresh download (no -C/resume: resuming a stale/complete file corrupts the
+	# PBF; the box has the bandwidth). -o truncates any prior file.
+	curl -fSL --retry 3 --retry-delay 2 -o "$DATA_DIR/$base" "https://download.geofabrik.de/${r}-latest.osm.pbf"
 	pbfs+=("$DATA_DIR/$base")
 done
 
