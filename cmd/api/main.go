@@ -186,12 +186,14 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	// here. Auth is the shared token in the URL (?token=…) — only Mobilithek,
 	// which we hand the tokenized URL to, can post. GET is an open reachability
 	// ping for the "test" tooling.
-	r.Post("/mobilithek/push", s.mobilithekPush)
-	r.Get("/mobilithek/push", s.mobilithekPing)
+	// All three methods are logged (see logMobilithekRequest) so every inbound
+	// request — pushes, HEAD probes, bad-token attempts — is recorded.
+	r.With(s.logMobilithekRequest).Post("/mobilithek/push", s.mobilithekPush)
+	r.With(s.logMobilithekRequest).Get("/mobilithek/push", s.mobilithekPing)
 	// Mobilithek's broker HEAD-probes the callback for reachability; without a
 	// HEAD route it gets 405, which gates pushing for that subscription (this is
 	// why newer subscriptions like Audi never delivered).
-	r.Head("/mobilithek/push", s.mobilithekPing)
+	r.With(s.logMobilithekRequest).Head("/mobilithek/push", s.mobilithekPing)
 
 	// Open bulk dataset dumps (static files regenerated on a schedule). Served
 	// with gzip + short caching so a CDN can absorb "give me everything" load.

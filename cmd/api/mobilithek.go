@@ -86,11 +86,58 @@ func (s *server) mobilithekPush(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"status":"accepted","bytes":%d}`, len(body))
 }
 
-// mobilithekPing is a GET reachability check (no token) so the endpoint URL can
-// be verified from a browser / the Mobilithek "test" tooling.
+// mobilithekPing is a GET/HEAD reachability check (no token) so the endpoint URL
+// can be verified from a browser / the Mobilithek "test" tooling and broker.
 func (s *server) mobilithekPing(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	enabled := s.mobilithekToken != ""
 	_ = json.NewEncoder(w).Encode(map[string]any{"service": "mobilithek-push", "enabled": enabled, "at": time.Now().UTC()})
+}
+
+// statusRecorder captures the response status for request logging.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(c int) { sr.status = c; sr.ResponseWriter.WriteHeader(c) }
+
+// logMobilithekRequest records EVERY request to the push endpoint — POST pushes,
+// HEAD reachability probes, bad-token attempts, all of it — as one JSON line in
+// MOBILITHEK_CAPTURE_DIR/requests.jsonl, so inbound traffic can be analysed
+// later. Bodies of accepted pushes are saved alongside (see mobilithekPush).
+// No-op unless a capture dir is configured.
+func (s *server) logMobilithekRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.mobilithekCaptureDir == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		next.ServeHTTP(rec, r)
+
+		ip := r.Header.Get("X-Forwarded-For")
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
+		line, _ := json.Marshal(map[string]any{
+			"ts":        start.UTC().Format(time.RFC3339Nano),
+			"method":    r.Method,
+			"status":    rec.status,
+			"remote":    ip,
+			"ua":        r.UserAgent(),
+			"bytes":     r.ContentLength,
+			"encoding":  r.Header.Get("Content-Encoding"),
+			"has_token": r.URL.Query().Get("token") != "",
+			"ms":        time.Since(start).Milliseconds(),
+		})
+		// O_APPEND keeps concurrent small writes atomic on local fs.
+		if f, err := os.OpenFile(filepath.Join(s.mobilithekCaptureDir, "requests.jsonl"),
+			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			_, _ = f.Write(append(line, '\n'))
+			_ = f.Close()
+		}
+	})
 }
 
