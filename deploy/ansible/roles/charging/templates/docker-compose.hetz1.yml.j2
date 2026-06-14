@@ -8,6 +8,11 @@ services:
   api:
     ports: !override
       - "127.0.0.1:{{ api_loopback_port }}:8080"
+{% if mobilithek_capture | default(false) %}
+    # Debug: capture every Mobilithek push to a host-visible dir for inspection.
+    volumes:
+      - ./capture:/capture
+{% endif %}
   web:
     ports: !override
       - "127.0.0.1:{{ web_loopback_port }}:80"
