@@ -118,8 +118,41 @@ type jafirStation struct {
 	IDG                  string             `json:"idG"`
 	TotalMaximumPower    float64            `json:"totalMaximumPower"`
 	NumberOfRefillPoints int                `json:"numberOfRefillPoints"`
+	LocationReference    jafirLocRef        `json:"locationReference"`
+	Operator             jafirOperator      `json:"operator"`
 	RefillPoint          []jafirRefillPoint `json:"refillPoint"`
 }
+
+// jafirLocRef (coordinates + address) and jafirOperator may appear at the site
+// OR the station level depending on the publisher — e.g. GP JOULE puts them on
+// the site, Grid and Co. on the station. The builder prefers station, falls
+// back to site.
+type jafirLocRef struct {
+	LocAreaLocation struct {
+		CoordinatesForDisplay struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		} `json:"coordinatesForDisplay"`
+		LocLocationExtensionG struct {
+			FacilityLocation struct {
+				Address jafirAddress `json:"address"`
+			} `json:"FacilityLocation"`
+		} `json:"locLocationExtensionG"`
+	} `json:"locAreaLocation"`
+}
+
+func (l jafirLocRef) hasCoords() bool {
+	c := l.LocAreaLocation.CoordinatesForDisplay
+	return c.Latitude != 0 && c.Longitude != 0
+}
+
+type jafirOperator struct {
+	Organisation struct {
+		Name jafirML `json:"name"`
+	} `json:"afacAnOrganisation"`
+}
+
+func (o jafirOperator) name() string { return o.Organisation.Name.first() }
 
 type jafirAddressLine struct {
 	Order int         `json:"order"`
@@ -135,27 +168,11 @@ type jafirAddress struct {
 }
 
 type jafirSite struct {
-	IDG               string      `json:"idG"`
-	TypeOfSite        jafirValued `json:"typeOfSite"`
-	LocationReference struct {
-		LocAreaLocation struct {
-			CoordinatesForDisplay struct {
-				Latitude  float64 `json:"latitude"`
-				Longitude float64 `json:"longitude"`
-			} `json:"coordinatesForDisplay"`
-			LocLocationExtensionG struct {
-				FacilityLocation struct {
-					Address jafirAddress `json:"address"`
-				} `json:"FacilityLocation"`
-			} `json:"locLocationExtensionG"`
-		} `json:"locAreaLocation"`
-	} `json:"locationReference"`
-	Operator struct {
-		Organisation struct {
-			Name jafirML `json:"name"`
-		} `json:"afacAnOrganisation"`
-	} `json:"operator"`
-	Station []jafirStation `json:"energyInfrastructureStation"`
+	IDG               string         `json:"idG"`
+	TypeOfSite        jafirValued    `json:"typeOfSite"`
+	LocationReference jafirLocRef    `json:"locationReference"`
+	Operator          jafirOperator  `json:"operator"`
+	Station           []jafirStation `json:"energyInfrastructureStation"`
 }
 
 type jafirTable struct {
@@ -264,20 +281,29 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 
 	for _, tbl := range pub.Table {
 		for _, site := range tbl.Site {
-			coords := site.LocationReference.LocAreaLocation.CoordinatesForDisplay
-			if coords.Latitude == 0 || coords.Longitude == 0 {
-				continue // missing/zero coords → skip site
-			}
-			addr := site.LocationReference.LocAreaLocation.LocLocationExtensionG.FacilityLocation.Address
-			street := jafirStreetLine(addr)
-			operator := site.Operator.Organisation.Name.first()
-			if doc.Operator == "" && operator != "" {
-				doc.Operator = operator // readable CPO name for attribution
-			}
-			name := jafirBuildName(operator, street, tbl.TableName, doc.Creator.NationalIdentifier)
-			city := addr.City.first()
-
 			for _, st := range site.Station {
+				// Location/operator/address may sit on the station (Grid and Co.)
+				// or the site (GP JOULE) — prefer the station, fall back to site.
+				loc := st.LocationReference
+				if !loc.hasCoords() {
+					loc = site.LocationReference
+				}
+				coords := loc.LocAreaLocation.CoordinatesForDisplay
+				if coords.Latitude == 0 || coords.Longitude == 0 {
+					continue // no usable coordinates at either level
+				}
+				addr := loc.LocAreaLocation.LocLocationExtensionG.FacilityLocation.Address
+				street := jafirStreetLine(addr)
+				operator := st.Operator.name()
+				if operator == "" {
+					operator = site.Operator.name()
+				}
+				if doc.Operator == "" && operator != "" {
+					doc.Operator = operator // readable CPO name for attribution
+				}
+				name := jafirBuildName(operator, street, tbl.TableName, doc.Creator.NationalIdentifier)
+				city := addr.City.first()
+
 				for _, rp := range st.RefillPoint {
 					cp := rp.ChargingPoint
 					if cp.IDG == "" {

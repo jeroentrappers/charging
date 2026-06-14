@@ -83,3 +83,34 @@ func TestParseAFIR_XML(t *testing.T) {
 
 // minimal JSON table (aegi… encoding) to prove ParseAFIR still routes JSON.
 const mobJSONProbe = `{"payload":{"aegiEnergyInfrastructureTablePublication":{"publicationCreator":{"country":"DE","nationalIdentifier":"DE-NAP-X"},"energyInfrastructureTable":[{"idG":"t","energyInfrastructureSite":[{"idG":"s","locationReference":{"locAreaLocation":{"coordinatesForDisplay":{"latitude":50.9,"longitude":6.9}}},"energyInfrastructureStation":[{"idG":"st","refillPoint":[{"aegiElectricChargingPoint":{"idG":"cp","currentType":{"value":"ac"},"connector":[{"connectorType":{"value":"iec62196T2"},"maxPowerAtSocket":11000}]}}]}]}]}]}}}`
+
+// Station-level location/operator (e.g. Grid and Co.): the site carries no
+// coordinates; they live on energyInfrastructureStation. The builder must fall
+// through to the station rather than skip the site.
+const jsonStationLevel = `{"payload":{"aegiEnergyInfrastructureTablePublication":{
+"publicationCreator":{"country":"de","nationalIdentifier":"Grid and Co."},
+"energyInfrastructureTable":[{"idG":"t","energyInfrastructureSite":[{"idG":"s",
+"energyInfrastructureStation":[{"idG":"st","totalMaximumPower":22000,
+"locationReference":{"locAreaLocation":{"coordinatesForDisplay":{"latitude":52.5,"longitude":13.4}}},
+"operator":{"afacAnOrganisation":{"name":{"values":[{"value":"Grid and Co."}]}}},
+"refillPoint":[{"aegiElectricChargingPoint":{"idG":"cp-9","currentType":{"value":"ac"},
+"connector":[{"connectorType":{"value":"iec62196T2"},"maxPowerAtSocket":22000}],
+"electricEnergy":[{"energyRate":[{"idG":"r","ratePolicy":{"value":"adHoc"},"applicableCurrency":["EUR"],
+"energyPrice":[{"priceType":{"value":"pricePerKWh"},"value":0.59}]}]}]}}]}]}]}]}}}`
+
+func TestParseAFIRJSON_StationLevelLocation(t *testing.T) {
+	doc, err := ParseAFIR([]byte(jsonStationLevel))
+	if err != nil || doc.Kind != "table" {
+		t.Fatalf("kind=%q err=%v", doc.Kind, err)
+	}
+	if len(doc.Connectors) != 1 {
+		t.Fatalf("connectors=%d want 1 (station-level coords must not be skipped)", len(doc.Connectors))
+	}
+	c := doc.Connectors[0]
+	if c.Lat != 52.5 || c.Lon != 13.4 || c.PowerKW != 22 || c.TariffID == "" {
+		t.Errorf("connector=%+v", c)
+	}
+	if doc.Operator != "Grid and Co." {
+		t.Errorf("operator=%q want Grid and Co.", doc.Operator)
+	}
+}
