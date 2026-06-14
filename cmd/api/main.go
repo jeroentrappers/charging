@@ -103,7 +103,8 @@ func main() {
 	// Durable Mobilithek push queue: the webhook enqueues to mobilithekSpoolDir;
 	// these workers drain it into the DB, decoupled from the broker.
 	if s.mobilithekSpoolDir != "" {
-		s.engine.RunSpoolWorkers(context.Background(), s.mobilithekSpoolDir, s.mobilithekWorkers)
+		// Autoscale between 1 and mobilithekWorkers based on backlog.
+		s.engine.RunSpoolWorkers(context.Background(), s.mobilithekSpoolDir, 1, s.mobilithekWorkers)
 	}
 
 	// On-demand live status: build a Monta client if creds are available (DB

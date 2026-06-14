@@ -18,11 +18,7 @@ import (
 // row is ensured (disabled — push sources aren't polled) so chargers attribute
 // to the right operator/country. Returns the publication kind + rows touched.
 func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind string, n int, err error) {
-	// Serialize pushes so a status push can't race a table push (or two tables)
-	// into the SCD2 tariff path. Pushes are infrequent; queuing is fine.
-	e.mobMu.Lock()
-	defer e.mobMu.Unlock()
-
+	// Parse outside any lock so workers decode (big XML/JSON) in parallel.
 	doc, err := datex.ParseAFIR(data) // XML (LISY/broker) or JSON encoding
 	if err != nil {
 		return "", 0, err
@@ -32,6 +28,9 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 	}
 
 	cpoID := mobilithekCPOID(doc.Creator)
+	// Serialize per CPO: a table + status (or two tables) for the same operator
+	// mustn't race the SCD2 tariff path. Different CPOs proceed in parallel.
+	defer e.mobLocks.lock(cpoID)()
 	// Prefer the readable operator name from the table push (e.g. "GP JOULE
 	// CONNECT"). Status pushes don't carry it, so don't let them downgrade an
 	// already-seeded readable name; fall back to the raw NAP id only on a cold

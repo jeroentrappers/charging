@@ -61,7 +61,9 @@ type Config struct {
 	// there; worker(s) drain it into the DB (decoupled, restart-safe). Empty
 	// falls back to inline ingest in a goroutine.
 	MobilithekSpoolDir string
-	// MobilithekWorkers is how many spool drainers run (default 1).
+	// MobilithekWorkers caps the autoscaling spool drainer pool (1..this,
+	// sized to the backlog). The cap protects the DB from too many concurrent
+	// ingests. Default 8.
 	MobilithekWorkers int
 }
 
@@ -88,7 +90,7 @@ func Load() Config {
 		MobilithekPushToken:    os.Getenv("MOBILITHEK_PUSH_TOKEN"),
 		MobilithekCaptureDir:   env("MOBILITHEK_CAPTURE_DIR", ""),
 		MobilithekSpoolDir:     env("MOBILITHEK_SPOOL_DIR", ""),
-		MobilithekWorkers:      envInt("MOBILITHEK_WORKERS", 1),
+		MobilithekWorkers:      envInt("MOBILITHEK_WORKERS", 8),
 	}
 }
 

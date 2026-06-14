@@ -9,8 +9,32 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
+
+// keyedMutex provides per-key mutual exclusion (one lock per CPO id). lock(key)
+// returns the unlock func. Per-key mutexes live for the process lifetime —
+// bounded by the number of CPOs (dozens), so no eviction needed.
+type keyedMutex struct {
+	mu sync.Mutex
+	m  map[string]*sync.Mutex
+}
+
+func (k *keyedMutex) lock(key string) func() {
+	k.mu.Lock()
+	if k.m == nil {
+		k.m = make(map[string]*sync.Mutex)
+	}
+	mu := k.m[key]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		k.m[key] = mu
+	}
+	k.mu.Unlock()
+	mu.Lock()
+	return mu.Unlock
+}
 
 // Durable push spool. The webhook handler enqueues each received push as a file;
 // independent worker(s) drain it into the DB. This decouples receipt (fast +
@@ -76,10 +100,19 @@ func firstNonSpace(b []byte) byte {
 	return 0
 }
 
-// RunSpoolWorkers starts n workers draining the spool until ctx is cancelled.
-func (e *Engine) RunSpoolWorkers(ctx context.Context, dir string, n int) {
-	if n < 1 {
-		n = 1
+// spoolPerWorker is the backlog (incoming files) per worker before scaling up.
+const spoolPerWorker = 80
+
+// RunSpoolWorkers starts an autoscaling drainer: between minW and maxW workers,
+// sized every 2s to the backlog so we keep up under bursts but never exceed maxW
+// concurrent ingests (the cap that protects the DB). Per-CPO locking (mobLocks)
+// lets the workers run different operators in parallel.
+func (e *Engine) RunSpoolWorkers(ctx context.Context, dir string, minW, maxW int) {
+	if minW < 1 {
+		minW = 1
+	}
+	if maxW < minW {
+		maxW = minW
 	}
 	for _, sub := range []string{"incoming", "processing", "failed"} {
 		if err := os.MkdirAll(spoolSub(dir, sub), 0o755); err != nil {
@@ -87,10 +120,72 @@ func (e *Engine) RunSpoolWorkers(ctx context.Context, dir string, n int) {
 		}
 	}
 	e.recoverProcessing(dir) // re-queue anything a previous crash left mid-flight
-	for i := 0; i < n; i++ {
-		go e.spoolWorker(ctx, dir)
+	go e.spoolController(ctx, dir, minW, maxW)
+	e.Log.Info("mobilithek spool autoscaler started", "min", minW, "max", maxW, "dir", dir)
+}
+
+// spoolController owns the worker set and resizes it to the backlog. Only this
+// goroutine mutates the worker list, so it needs no locking.
+func (e *Engine) spoolController(ctx context.Context, dir string, minW, maxW int) {
+	var stops []chan struct{}
+	add := func() {
+		s := make(chan struct{})
+		stops = append(stops, s)
+		go e.spoolWorker(ctx, dir, s)
 	}
-	e.Log.Info("mobilithek spool workers started", "n", n, "dir", dir)
+	remove := func() {
+		if len(stops) == 0 {
+			return
+		}
+		close(stops[len(stops)-1]) // worker exits after its current item
+		stops = stops[:len(stops)-1]
+	}
+	for i := 0; i < minW; i++ {
+		add()
+	}
+
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	last := minW
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			depth := dirCount(spoolSub(dir, "incoming"))
+			want := depth/spoolPerWorker + 1
+			if want < minW {
+				want = minW
+			}
+			if want > maxW {
+				want = maxW
+			}
+			for len(stops) < want {
+				add()
+			}
+			for len(stops) > want {
+				remove()
+			}
+			if want != last {
+				e.Log.Info("mobilithek spool autoscaled", "workers", want, "backlog", depth)
+				last = want
+			}
+		}
+	}
+}
+
+func dirCount(dir string) int {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, ent := range ents {
+		if !strings.HasPrefix(ent.Name(), ".") {
+			n++
+		}
+	}
+	return n
 }
 
 func (e *Engine) recoverProcessing(dir string) {
@@ -107,16 +202,22 @@ func (e *Engine) recoverProcessing(dir string) {
 	}
 }
 
-func (e *Engine) spoolWorker(ctx context.Context, dir string) {
+func (e *Engine) spoolWorker(ctx context.Context, dir string, stop <-chan struct{}) {
 	inc, proc, failed := spoolSub(dir, "incoming"), spoolSub(dir, "processing"), spoolSub(dir, "failed")
 	for {
-		if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
 			return
+		case <-stop: // scaled down
+			return
+		default:
 		}
 		name, ok := claimOldest(inc, proc)
 		if !ok {
 			select {
 			case <-ctx.Done():
+				return
+			case <-stop:
 				return
 			case <-time.After(time.Second):
 			}

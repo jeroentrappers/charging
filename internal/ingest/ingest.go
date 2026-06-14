@@ -54,9 +54,10 @@ type Engine struct {
 	sigMu    sync.Mutex
 	sigCache map[string]map[string]uint64
 
-	// mobMu serializes Mobilithek consumer-push ingests (table/status snapshots)
-	// so concurrent pushes don't race the SCD2 tariff path.
-	mobMu sync.Mutex
+	// mobLocks serializes Mobilithek pushes PER CPO (a table + status for the
+	// same operator mustn't race the SCD2 path) while letting different CPOs
+	// ingest in parallel — so the spool worker pool can actually scale out.
+	mobLocks keyedMutex
 }
 
 // connectorSig hashes the fields a pass would write (identity + status, plus the
