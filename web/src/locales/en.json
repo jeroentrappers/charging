@@ -185,7 +185,8 @@
     "carModel": "Car model",
     "customCar": "Custom / other",
     "memberships": "Charge cards",
-    "membershipsNote": "Pick the cards you carry — prices then show the cheapest of ad-hoc vs your card. Rates are estimated (≈), verify with your provider."
+    "membershipsNote": "Pick the cards you carry — the price then shows what you'd pay with your cheapest card. Markup cards (e.g. Stroohm) use the station's real price + their fee; flat cards are estimates (≈).",
+    "cardAdhoc": "ad-hoc price"
   },
   "lang": {
     "label": "Language"

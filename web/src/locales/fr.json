@@ -185,7 +185,8 @@
     "carModel": "Modèle de voiture",
     "customCar": "Personnalisé / autre",
     "memberships": "Cartes de recharge",
-    "membershipsNote": "Choisissez vos cartes — les prix affichent le moins cher entre ad-hoc et votre carte. Tarifs estimés (≈), à vérifier auprès de votre fournisseur."
+    "membershipsNote": "Choisissez vos cartes — le prix indique alors ce que vous paieriez avec votre carte la moins chère. Les cartes à supplément (p. ex. Stroohm) utilisent le prix réel de la station + leurs frais ; les cartes à tarif fixe sont des estimations (≈).",
+    "cardAdhoc": "prix ad-hoc"
   },
   "lang": {
     "label": "Langue"

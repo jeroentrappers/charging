@@ -185,7 +185,8 @@
     "carModel": "Automodell",
     "customCar": "Eigenes / anderes",
     "memberships": "Ladekarten",
-    "membershipsNote": "Wähle die Karten, die du hast – Preise zeigen dann das Günstigere aus Ad-hoc und deiner Karte. Tarife sind geschätzt (≈), prüfe sie bei deinem Anbieter."
+    "membershipsNote": "Wähle die Karten, die du hast – der Preis zeigt dann, was du mit deiner günstigsten Karte zahlst. Aufschlagskarten (z. B. Stroohm) nutzen den echten Stationspreis + ihre Gebühr; Pauschalkarten sind Schätzungen (≈).",
+    "cardAdhoc": "Ad-hoc-Preis"
   },
   "lang": {
     "label": "Sprache"

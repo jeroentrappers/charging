@@ -339,7 +339,17 @@ export function SettingsPanel(props: {
                   }
                 />
                 <span className="member-name">{m.name}</span>
-                <span className="member-rate">~{eur(m.acEurKWh)}/{eur(m.dcEurKWh)} {t('unit.kwh')}</span>
+                <span className="member-rate">
+                  {m.kind === 'markup' ? (
+                    <>
+                      {t('settings.cardAdhoc')}
+                      {m.markupEurKWh > 0 && <> +{eur(m.markupEurKWh)} {t('unit.kwh')}</>}
+                      {m.sessionFee > 0 && <> +{eur(m.sessionFee)}</>}
+                    </>
+                  ) : (
+                    <>~{eur(m.acEurKWh)}/{eur(m.dcEurKWh)} {t('unit.kwh')}</>
+                  )}
+                </span>
               </label>
             )
           })}

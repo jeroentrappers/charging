@@ -185,7 +185,8 @@
     "carModel": "Automodel",
     "customCar": "Aangepast / ander",
     "memberships": "Laadpassen",
-    "membershipsNote": "Kies je passen — prijzen tonen dan de goedkoopste van ad-hoc of je pas. Tarieven zijn geschat (≈), controleer bij je aanbieder."
+    "membershipsNote": "Kies de passen die je hebt — de prijs toont dan wat je met je goedkoopste pas betaalt. Opslagpassen (bv. Stroohm) gebruiken de echte stationsprijs + hun kost; vaste passen zijn schattingen (≈).",
+    "cardAdhoc": "ad-hocprijs"
   },
   "lang": {
     "label": "Taal"

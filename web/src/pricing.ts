@@ -10,7 +10,7 @@
 // in customPrice — the server only gets usable_kWh + consumption, not max powers.)
 import type { Charger, TariffStruct, TariffElement, TariffRestrictions } from './api'
 import type { Settings } from './settings'
-import { MSPS, memberSessionPrice } from './msps'
+import { MSPS, flatSessionPrice, markupSessionPrice } from './msps'
 
 const EFF_AC = 0.89
 const EFF_DC = 0.94
@@ -115,22 +115,41 @@ export function rankChargers(chargers: Charger[], settings: Settings, now: Date,
     const adhoc = c.price_components
       ? customPrice(c.price_components, c.power_kw, c.current_type, settings.charge.kWh, settings.charge.powerKW ?? 0, carMaxKW, now)
       : null
-    // The effective price is the cheapest of the ad-hoc price and any selected
-    // membership's blended rate. A card only prices a charger we actually have a
-    // tariff for — we don't fabricate a price for location-only chargers (e.g.
-    // the DE/FR registries have no price data), which would otherwise show a
-    // misleading flat card rate and flatten the ranking.
+    // "Show my real card price": when the user has selected card(s), the price is
+    // what THEY would pay with their cheapest selected card — a flat card's
+    // blended rate, or a markup card's station-real ad-hoc price + its fee
+    // (computed on the fly, not a guess). Bare ad-hoc is the fallback only when no
+    // selected card prices this station. A card only prices a charger we actually
+    // have a tariff for — we never fabricate a price for location-only chargers
+    // (e.g. the DE/FR registries), which would flatten the ranking.
     let price = adhoc
     let via: string | undefined
     let estimated = false
-    if (c.price_components) {
-      for (const msp of memberships) {
-        const mp = memberSessionPrice(msp!, c.current_type, settings.charge.kWh)
-        if (price == null || mp < price) {
-          price = mp
-          via = msp!.name
-          estimated = msp!.estimated
+    if (c.price_components && memberships.length > 0) {
+      let best: number | null = null
+      let bestVia: string | undefined
+      let bestEst = false
+      for (const mspOrNull of memberships) {
+        const m = mspOrNull!
+        let mp: number | null = null
+        let est = false
+        if (m.kind === 'markup') {
+          if (adhoc == null) continue // a markup needs the station's real price
+          mp = markupSessionPrice(m, adhoc, c.current_type, settings.charge.kWh)
+        } else {
+          mp = flatSessionPrice(m, c.current_type, settings.charge.kWh)
+          est = true
         }
+        if (mp != null && (best == null || mp < best)) {
+          best = mp
+          bestVia = m.name
+          bestEst = est
+        }
+      }
+      if (best != null) {
+        price = best
+        via = bestVia
+        estimated = bestEst
       }
     }
     const det = price != null ? detourCost(c.distance_m, settings) : 0
