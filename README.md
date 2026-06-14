@@ -260,12 +260,17 @@ advertised URLs absolute. `WEB_API_BASE` is the API origin the **browser**
 reaches; it's injected into the web container at runtime (envsubst → `/config.js`).
 
 **Corridor search (OSRM)** is an optional overlay. Add `-f docker-compose.osrm.yml`
-to the compose command; run the one-time data prep first (downloads + processes
-the Belgium extract into `./osrm-data`), then start it:
+to the compose command; run the one-time data prep first (downloads OSM
+extract(s) into `./osrm-data`, merges them, and runs the MLD pipeline), then
+start it. `OSRM_GRAPH` selects the graph (default `belgium-latest`); for
+cross-country routing build a merged graph (needs `osmium-tool` on the host):
 
 ```bash
 COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.osrm.yml"
-./scripts/osrm-prep.sh          # ~minutes; needs the COMPOSE env above
+./scripts/osrm-prep.sh          # ~minutes (Belgium); needs the COMPOSE env above
+# cross-country (BE+NL+LU+DE+FR): osmium-merges the extracts into one graph
+OSRM_GRAPH=eu-west OSRM_REGIONS="europe/belgium europe/netherlands europe/luxembourg europe/germany europe/france" \
+  COMPOSE="$COMPOSE" ./scripts/osrm-prep.sh
 $COMPOSE up -d osrm             # sets OSRM_URL on the api → enables /chargers/along-route
 ```
 
