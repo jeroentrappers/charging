@@ -54,6 +54,7 @@ export default function App() {
   const [settings, patchSettings] = useSettings()
   const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false) // mobile fly-out nav under the brand
   const [filters, setFilters] = useState<Filters>({ available: false, minPower: 0, plug: '', includePrivate: false, plugCompatible: false })
   const [filtersOpen, setFiltersOpen] = useState(false) // collapsed by default to give the list room (esp. mobile)
   const [located, setLocated] = useState<[number, number] | null>(null)
@@ -134,13 +135,42 @@ export default function App() {
     }
   }, [located?.[0], located?.[1]])
 
+  // Esc closes the fly-out nav.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
+
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">
+        <button
+          className="brand brand-btn"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
           <svg viewBox="0 0 512 512" aria-hidden><path d="M286 64 134 296h92l-40 152 192-248h-96z" fill="#15803d" /></svg>
           Charging
-        </span>
+          <span className="brand-caret" aria-hidden>▾</span>
+        </button>
+        {menuOpen && (
+          <>
+            <div className="nav-backdrop" onClick={() => setMenuOpen(false)} />
+            <div className="navmenu" role="menu">
+              <button role="menuitem" className={tab === 'find' ? 'active' : ''} onClick={() => { setTab('find'); setMenuOpen(false) }}>{t('nav.find')}</button>
+              <button role="menuitem" className={tab === 'insights' ? 'active' : ''} onClick={() => { setTab('insights'); setMenuOpen(false) }}>{t('nav.insights')}</button>
+              <button role="menuitem" onClick={() => { setShowSettings(true); setMenuOpen(false) }}>{t('settings.title')}</button>
+              <div className="navmenu-sep" />
+              <a role="menuitem" href={`${API_BASE}/docs`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>{t('nav.apiDocs')}</a>
+              <a role="menuitem" href={GITHUB_URL} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>GitHub</a>
+            </div>
+          </>
+        )}
         <nav className="tabs">
           <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>{t('nav.find')}</button>
           <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
@@ -225,11 +255,6 @@ export default function App() {
           <InsightsPage />
         </Suspense>
       )}
-
-      <nav className="bottomnav">
-        <button className={tab === 'find' ? 'active' : ''} onClick={() => setTab('find')}>{t('nav.find')}</button>
-        <button className={tab === 'insights' ? 'active' : ''} onClick={() => setTab('insights')}>{t('nav.insights')}</button>
-      </nav>
 
       {showSettings && (
         <SettingsPanel
