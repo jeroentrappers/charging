@@ -6,7 +6,7 @@ import { buildPath, parseUrl, type NavState } from './url'
 import { useSettings } from './settings'
 import { useTheme } from './theme'
 import { ProfileBar, SettingsPanel, FilterBar, type Filters } from './ui'
-import { reverseGeocode, shortPlace, type Place } from './geocode'
+import { geocode, reverseGeocode, shortPlace, type Place } from './geocode'
 
 const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
 
@@ -165,11 +165,13 @@ export default function App() {
             <button className="chip loc-chip" onClick={locate} title={t('geo.locate')}>
               📍 {locLabel || t('geo.locate')}
             </button>
-            {tripTo && (
+            {tripTo ? (
               <span className="chip dest-chip">
                 🏁 {shortPlace(tripTo.label)}
                 <button className="dest-x" onClick={() => setTripTo(null)} aria-label={t('trip.clear')}>✕</button>
               </span>
+            ) : (
+              <DestinationSearch onSet={setTripTo} />
             )}
             {(() => {
               const n =
@@ -246,4 +248,54 @@ export default function App() {
 // it directly (the extra wrapper above hosts the Locate button alongside).
 function FilterBarInline({ filters, setFilters, carPlugs }: { filters: Filters; setFilters: (f: Filters) => void; carPlugs?: string[] }) {
   return <FilterBar f={filters} onChange={setFilters} carPlugs={carPlugs} />
+}
+
+// Destination search lives in the header now (next to the location chip), not in
+// the list sheet. Debounced Nominatim lookup; picking a result sets the trip.
+function DestinationSearch({ onSet }: { onSet: (p: Place) => void }) {
+  const { t } = useTranslation()
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<Place[]>([])
+  useEffect(() => {
+    if (q.trim().length < 3) {
+      setResults([])
+      return
+    }
+    const ctrl = new AbortController()
+    const h = setTimeout(() => {
+      geocode(q, ctrl.signal).then(setResults).catch(() => {})
+    }, 350)
+    return () => {
+      clearTimeout(h)
+      ctrl.abort()
+    }
+  }, [q])
+  return (
+    <div className="dest-search">
+      <input
+        className="dest-input"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t('trip.addDestination')}
+        aria-label={t('trip.addDestination')}
+      />
+      {results.length > 0 && (
+        <ul className="trip-results">
+          {results.map((r) => (
+            <li key={`${r.lat},${r.lon}`}>
+              <button
+                onClick={() => {
+                  onSet(r)
+                  setQ('')
+                  setResults([])
+                }}
+              >
+                {r.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }

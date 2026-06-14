@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { api, type Charger, type RouteGeometry } from './api'
 import { MapView } from './MapView'
 import { rankChargers } from './pricing'
-import { geocode, shortPlace, type Place } from './geocode'
+import { type Place } from './geocode'
 import type { NavState } from './url'
 import type { Settings } from './settings'
 import { AvailBadge, availOf, eur, km, plugLabel, priceOf, type Filters } from './ui'
@@ -242,10 +242,13 @@ export function FindPage(props: {
 
       <div className={`sheet ${expanded ? 'expanded' : ''}`}>
         <div className="handle"><button aria-label="toggle list" onClick={() => setExpanded((e) => !e)} /></div>
-        <TripBar dest={tripTo} route={route} settings={props.settings} onSet={props.onSetTrip} onClear={props.onClearTrip} />
         <div className="sheet-head">
           <h2>{loading ? t('find.searching') : t('find.chargers', { count: chargers.length })}</h2>
-          <span className="muted">{tripTo ? t('find.alongRoute') : t('find.cheapestFirst')}</span>
+          {tripTo ? (
+            <TripSummary route={route} settings={props.settings} />
+          ) : (
+            <span className="muted">{t('find.cheapestFirst')}</span>
+          )}
         </div>
         <div className="list">
           {error && <div className="state">{t('find.loadError')}</div>}
@@ -282,74 +285,27 @@ export function FindPage(props: {
   )
 }
 
-// Trip destination search + summary. When a destination is set, the list shows
-// chargers along the route; the summary shows trip distance/time and whether it
-// fits the car's range.
-function TripBar(props: {
-  dest: Place | null
-  route: RouteGeometry | null
-  settings: Settings
-  onSet: (p: Place) => void
-  onClear: () => void
-}) {
+// Trip summary in the list heading: when a destination is set (chosen from the
+// header search), shows trip distance/time and whether it fits the car's range.
+// The destination input + chip now live in the header (App), not here.
+function TripSummary({ route, settings }: { route: RouteGeometry | null; settings: Settings }) {
   const { t } = useTranslation()
-  const [q, setQ] = useState('')
-  const [results, setResults] = useState<Place[]>([])
-
-  useEffect(() => {
-    if (props.dest || q.trim().length < 3) {
-      setResults([])
-      return
-    }
-    const ctrl = new AbortController()
-    const h = setTimeout(() => {
-      geocode(q, ctrl.signal).then(setResults).catch(() => {})
-    }, 350)
-    return () => {
-      clearTimeout(h)
-      ctrl.abort()
-    }
-  }, [q, props.dest])
-
-  if (props.dest) {
-    const r = props.route
-    const tripKm = r ? Math.round(r.distance_m / 1000) : null
-    const tripMin = r ? Math.round(r.duration_s / 60) : null
-    const { usableKWh, consumptionKWh100 } = props.settings.car
-    const rangeKm = Math.round((usableKWh / consumptionKWh100) * 100)
-    const within = tripKm != null ? tripKm <= rangeKm : true
-    return (
-      <div className="tripbar set">
-        <span className="trip-dest">🏁 {shortPlace(props.dest.label)}</span>
-        {tripKm != null && (
-          <span className="trip-stats">
-            {t('trip.distance', { km: tripKm, min: tripMin })} ·{' '}
-            <span className={within ? 'ok' : 'warn'}>{t('trip.range', { km: rangeKm })} {within ? '✓' : '⚠'}</span>
-          </span>
-        )}
-        <button className="trip-clear" onClick={props.onClear} aria-label={t('trip.clear')}>✕</button>
-      </div>
-    )
-  }
-
+  const tripKm = route ? Math.round(route.distance_m / 1000) : null
+  const tripMin = route ? Math.round(route.duration_s / 60) : null
+  const { usableKWh, consumptionKWh100 } = settings.car
+  const rangeKm = Math.round((usableKWh / consumptionKWh100) * 100)
+  const within = tripKm != null ? tripKm <= rangeKm : true
   return (
-    <div className="tripbar">
-      <input
-        className="trip-input"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={t('trip.addDestination')}
-        aria-label={t('trip.addDestination')}
-      />
-      {results.length > 0 && (
-        <ul className="trip-results">
-          {results.map((r) => (
-            <li key={`${r.lat},${r.lon}`}>
-              <button onClick={() => { props.onSet(r); setQ(''); setResults([]) }}>{r.label}</button>
-            </li>
-          ))}
-        </ul>
+    <span className="muted">
+      {t('find.alongRoute')}
+      {tripKm != null && (
+        <>
+          {' · '}
+          {t('trip.distance', { km: tripKm, min: tripMin })}
+          {' · '}
+          <span className={within ? 'ok' : 'warn'}>{t('trip.range', { km: rangeKm })} {within ? '✓' : '⚠'}</span>
+        </>
       )}
-    </div>
+    </span>
   )
 }
