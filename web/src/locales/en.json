@@ -166,7 +166,7 @@
     "preset": {
       "km100": "~100 km",
       "soc1080": "10→80%",
-      "full": "Full"
+      "full": "10→100%"
     }
   },
   "settings": {
