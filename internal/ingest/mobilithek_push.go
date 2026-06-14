@@ -32,9 +32,19 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 	}
 
 	cpoID := mobilithekCPOID(doc.Creator)
-	name := doc.Creator.NationalIdentifier
+	// Prefer the readable operator name from the table push (e.g. "GP JOULE
+	// CONNECT"). Status pushes don't carry it, so don't let them downgrade an
+	// already-seeded readable name; fall back to the raw NAP id only on a cold
+	// start where no table push has named the CPO yet.
+	name := doc.Operator
 	if name == "" {
-		name = cpoID
+		if cur, ok, _ := e.Store.GetCPO(ctx, cpoID); ok && cur.Name != "" {
+			name = cur.Name
+		} else if doc.Creator.NationalIdentifier != "" {
+			name = doc.Creator.NationalIdentifier
+		} else {
+			name = cpoID
+		}
 	}
 	// Ensure the cpo row exists for attribution (country/name). Disabled so the
 	// scheduler never tries to poll a push-only source.

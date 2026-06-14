@@ -35,6 +35,7 @@ type AFIRStatusUpdate struct {
 type AFIRDoc struct {
 	Kind       string // "table" | "status" | "" (unknown/test)
 	Creator    AFIRCreator
+	Operator   string                  // readable operator org name (table push only; "" on status/test)
 	Connectors []model.Connector       // table only; CPOID left EMPTY (caller sets it)
 	Tariffs    map[string]model.Tariff // table only; keyed by energyRate idG (== each connector's TariffID)
 	Statuses   []AFIRStatusUpdate      // status only
@@ -270,6 +271,9 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 			addr := site.LocationReference.LocAreaLocation.LocLocationExtensionG.FacilityLocation.Address
 			street := jafirStreetLine(addr)
 			operator := site.Operator.Organisation.Name.first()
+			if doc.Operator == "" && operator != "" {
+				doc.Operator = operator // readable CPO name for attribution
+			}
 			name := jafirBuildName(operator, street, tbl.TableName, doc.Creator.NationalIdentifier)
 			city := addr.City.first()
 
