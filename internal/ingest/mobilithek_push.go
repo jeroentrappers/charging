@@ -23,7 +23,7 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 	e.mobMu.Lock()
 	defer e.mobMu.Unlock()
 
-	doc, err := datex.ParseAFIRJSON(data)
+	doc, err := datex.ParseAFIR(data) // XML (LISY/broker) or JSON encoding
 	if err != nil {
 		return "", 0, err
 	}

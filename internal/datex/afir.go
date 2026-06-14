@@ -10,6 +10,7 @@ package datex
 // regardless of which xmlns prefixes a publisher uses.
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"strings"
@@ -19,8 +20,16 @@ import (
 
 // ---- Static publication (EnergyInfrastructureTablePublication) ----
 
+// afirCreatorXML is the publicationCreator (country + NAP id) — used on the
+// push path to derive which CPO a payload belongs to.
+type afirCreatorXML struct {
+	Country            string `xml:"country"`
+	NationalIdentifier string `xml:"nationalIdentifier"`
+}
+
 type afirStaticPub struct {
-	Sites []afirSite `xml:"payload>energyInfrastructureTable>energyInfrastructureSite"`
+	Creator afirCreatorXML `xml:"payload>publicationCreator"`
+	Sites   []afirSite     `xml:"payload>energyInfrastructureTable>energyInfrastructureSite"`
 }
 
 type afirSite struct {
@@ -78,6 +87,7 @@ type afirPrice struct {
 // ---- Status publication (EnergyInfrastructureStatusPublication) ----
 
 type afirStatusPub struct {
+	Creator  afirCreatorXML      `xml:"payload>publicationCreator"`
 	Stations []afirStationStatus `xml:"payload>energyInfrastructureStatus>energyInfrastructureStationStatus"`
 }
 
@@ -213,6 +223,13 @@ func ParseAFIRStatic(cpoID string, data []byte) ([]model.Connector, map[string]m
 	if err := xml.Unmarshal(data, &pub); err != nil {
 		return nil, nil, fmt.Errorf("decode afir static: %w", err)
 	}
+	conns, tariffs := buildStaticConnectors(pub, cpoID)
+	return conns, tariffs, nil
+}
+
+// buildStaticConnectors turns a parsed table publication into connectors + the
+// ad-hoc tariff map (keyed by refillPoint id == each connector's TariffID).
+func buildStaticConnectors(pub afirStaticPub, cpoID string) ([]model.Connector, map[string]model.Tariff) {
 	tariffs := map[string]model.Tariff{}
 	var conns []model.Connector
 
@@ -252,7 +269,7 @@ func ParseAFIRStatic(cpoID string, data []byte) ([]model.Connector, map[string]m
 			}
 		}
 	}
-	return conns, tariffs, nil
+	return conns, tariffs
 }
 
 // AFIRStatus is one refill point's live state.
@@ -285,4 +302,62 @@ func ParseAFIRStatus(data []byte) (map[string]AFIRStatus, error) {
 		}
 	}
 	return out, nil
+}
+
+// ParseAFIR decodes one Mobilithek AFIR push regardless of encoding: DATEX II
+// XML (e.g. LISY / municipal aggregators, e-clearing brokers) or the JSON
+// encoding (GP JOULE, …). It returns the same AFIRDoc the JSON path produces,
+// so the ingest is identical. Matching is namespace-agnostic.
+func ParseAFIR(data []byte) (*AFIRDoc, error) {
+	t := bytes.TrimPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte{0xEF, 0xBB, 0xBF})
+	t = bytes.TrimLeft(t, " \t\r\n")
+	if len(t) > 0 && t[0] == '<' {
+		return parseAFIRXML(data)
+	}
+	return ParseAFIRJSON(data)
+}
+
+// parseAFIRXML handles the DATEX II XML encoding of the AFIR profile, reusing
+// the same struct definitions as the consumer-pull feed.
+func parseAFIRXML(data []byte) (*AFIRDoc, error) {
+	doc := &AFIRDoc{Tariffs: map[string]model.Tariff{}}
+	switch {
+	case bytes.Contains(data, []byte("EnergyInfrastructureStatusPublication")):
+		var pub afirStatusPub
+		if err := xml.Unmarshal(data, &pub); err != nil {
+			return nil, fmt.Errorf("decode afir xml status: %w", err)
+		}
+		doc.Kind = "status"
+		doc.Creator = AFIRCreator{Country: pub.Creator.Country, NationalIdentifier: pub.Creator.NationalIdentifier}
+		for _, st := range pub.Stations {
+			for _, rps := range st.RefillPoints {
+				id := rps.refID()
+				if id == "" {
+					continue
+				}
+				upd := AFIRStatusUpdate{EVSEUID: id, Status: statusVocab(rps.Status)}
+				if len(rps.UpdateRates) > 0 {
+					if tf, ok := buildTariff(id, afirRate{Currency: rps.UpdateCurr, Prices: rps.UpdateRates}); ok {
+						upd.Tariff = &tf
+					}
+				}
+				doc.Statuses = append(doc.Statuses, upd)
+			}
+		}
+	case bytes.Contains(data, []byte("EnergyInfrastructureTablePublication")):
+		var pub afirStaticPub
+		if err := xml.Unmarshal(data, &pub); err != nil {
+			return nil, fmt.Errorf("decode afir xml table: %w", err)
+		}
+		doc.Kind = "table"
+		doc.Creator = AFIRCreator{Country: pub.Creator.Country, NationalIdentifier: pub.Creator.NationalIdentifier}
+		for _, s := range pub.Sites {
+			if s.Operator != "" {
+				doc.Operator = s.Operator
+				break
+			}
+		}
+		doc.Connectors, doc.Tariffs = buildStaticConnectors(pub, "")
+	}
+	return doc, nil
 }

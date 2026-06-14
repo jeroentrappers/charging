@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"os"
@@ -50,11 +51,12 @@ func (s *server) mobilithekPush(w http.ResponseWriter, r *http.Request) {
 	saved := ""
 	if s.mobilithekCaptureDir != "" {
 		if err := os.MkdirAll(s.mobilithekCaptureDir, 0o755); err == nil {
-			// Stable-ish name from the Last-Modified header (no Date.now reliance).
-			name := "push-" + sanitize(r.Header.Get("Last-Modified")) + ".json"
-			if name == "push-.json" {
-				name = "push-latest.json"
-			}
+			// Name by a content hash so distinct payloads (per source/kind) land
+			// in distinct files; identical re-pushes dedupe. (Last-Modified is
+			// usually empty here, which made every push overwrite one file.)
+			h := fnv.New32a()
+			h.Write(body)
+			name := fmt.Sprintf("push-%08x.json", h.Sum32())
 			p := filepath.Join(s.mobilithekCaptureDir, name)
 			if werr := os.WriteFile(p, body, 0o644); werr == nil {
 				saved = p
@@ -92,16 +94,3 @@ func (s *server) mobilithekPing(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"service": "mobilithek-push", "enabled": enabled, "at": time.Now().UTC()})
 }
 
-func sanitize(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-			out = append(out, c)
-		case c == ' ', c == ':', c == ',':
-			out = append(out, '-')
-		}
-	}
-	return string(out)
-}

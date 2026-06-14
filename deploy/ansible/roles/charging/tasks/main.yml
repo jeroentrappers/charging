@@ -23,6 +23,7 @@
       - --exclude=.env
       - --exclude=secrets
       - --exclude=osrm-data
+      - --exclude=capture
       - --exclude=bin
       - --exclude=data
       - --exclude=web/node_modules
@@ -50,6 +51,15 @@
     src: docker-compose.hetz1.yml.j2
     dest: "{{ charging_dir }}/docker-compose.hetz1.yml"
     mode: "0644"
+
+# Debug capture dir: world-writable so the unprivileged api container can write
+# pushes into the bind mount. Only when capture is enabled.
+- name: Ensure capture dir (when mobilithek_capture)
+  when: mobilithek_capture | default(false)
+  ansible.builtin.file:
+    path: "{{ charging_dir }}/capture"
+    state: directory
+    mode: "0777"
 
 # --- secrets ------------------------------------------------------------
 - name: Render .env (vault)
