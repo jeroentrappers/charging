@@ -1,0 +1,238 @@
+{
+  "nav": {
+    "find": "Suchen",
+    "insights": "Statistiken",
+    "apiDocs": "API-Doku"
+  },
+  "geo": {
+    "locate": "Standort",
+    "locating": "Orte…",
+    "notSupported": "Standort nicht unterstützt – tippe auf die Karte, um deinen Punkt zu setzen",
+    "blocked": "Standort blockiert – tippe auf die Karte, um deinen Punkt zu setzen",
+    "unavailable": "Standort nicht verfügbar – tippe auf die Karte, um deinen Punkt zu setzen"
+  },
+  "session": {
+    "charge": "Laden",
+    "speed": "Geschwindigkeit",
+    "energy": "Energie",
+    "power": "Leistung",
+    "fastest": "Schnellste",
+    "kwh": "{{n}} kWh",
+    "kwhUnit": "kWh",
+    "kw": "{{n}} kW",
+    "need": {
+      "best": "Günstigste",
+      "topup100": "Schnelles Nachladen (≈100 km)",
+      "charge1080": "Volladung (10→80 %)",
+      "custom": "Individuell"
+    },
+    "speedOpt": {
+      "ac11": "Heim-AC (11 kW)",
+      "ac22": "Schnelles AC (22 kW)",
+      "dc150": "Schnelles DC (150 kW)",
+      "dc300": "Ultraschnelles DC (300 kW)"
+    },
+    "label": {
+      "topup100_ac11": "100 km Nachladen · Heim-AC (11 kW)",
+      "topup100_ac22": "100 km Nachladen · Schnelles AC (22 kW)",
+      "topup100_dc150": "100 km Nachladen · Schnelles DC (150 kW)",
+      "topup100_dc300": "100 km Nachladen · Ultra-DC (300 kW)",
+      "charge1080_ac11": "10→80 % · Heim-AC (11 kW)",
+      "charge1080_ac22": "10→80 % · Schnelles AC (22 kW)",
+      "charge1080_dc150": "10→80 % · Schnelles DC (150 kW)",
+      "charge1080_dc300": "10→80 % · Ultra-DC (300 kW)",
+      "urban_ac22": "Schnelles Nachladen in der Stadt · Schnelles AC (22 kW)",
+      "overnight_ac11": "Über Nacht laden · Heim-AC (11 kW)"
+    }
+  },
+  "filters": {
+    "title": "Filter",
+    "available": "Jetzt verfügbar",
+    "includePrivate": "Heim/privat einschließen",
+    "anyPower": "Beliebige Leistung",
+    "minPower": "≥ {{kw}} kW",
+    "anyPlug": "Beliebiger Stecker",
+    "plug": {
+      "type2": "Typ 2",
+      "ccs": "CCS",
+      "chademo": "CHAdeMO"
+    },
+    "fitsCar": "Passt zu meinem Auto"
+  },
+  "find": {
+    "searching": "Suche…",
+    "chargers_one": "{{count}} Ladepunkt",
+    "chargers_other": "{{count}} Ladepunkte",
+    "cheapestFirst": "nach Preis + Umweg",
+    "detour": "Umweg",
+    "tapHint": "Tippe auf die Karte, um deinen Standort zu setzen",
+    "loadError": "Ladepunkte konnten nicht geladen werden. Prüfe deine Verbindung.",
+    "emptyAvailable": "Gerade keine freien Ladepunkte in der Nähe. Schalte „Jetzt verfügbar“ aus.",
+    "empty": "Keine Ladepunkte in der Nähe gefunden.",
+    "caveat": "Ad-hoc-Preise (ohne Vertrag) – deine Ladekarte kann abweichen. Daten: transportdata.be / AFIR.",
+    "alongRoute": "entlang deiner Route"
+  },
+  "avail": {
+    "free": "Jetzt frei",
+    "busy": "Belegt",
+    "unknown": "Unbekannt"
+  },
+  "detail": {
+    "close": "Schließen",
+    "navigate": "Navigieren",
+    "updated": "aktualisiert {{ago}}",
+    "live": "Live",
+    "refresh": "Aktualisieren",
+    "checking": "Prüfe…",
+    "priceThisSession": "Preis (diese Sitzung)",
+    "power": "Leistung",
+    "plug": "Stecker",
+    "distance": "Entfernung",
+    "howBuilt": "Wie der Preis entsteht",
+    "combineNote": "Diese Komponenten ergeben zusammen die vergleichbaren Preise pro Sitzung unten.",
+    "idleWarning": "Dieser Ladepunkt berechnet nach Ladeende eine Standgebühr pro Minute – zügig ausstecken und wegfahren. Sie ist in den Preisen unten nicht enthalten (die annehmen, dass du pünktlich gehst).",
+    "priceHistory": "Preisverlauf",
+    "notEnoughHistory": "Noch nicht genug Verlauf – wir erfassen einen Punkt, sobald sich der Tarif ändert.",
+    "allSessions": "Alle Sitzungen",
+    "caveat": "Ad-hoc-Preis (ohne Vertrag) – deine Ladekarte kann abweichen.",
+    "when": "wann",
+    "otherwise": "Andere Zeiten",
+    "allTimes": "Jederzeit",
+    "freeConn": "kostenlos stehen bleiben",
+    "payConnected": "Zahlen während angesteckt",
+    "freeConnected": "Kostenlos während angesteckt",
+    "priceConfirmed": "Preis bestätigt {{ago}}",
+    "viaSource": "über {{source}}"
+  },
+  "comp": {
+    "ENERGY": "Energie",
+    "FLAT": "Sitzungsgebühr",
+    "TIME": "Zeit (während des Ladens)",
+    "PARKING_TIME": "Standgebühr (nach dem Laden)"
+  },
+  "unit": {
+    "kwh": "/ kWh",
+    "session": "/ Sitzung",
+    "hour": "/ h",
+    "min": "/min"
+  },
+  "restr": {
+    "afterMin": "nach {{n}} Min",
+    "uptoMin": "bis {{n}} Min",
+    "fromKwh": "ab {{n}} kWh",
+    "uptoKwh": "bis {{n}} kWh",
+    "kwhRange": "{{min}}–{{max}} kWh",
+    "minPower": "≥{{n}} kW",
+    "maxPower": "≤{{n}} kW",
+    "powerRange": "{{min}}–{{max}} kW"
+  },
+  "time": {
+    "unknown": "unbekannt",
+    "justNow": "gerade eben",
+    "minAgo": "vor {{n}} Min",
+    "hAgo": "vor {{n}} Std",
+    "dAgo": "vor {{n}} T"
+  },
+  "insights": {
+    "loading": "lädt…",
+    "error": "Statistiken konnten nicht geladen werden.",
+    "intro": "Preise sind eine volle 10→80 %-Ladung für ein typisches E-Auto, vor jedem Abo. Private/Heim-Ladepunkte sind ausgeschlossen.",
+    "chargers": "Ladepunkte mit Preis",
+    "ofTotal": "von {{n}} gelistet",
+    "coverage": "{{pct}} % mit Preis",
+    "medianAll": "Median-Preis",
+    "acMedian": "AC-Median",
+    "dcMedian": "DC-Median",
+    "perCharger": "{{n}} Ladepunkte",
+    "trendTitle": "Durchschnittlicher Preistrend",
+    "trendNote": "Verfolgt Preisänderungen seit Juni 2026 – die Trendlinie füllt sich mit den Monaten.",
+    "noHistory": "Noch kein Verlauf – baut sich mit der Datenerfassung auf.",
+    "areaTitle": "Preis nach Gebiet",
+    "byCity": "Stadt",
+    "byPostal": "PLZ",
+    "cheapest": "Günstigste",
+    "priciest": "Teuerste",
+    "sessionTitle": "Was eine Ladung typischerweise kostet",
+    "region": "Region",
+    "count": "Ladepunkte",
+    "avg": "Durchschn.",
+    "median": "Median",
+    "min": "Min",
+    "max": "Max"
+  },
+  "profile": {
+    "energy": "Energie",
+    "speed": "Geschwindigkeit",
+    "preset": {
+      "km100": "~100 km",
+      "soc1080": "10→80 %",
+      "full": "Voll"
+    }
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "car": "Dein Auto",
+    "battery": "Nutzbare Batterie (kWh)",
+    "consumption": "Verbrauch (kWh/100 km)",
+    "detour": "Umweg",
+    "detourEnable": "Umweg zur Anfahrt einbeziehen",
+    "refPrice": "Energiepreis für den Umweg (€/kWh)",
+    "valuePerH": "Wert deiner Zeit (€/h)",
+    "note": "In deinem Browser gespeichert. Der Umweg addiert die zusätzliche Energie und Zeit der Hin- und Rückfahrt zur Rangfolge.",
+    "display": "Anzeige",
+    "language": "Sprache",
+    "theme": "Design",
+    "carModel": "Automodell",
+    "customCar": "Eigenes / anderes",
+    "memberships": "Ladekarten",
+    "membershipsNote": "Wähle die Karten, die du hast – Preise zeigen dann das Günstigere aus Ad-hoc und deiner Karte. Tarife sind geschätzt (≈), prüfe sie bei deinem Anbieter."
+  },
+  "lang": {
+    "label": "Sprache"
+  },
+  "report": {
+    "community": "Community-Meldungen",
+    "none": "Noch keine Meldungen.",
+    "add": "Problem melden",
+    "submit": "Senden",
+    "thanks": "Danke – erfasst.",
+    "flagged": "gemeldete Probleme",
+    "byN_one": "{{count}} Meldung",
+    "byN_other": "{{count}} Meldungen",
+    "hoursVal": "schließt {{close}}",
+    "kwVal": "~{{kw}} kW gesehen",
+    "ph": {
+      "time": "HH:MM",
+      "kw": "kW",
+      "price": "€/kWh"
+    },
+    "type": {
+      "out_of_service": "Außer Betrieb",
+      "back_in_service": "Wieder in Betrieb",
+      "spot_blocked": "Platz blockiert (Verbrenner/belegt)",
+      "not_public": "Nicht wirklich öffentlich",
+      "access_blocked": "Zugang blockiert (Tor/Schlüssel)",
+      "site_hours": "Standort nachts geschlossen",
+      "slower_than_rated": "Langsamer als angegeben",
+      "price_incorrect": "Preis ist falsch",
+      "wrong_location": "Falscher Standort",
+      "does_not_exist": "Existiert nicht",
+      "confirmed_ok": "Bestätigt OK"
+    }
+  },
+  "theme": {
+    "light": "Hell",
+    "dark": "Dunkel",
+    "system": "System"
+  },
+  "confidence": {
+    "direct": "betreiberdirekt",
+    "aggregator": "aggregiert"
+  },
+  "trip": {
+    "addDestination": "Ziel hinzufügen…",
+    "distance": "{{km}} km · {{min}} Min",
+    "range": "Reichweite ~{{km}} km",
+    "clear": "Ziel löschen"
+  }
+}

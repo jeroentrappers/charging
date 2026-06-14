@@ -87,21 +87,25 @@
     - { src: files/mob-cert.pem, dest: secrets/mob-cert.pem }
     - { src: files/mob-key.pem, dest: secrets/mob-key.pem }
 
-# --- OSRM data (one-time / on region change) ----------------------------
+# --- OSRM data (one-time / on graph change). Cross-country merge can take a
+#     while (download ~10 GB + extract/partition/customize); plenty of RAM. -----
 - name: Check for processed OSRM graph
   ansible.builtin.stat:
-    path: "{{ charging_dir }}/osrm-data/{{ osrm_region_name }}.osrm.cell_metrics"
-  register: osrm_graph
+    path: "{{ charging_dir }}/osrm-data/{{ osrm_graph }}.osrm.cell_metrics"
+  register: osrm_graph_stat
 
-- name: Prepare OSRM data (download + extract/partition/customize)
-  when: not osrm_graph.stat.exists
+- name: Prepare OSRM data (download + merge + extract/partition/customize)
+  when: not osrm_graph_stat.stat.exists
   ansible.builtin.command:
     chdir: "{{ charging_dir }}"
     cmd: ./scripts/osrm-prep.sh
   environment:
     COMPOSE: "docker compose {{ compose_files | map('regex_replace', '^', '-f ') | join(' ') }}"
-    PBF_URL: "{{ osrm_region_url }}"
+    OSRM_GRAPH: "{{ osrm_graph }}"
+    OSRM_REGIONS: "{{ osrm_regions }}"
   changed_when: true
+  async: 7200        # cross-country prep can run well beyond the SSH timeout
+  poll: 30
 
 # --- build + run --------------------------------------------------------
 - name: Build + start the stack

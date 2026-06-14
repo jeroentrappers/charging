@@ -31,10 +31,12 @@ compose_files:
   - docker-compose.osrm.yml
   - docker-compose.hetz1.yml   # rendered by the charging role (host override)
 
-# OSRM routing extract. Belgium-only today (matches appmire4-web); bump to a
-# merged BENELUX+DE+FR extract here later — this box has the headroom.
-osrm_region_name: belgium-latest
-osrm_region_url: https://download.geofabrik.de/europe/belgium-latest.osm.pbf
+# OSRM routing graph. Cross-country: the prep merges these Geofabrik extracts
+# into one graph so corridor search routes across borders (matches our charger
+# coverage). This box has the headroom (16 cores / 125 GB). osrm_graph is also
+# rendered into .env so compose selects the right /data/<graph>.osrm.
+osrm_graph: eu-west
+osrm_regions: "europe/belgium europe/netherlands europe/luxembourg europe/germany europe/france"
 
 # Firewall: ufw is the single firewall. SSH stays restricted to source IPs.
 # ssh_allow_ips = permanent static allow-list (the safety net, never auto-pruned).

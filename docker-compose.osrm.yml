@@ -9,7 +9,10 @@
 services:
   osrm:
     image: ghcr.io/project-osrm/osrm-backend:latest
-    command: osrm-routed --algorithm mld --max-table-size 8000 /data/belgium-latest.osrm
+    # OSRM_GRAPH selects the prepared graph (default belgium-latest for dev;
+    # the cross-country box sets OSRM_GRAPH=eu-west in .env). Must match what
+    # scripts/osrm-prep.sh produced in ./osrm-data.
+    command: osrm-routed --algorithm mld --max-table-size 8000 /data/${OSRM_GRAPH:-belgium-latest}.osrm
     volumes:
       - ./osrm-data:/data
     expose:

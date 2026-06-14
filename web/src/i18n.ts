@@ -4,13 +4,15 @@ import LanguageDetector from 'i18next-browser-languagedetector'
 import en from './locales/en.json'
 import nl from './locales/nl.json'
 import fr from './locales/fr.json'
+import de from './locales/de.json'
 
-// English is the source language; Dutch and French are translations.
+// English is the source language; Dutch, French and German are translations.
 // Resource files live in src/locales/*.json (i18next JSON — a Weblate format).
 export const LANGS = [
   { code: 'en', label: 'English' },
   { code: 'nl', label: 'Nederlands' },
   { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
 ] as const
 
 i18n
@@ -21,10 +23,11 @@ i18n
       en: { translation: en },
       nl: { translation: nl },
       fr: { translation: fr },
+      de: { translation: de },
     },
     fallbackLng: 'en',
-    supportedLngs: ['en', 'nl', 'fr'],
-    nonExplicitSupportedLngs: true, // nl-BE -> nl, fr-BE -> fr
+    supportedLngs: ['en', 'nl', 'fr', 'de'],
+    nonExplicitSupportedLngs: true, // nl-BE -> nl, fr-BE -> fr, de-DE -> de
     interpolation: { escapeValue: false },
     detection: { order: ['localStorage', 'navigator'], caches: ['localStorage'] },
   })

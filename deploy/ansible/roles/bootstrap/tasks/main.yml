@@ -10,6 +10,7 @@
       - git
       - rsync
       - ufw
+      - osmium-tool
       - python3
     state: present
     update_cache: true
