@@ -16,7 +16,7 @@
     "speed": "Vitesse",
     "energy": "Énergie",
     "power": "Puissance",
-    "fastest": "Le plus rapide",
+    "anySpeed": "Toutes",
     "kwh": "{{n}} kWh",
     "kwhUnit": "kWh",
     "kw": "{{n}} kW",

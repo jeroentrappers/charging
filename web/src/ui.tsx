@@ -146,7 +146,7 @@ export function SessionBar(props: {
             <span className="seg-label">{t('session.power')}</span>
             <div className="segs">
               <button className={`seg ${custom.powerKW == null ? 'on' : ''}`} onClick={() => onCustom({ ...custom, powerKW: null })}>
-                {t('session.fastest')}
+                {t('session.anySpeed')}
               </button>
               {CUSTOM_POWERS.map((p) => (
                 <button key={p} className={`seg ${custom.powerKW === p ? 'on' : ''}`} onClick={() => onCustom({ ...custom, powerKW: p })}>
@@ -217,7 +217,7 @@ export function ProfileBar(props: {
         <span className="seg-label">{t('profile.speed')}</span>
         <div className="segs">
           <button className={`seg ${charge.powerKW == null ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, powerKW: null })}>
-            {t('session.fastest')}
+            {t('session.anySpeed')}
           </button>
           {speeds.map((p) => (
             <button key={p} className={`seg ${charge.powerKW === p ? 'on' : ''}`} onClick={() => props.onCharge({ ...charge, powerKW: p })}>
@@ -294,7 +294,7 @@ export function SettingsPanel(props: {
                   maxAcKw: c.acKw,
                   maxDcKw: c.dcKw,
                 },
-                // Drop a target speed the new car can't reach (fall back to "fastest").
+                // Drop a target speed the new car can't reach (fall back to "all speeds").
                 ...(charge.powerKW != null && charge.powerKW > c.dcKw ? { charge: { ...charge, powerKW: null } } : {}),
               })
             }}
