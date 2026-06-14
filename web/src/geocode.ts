@@ -7,6 +7,30 @@ export interface Place {
   lon: number
 }
 
+// Trim a verbose Nominatim label to its first couple of parts.
+export function shortPlace(label: string): string {
+  return label.split(',').slice(0, 2).join(',').trim()
+}
+
+// Reverse-geocode a coordinate to a concise "road, city" label (best-effort,
+// low-volume — only when the located fix changes).
+export async function reverseGeocode(lat: number, lon: number, signal?: AbortSignal): Promise<string> {
+  const url = new URL('https://nominatim.openstreetmap.org/reverse')
+  url.searchParams.set('lat', String(lat))
+  url.searchParams.set('lon', String(lon))
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('zoom', '16') // street level
+  url.searchParams.set('addressdetails', '1')
+  const res = await fetch(url.toString(), { signal, headers: { Accept: 'application/json' } })
+  if (!res.ok) return ''
+  const r: { display_name?: string; address?: Record<string, string> } = await res.json()
+  const a = r.address || {}
+  const road = a.road || a.pedestrian || a.footway || a.suburb || a.neighbourhood || ''
+  const city = a.city || a.town || a.village || a.municipality || a.county || ''
+  const concise = [road, city].filter(Boolean).join(', ')
+  return concise || shortPlace(r.display_name || '')
+}
+
 export async function geocode(query: string, signal?: AbortSignal): Promise<Place[]> {
   const q = query.trim()
   if (q.length < 3) return []

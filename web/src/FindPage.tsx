@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { api, type Charger, type RouteGeometry } from './api'
 import { MapView } from './MapView'
 import { rankChargers } from './pricing'
-import { geocode, type Place } from './geocode'
+import { geocode, shortPlace, type Place } from './geocode'
 import type { NavState } from './url'
 import type { Settings } from './settings'
 import { AvailBadge, availOf, eur, km, plugLabel, priceOf, type Filters } from './ui'
@@ -31,6 +31,9 @@ export function FindPage(props: {
   onCloseCharger: () => void
   settings: Settings // car + charging profile + detour weighting
   filters: Filters
+  tripTo: Place | null // corridor destination (lifted to App so it shows in the header)
+  onSetTrip: (p: Place) => void
+  onClearTrip: () => void
 }) {
   const { t } = useTranslation()
   const [vp, setVp] = useState<Viewport | null>(null)
@@ -47,9 +50,9 @@ export function FindPage(props: {
   const [view, setView] = useState<{ to: [number, number]; zoom?: number } | null>(null)
   const [viewNonce, setViewNonce] = useState(0)
   const [expanded, setExpanded] = useState(false)
-  // Trip / corridor mode: a destination turns the list into "chargers along the
-  // way", ranked by price + deviation from the route.
-  const [tripTo, setTripTo] = useState<Place | null>(null)
+  // Trip / corridor mode: a destination (props.tripTo, owned by App) turns the
+  // list into "chargers along the way", ranked by price + deviation from route.
+  const tripTo = props.tripTo
   const [route, setRoute] = useState<RouteGeometry | null>(null)
   const [routeNonce, setRouteNonce] = useState(0)
 
@@ -239,7 +242,7 @@ export function FindPage(props: {
 
       <div className={`sheet ${expanded ? 'expanded' : ''}`}>
         <div className="handle"><button aria-label="toggle list" onClick={() => setExpanded((e) => !e)} /></div>
-        <TripBar dest={tripTo} route={route} settings={props.settings} onSet={setTripTo} onClear={() => setTripTo(null)} />
+        <TripBar dest={tripTo} route={route} settings={props.settings} onSet={props.onSetTrip} onClear={props.onClearTrip} />
         <div className="sheet-head">
           <h2>{loading ? t('find.searching') : t('find.chargers', { count: chargers.length })}</h2>
           <span className="muted">{tripTo ? t('find.alongRoute') : t('find.cheapestFirst')}</span>
@@ -349,9 +352,4 @@ function TripBar(props: {
       )}
     </div>
   )
-}
-
-// Trim a verbose Nominatim label to its first couple of parts.
-function shortPlace(label: string): string {
-  return label.split(',').slice(0, 2).join(',').trim()
 }

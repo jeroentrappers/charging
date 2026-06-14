@@ -6,6 +6,7 @@ import { buildPath, parseUrl, type NavState } from './url'
 import { useSettings } from './settings'
 import { useTheme } from './theme'
 import { ProfileBar, SettingsPanel, FilterBar, type Filters } from './ui'
+import { reverseGeocode, shortPlace, type Place } from './geocode'
 
 const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
 
@@ -59,6 +60,8 @@ export default function App() {
   const [accuracy, setAccuracy] = useState<number | null>(null) // GPS accuracy radius, metres
   const [geoNote, setGeoNote] = useState('')
   const [geoNonce, setGeoNonce] = useState(0) // bumps on each explicit locate -> recenter + re-follow geo
+  const [locLabel, setLocLabel] = useState('') // reverse-geocoded address of the current location
+  const [tripTo, setTripTo] = useState<Place | null>(null) // corridor destination (shown in the header)
   const watchId = useRef<number | null>(null)
   const bestAccuracy = useRef<number>(Infinity) // smallest accuracy radius seen this locate cycle
 
@@ -114,6 +117,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Reverse-geocode the current location to a readable address (debounced;
+  // located changes only when the fix improves, so this is low-volume).
+  useEffect(() => {
+    if (!located) {
+      setLocLabel('')
+      return
+    }
+    const ctrl = new AbortController()
+    const h = setTimeout(() => {
+      reverseGeocode(located[0], located[1], ctrl.signal).then(setLocLabel).catch(() => {})
+    }, 400)
+    return () => {
+      clearTimeout(h)
+      ctrl.abort()
+    }
+  }, [located?.[0], located?.[1]])
+
   return (
     <div className="app">
       <header className="topbar">
@@ -142,7 +162,15 @@ export default function App() {
       {tab === 'find' && (
         <div className="controls">
           <div className="filters">
-            <button className="chip" onClick={locate}>📍 {t('geo.locate')}</button>
+            <button className="chip loc-chip" onClick={locate} title={t('geo.locate')}>
+              📍 {locLabel || t('geo.locate')}
+            </button>
+            {tripTo && (
+              <span className="chip dest-chip">
+                🏁 {shortPlace(tripTo.label)}
+                <button className="dest-x" onClick={() => setTripTo(null)} aria-label={t('trip.clear')}>✕</button>
+              </span>
+            )}
             {(() => {
               const n =
                 (filters.available ? 1 : 0) +
@@ -186,6 +214,9 @@ export default function App() {
           onCloseCharger={onCloseCharger}
           settings={settings}
           filters={filters}
+          tripTo={tripTo}
+          onSetTrip={setTripTo}
+          onClearTrip={() => setTripTo(null)}
         />
       ) : (
         <Suspense fallback={<div className="insights"><div className="state"><div className="spinner" />{t('insights.loading')}</div></div>}>
