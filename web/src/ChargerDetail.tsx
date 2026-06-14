@@ -121,6 +121,23 @@ function TariffTimeline({ elements, t }: { elements: TariffElement[]; t: TFuncti
   )
 }
 
+// Navigation targets for the destination chooser. On mobile these universal
+// links hand off to the installed app (Waze / Google Maps / Apple Maps — the
+// "intent"); on the web they open the provider's site. Waze is listed first as
+// most drivers reach for it.
+function navOptions(lat: number, lon: number): { key: string; label: string; href: string }[] {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isIOS = /iPad|iPhone|iPod/.test(ua)
+  const dest = `${lat},${lon}`
+  const opts = [
+    { key: 'waze', label: 'Waze', href: `https://waze.com/ul?ll=${dest}&navigate=yes` },
+    { key: 'google', label: 'Google Maps', href: `https://www.google.com/maps/dir/?api=1&destination=${dest}` },
+  ]
+  if (isIOS) opts.push({ key: 'apple', label: 'Apple Maps', href: `https://maps.apple.com/?daddr=${dest}` })
+  opts.push({ key: 'osm', label: 'OpenStreetMap', href: `https://www.openstreetmap.org/directions?to=${dest}` })
+  return opts
+}
+
 // A clear "when does this apply" header for a tariff element.
 function whenLabel(el: TariffElement, hasWindows: boolean, t: TFunction): string {
   const txt = restrictionText(el.restrictions, t)
@@ -138,6 +155,8 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
   const [inputVal, setInputVal] = useState('')
   const [sending, setSending] = useState(false)
   const [thanks, setThanks] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false) // community section collapsed by default — it is bulky
+  const [navOpen, setNavOpen] = useState(false) // navigate-app chooser
 
   useEffect(() => {
     let alive = true
@@ -224,7 +243,6 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
   const current = (history ?? []).find((h) => h.observed_to == null) ?? (history ?? [])[0] ?? null
   const elements = current?.price_components?.elements ?? []
   const hasIdle = elements.some((el) => el.price_components.some((c) => isIdle(c.type) && c.price > 0))
-  const nav = `https://www.openstreetmap.org/directions?to=${charger.lat},${charger.lon}`
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -269,48 +287,59 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
           </p>
         )}
 
-        {/* Community feedback — shown alongside operator data, never replacing it. */}
-        <h3 style={{ margin: '12px 0 6px' }}>{t('report.community')}</h3>
-        {reports.length > 0 ? (
-          <ul className="reports">
-            {reports.map((r) => (
-              <li key={r.type} className={r.flags ? 'rep flag' : 'rep'}>
-                <span className="rep-label">{t(`report.type.${r.type}`, r.type)}</span>
-                {reportValueText(r, t) && <span className="rep-val"> · {reportValueText(r, t)}</span>}
-                <span className="rep-meta"> · {t('report.byN', { count: r.count })} · {ago(r.last_at, t)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted" style={{ fontSize: 13, margin: '0 0 6px' }}>{t('report.none')}</p>
-        )}
+        {/* Community feedback — shown alongside operator data, never replacing it.
+            Collapsed by default; it is bulky and secondary to the price/tariff. */}
+        <button
+          className="section-toggle"
+          aria-expanded={feedbackOpen}
+          onClick={() => setFeedbackOpen((o) => !o)}
+        >
+          {t('report.community')}{reports.length ? ` · ${reports.length}` : ''} {feedbackOpen ? '▾' : '▸'}
+        </button>
+        {feedbackOpen && (
+          <>
+            {reports.length > 0 ? (
+              <ul className="reports">
+                {reports.map((r) => (
+                  <li key={r.type} className={r.flags ? 'rep flag' : 'rep'}>
+                    <span className="rep-label">{t(`report.type.${r.type}`, r.type)}</span>
+                    {reportValueText(r, t) && <span className="rep-val"> · {reportValueText(r, t)}</span>}
+                    <span className="rep-meta"> · {t('report.byN', { count: r.count })} · {ago(r.last_at, t)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted" style={{ fontSize: 13, margin: '0 0 6px' }}>{t('report.none')}</p>
+            )}
 
-        <div className="report-actions">
-          <span className="seg-label">{t('report.add')}</span>
-          <div className="report-chips">
-            {REPORT_TYPES.map((rt) => (
-              <span key={rt.key} className="report-chip-wrap">
-                <button className={`chip ${pending === rt.key ? 'on' : ''}`} disabled={sending} onClick={() => chooseType(rt)}>
-                  {t(`report.type.${rt.key}`, rt.key)}
-                </button>
-                {pending === rt.key && rt.value && (
-                  <span className="report-input">
-                    <input
-                      autoFocus
-                      type={rt.value === 'time' ? 'time' : 'number'}
-                      inputMode={rt.value === 'time' ? undefined : 'decimal'}
-                      placeholder={t(`report.ph.${rt.value}`)}
-                      value={inputVal}
-                      onChange={(e) => setInputVal(e.target.value)}
-                    />
-                    <button className="btn primary" disabled={sending} onClick={() => confirmValue(rt)}>{t('report.submit')}</button>
+            <div className="report-actions">
+              <span className="seg-label">{t('report.add')}</span>
+              <div className="report-chips">
+                {REPORT_TYPES.map((rt) => (
+                  <span key={rt.key} className="report-chip-wrap">
+                    <button className={`chip ${pending === rt.key ? 'on' : ''}`} disabled={sending} onClick={() => chooseType(rt)}>
+                      {t(`report.type.${rt.key}`, rt.key)}
+                    </button>
+                    {pending === rt.key && rt.value && (
+                      <span className="report-input">
+                        <input
+                          autoFocus
+                          type={rt.value === 'time' ? 'time' : 'number'}
+                          inputMode={rt.value === 'time' ? undefined : 'decimal'}
+                          placeholder={t(`report.ph.${rt.value}`)}
+                          value={inputVal}
+                          onChange={(e) => setInputVal(e.target.value)}
+                        />
+                        <button className="btn primary" disabled={sending} onClick={() => confirmValue(rt)}>{t('report.submit')}</button>
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
-            ))}
-          </div>
-          {thanks && <div className="report-thanks">✓ {t('report.thanks')}</div>}
-        </div>
+                ))}
+              </div>
+              {thanks && <div className="report-thanks">✓ {t('report.thanks')}</div>}
+            </div>
+          </>
+        )}
 
         {elements.length > 0 && (
           <>
@@ -369,9 +398,20 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
         )}
 
         <p className="caveat">{t('detail.caveat')}</p>
-        <a className="btn primary" href={nav} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 6 }}>
-          {t('detail.navigate')}
-        </a>
+        <div className="nav-block">
+          <button className="btn primary" aria-expanded={navOpen} onClick={() => setNavOpen((o) => !o)}>
+            {t('detail.navigate')} {navOpen ? '▾' : '▸'}
+          </button>
+          {navOpen && (
+            <div className="nav-menu">
+              {navOptions(charger.lat, charger.lon).map((o) => (
+                <a key={o.key} className="nav-opt" href={o.href} target="_blank" rel="noreferrer">
+                  {o.label}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
