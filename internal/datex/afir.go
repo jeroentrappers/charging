@@ -87,8 +87,15 @@ type afirPrice struct {
 // ---- Status publication (EnergyInfrastructureStatusPublication) ----
 
 type afirStatusPub struct {
-	Creator  afirCreatorXML      `xml:"payload>publicationCreator"`
-	Stations []afirStationStatus `xml:"payload>energyInfrastructureStatus>energyInfrastructureStationStatus"`
+	Creator afirCreatorXML `xml:"payload>publicationCreator"`
+	// Publishers wrap station statuses under either energyInfrastructureStatus
+	// or energyInfrastructureSiteStatus (e.g. DELND). Accept both.
+	Stations     []afirStationStatus `xml:"payload>energyInfrastructureStatus>energyInfrastructureStationStatus"`
+	SiteStations []afirStationStatus `xml:"payload>energyInfrastructureSiteStatus>energyInfrastructureStationStatus"`
+}
+
+func (p afirStatusPub) allStations() []afirStationStatus {
+	return append(append([]afirStationStatus(nil), p.Stations...), p.SiteStations...)
 }
 
 type afirStationStatus struct {
@@ -286,7 +293,7 @@ func ParseAFIRStatus(data []byte) (map[string]AFIRStatus, error) {
 		return nil, fmt.Errorf("decode afir status: %w", err)
 	}
 	out := map[string]AFIRStatus{}
-	for _, st := range pub.Stations {
+	for _, st := range pub.allStations() {
 		for _, rps := range st.RefillPoints {
 			id := rps.refID()
 			if id == "" {
@@ -329,7 +336,7 @@ func parseAFIRXML(data []byte) (*AFIRDoc, error) {
 		}
 		doc.Kind = "status"
 		doc.Creator = AFIRCreator{Country: pub.Creator.Country, NationalIdentifier: pub.Creator.NationalIdentifier}
-		for _, st := range pub.Stations {
+		for _, st := range pub.allStations() {
 			for _, rps := range st.RefillPoints {
 				id := rps.refID()
 				if id == "" {

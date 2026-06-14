@@ -32,11 +32,11 @@ const xmlStatusPush = `<?xml version="1.0"?>
 <ns2:messageContainer xmlns:ns2="http://datex2.eu/schema/3/messageContainer" xmlns:ns11="http://datex2.eu/schema/3/energyInfrastructure">
 <ns2:payload xsi:type="ns11:EnergyInfrastructureStatusPublication" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <publicationCreator><country>de</country><nationalIdentifier>DELND</nationalIdentifier></publicationCreator>
-  <ns11:energyInfrastructureStatus>
+  <ns11:energyInfrastructureSiteStatus>
     <ns11:energyInfrastructureStationStatus>
       <refillPointStatus><reference id="cp-1" targetClass="ElectricChargingPoint"/><status>available</status></refillPointStatus>
     </ns11:energyInfrastructureStationStatus>
-  </ns11:energyInfrastructureStatus>
+  </ns11:energyInfrastructureSiteStatus>
 </ns2:payload></ns2:messageContainer>`
 
 func TestParseAFIR_XML(t *testing.T) {
