@@ -147,6 +147,15 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
     }
   }, [charger.id])
 
+  // Esc closes the drawer (standard fly-out behaviour).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   // On open, ask for the freshest status. Only Monta chargers (with creds
   // configured) come back as a live reading; otherwise the stored badge stands.
   function refreshLive() {
@@ -219,7 +228,7 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="detail" onClick={(e) => e.stopPropagation()}>
+      <div className="detail" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="detail-head">
           <div>
             <h2>{charger.name || 'Charger'}</h2>
