@@ -73,6 +73,23 @@ AVAILABLE/CHARGING/OUTOFORDER/UNKNOWN; `adhoc_price`→ENERGY (the comparable),
 we have no location for are skipped (the push reports rows=0). A payload that
 matches neither eliso nor a known AFIR publication is quarantined to `failed/`.
 
+## Delta feeds + the source heartbeat
+
+Most status pushes are **deltas**: a publisher sends only the refill points whose
+status/price just changed (Tesla pushes one at a time, EnBW small batches), not
+its whole fleet. `UpsertStatus` bumps `charger_status.updated_at` only for the
+chargers in the push, so an unchanged-but-healthy charger's reading ages out and
+would read as **stale** (default `AVAILABILITY_STALE_AFTER=15m`) — dropping from
+"available now" results — even while its source is actively pushing siblings.
+
+To avoid that, every parsed push bumps `cpo.last_push_at` (a per-source
+heartbeat, `BumpCPOPush`). The read-path freshness check treats a charger as
+live when it has a real status reading **and** (its own update is recent **or**
+its source pushed recently). So a quiet stall stays visible while its source is
+demonstrably connected, and only goes stale once the *source* itself falls
+silent. Snapshot feeds (eliso) and pull sources refresh every charger each cycle,
+so they don't rely on the heartbeat.
+
 ## Reality check
 
 Coverage was ~50% of German charging capacity in late 2025 and **ad-hoc price is

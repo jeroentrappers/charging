@@ -68,6 +68,10 @@ func (e *Engine) ingestElisoPush(ctx context.Context, p *elisoPush) (string, int
 	// charger attribution is unaffected — we look up by EVSE id, not CPO.
 	defer e.mobLocks.lock(elisoCPOID)()
 
+	// No push heartbeat here: eliso sends a full snapshot every push, so each one
+	// freshens charger_status.updated_at on all its chargers directly. (The
+	// heartbeat exists for delta feeds that only push what changed.)
+
 	n := 0
 	for _, ev := range p.EVSEs {
 		if ev.EVSEID == "" {

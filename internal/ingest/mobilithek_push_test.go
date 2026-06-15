@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/appmire/charging/internal/datex"
 	"github.com/appmire/charging/internal/store"
@@ -41,6 +42,60 @@ const mobTablePush = `{"payload":{"profileNameG":"AFIR Energy Infrastructure",
 const mobStatusPush = `{"payload":{"aegiEnergyInfrastructureStatusPublication":{"publicationCreator":{"country":"DE","nationalIdentifier":"DE-NAP-GPJOULECONNECT"},
 "energyInfrastructureSiteStatus":[{"reference":{"idG":"site-1"},"energyInfrastructureStationStatus":[{"reference":{"idG":"st-1"},
 "refillPointStatus":[{"aegiElectricChargingPointStatus":{"reference":{"idG":"cp-1"},"status":{"value":"blocked"}}}]}]}]}}}`
+
+const mobStatusPushAvailable = `{"payload":{"aegiEnergyInfrastructureStatusPublication":{"publicationCreator":{"country":"DE","nationalIdentifier":"DE-NAP-GPJOULECONNECT"},
+"energyInfrastructureSiteStatus":[{"reference":{"idG":"site-1"},"energyInfrastructureStationStatus":[{"reference":{"idG":"st-1"},
+"refillPointStatus":[{"aegiElectricChargingPointStatus":{"reference":{"idG":"cp-1"},"status":{"value":"available"}}}]}]}]}}}`
+
+// A delta status feed only pushes the chargers that changed. A charger whose own
+// status hasn't changed within the stale window must still read as fresh while
+// its source pushed recently (the per-source heartbeat), and go stale once the
+// source itself falls quiet.
+func TestMobilithekPush_SourceHeartbeatKeepsDeltaFedChargerFresh(t *testing.T) {
+	ctx := context.Background()
+	st := setup(t)
+	e := NewEngine(st, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	if _, _, err := e.IngestMobilithekPush(ctx, []byte(mobTablePush)); err != nil {
+		t.Fatalf("table ingest: %v", err)
+	}
+	if _, _, err := e.IngestMobilithekPush(ctx, []byte(mobStatusPushAvailable)); err != nil {
+		t.Fatalf("status ingest: %v", err)
+	}
+
+	// Age this charger's own reading past a 15-min window, but the source pushed
+	// just now (the available status push bumped last_push_at).
+	if _, err := st.Pool.Exec(ctx, `UPDATE charger_status SET updated_at = now() - interval '20 min'`); err != nil {
+		t.Fatalf("age status: %v", err)
+	}
+
+	q := store.NearbyQuery{Lat: 54.586, Lon: 8.99, RadiusM: 2000, Limit: 5, IncludePrivate: true, StaleAfter: 15 * time.Minute}
+	res, err := st.CheapestNearby(ctx, q)
+	if err != nil || len(res) != 1 {
+		t.Fatalf("nearby = %d (%v); want 1", len(res), err)
+	}
+	if res[0].Stale {
+		t.Errorf("charger marked stale despite a recent source push (heartbeat should keep it fresh)")
+	}
+	// OnlyAvail must still return it (available + fresh-via-heartbeat).
+	q.OnlyAvail = true
+	if res, err = st.CheapestNearby(ctx, q); err != nil || len(res) != 1 {
+		t.Fatalf("available-only nearby = %d (%v); want 1 (heartbeat keeps it visible)", len(res), err)
+	}
+
+	// Now the source itself falls quiet → genuinely stale.
+	if _, err := st.Pool.Exec(ctx, `UPDATE cpo SET last_push_at = now() - interval '20 min' WHERE id='mob-gpjouleconnect'`); err != nil {
+		t.Fatalf("age push heartbeat: %v", err)
+	}
+	q.OnlyAvail = false
+	res, err = st.CheapestNearby(ctx, q)
+	if err != nil || len(res) != 1 {
+		t.Fatalf("nearby = %d (%v); want 1", len(res), err)
+	}
+	if !res[0].Stale {
+		t.Errorf("charger not stale after both its reading and its source went quiet")
+	}
+}
 
 func TestIngestMobilithekPush_TableThenStatus(t *testing.T) {
 	ctx := context.Background()

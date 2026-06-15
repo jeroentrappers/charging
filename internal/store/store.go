@@ -69,6 +69,14 @@ func (s *Store) SeedCPO(ctx context.Context, c CPO) error {
 	return err
 }
 
+// BumpCPOPush records that we just heard from a source via push, so the
+// read-path freshness check can keep its (delta-fed) chargers live between
+// per-charger status updates. A no-op if the cpo row doesn't exist.
+func (s *Store) BumpCPOPush(ctx context.Context, cpoID string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE cpo SET last_push_at=now() WHERE id=$1`, cpoID)
+	return err
+}
+
 // UpsertCPO fully creates or replaces a source (admin "add/replace"). It does
 // not touch the token (use SetToken) so callers can't accidentally wipe it.
 func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
@@ -431,9 +439,11 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 	}
 	staleSecs := q.StaleAfter.Seconds() // 0 -> staleness checks are no-ops
 
-	// A status is fresh when staleness is disabled ($8<=0) or it was updated
-	// within the window.
-	const freshExpr = `($8 <= 0 OR (st.updated_at IS NOT NULL AND st.updated_at > now() - make_interval(secs => $8)))`
+	// A status is fresh when staleness is disabled ($8<=0), or — given we have a
+	// real reading (st.updated_at NOT NULL) — it was updated within the window OR
+	// its source pushed within the window. The source-push branch keeps chargers
+	// on delta feeds (which only push what changed) live between their own updates.
+	const freshExpr = `($8 <= 0 OR (st.updated_at IS NOT NULL AND (st.updated_at > now() - make_interval(secs => $8) OR (p.last_push_at IS NOT NULL AND p.last_push_at > now() - make_interval(secs => $8)))))`
 
 	query := fmt.Sprintf(`
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
@@ -493,7 +503,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 // like CheapestNearby.
 func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon float64, staleAfter time.Duration) (NearbyCharger, bool, error) {
 	staleSecs := staleAfter.Seconds()
-	const freshExpr = `($4 <= 0 OR (st.updated_at IS NOT NULL AND st.updated_at > now() - make_interval(secs => $4)))`
+	const freshExpr = `($4 <= 0 OR (st.updated_at IS NOT NULL AND (st.updated_at > now() - make_interval(secs => $4) OR (p.last_push_at IS NOT NULL AND p.last_push_at > now() - make_interval(secs => $4)))))`
 	query := fmt.Sprintf(`
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
 		       ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
@@ -537,7 +547,7 @@ func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM 
 		q.Limit = 300
 	}
 	staleSecs := q.StaleAfter.Seconds()
-	const freshExpr = `($7 <= 0 OR (st.updated_at IS NOT NULL AND st.updated_at > now() - make_interval(secs => $7)))`
+	const freshExpr = `($7 <= 0 OR (st.updated_at IS NOT NULL AND (st.updated_at > now() - make_interval(secs => $7) OR (p.last_push_at IS NOT NULL AND p.last_push_at > now() - make_interval(secs => $7)))))`
 	query := fmt.Sprintf(`
 		WITH route AS (SELECT ST_SetSRID(ST_GeomFromText($1),4326)::geography AS line)
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),

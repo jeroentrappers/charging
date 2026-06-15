@@ -60,6 +60,11 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 	}); serr != nil {
 		e.Log.Warn("mobilithek: seed cpo", "cpo", cpoID, "err", serr)
 	}
+	// Heartbeat: we heard from this source. Delta feeds only push what changed,
+	// so this keeps their unchanged-but-healthy chargers live in the read path.
+	if berr := e.Store.BumpCPOPush(ctx, cpoID); berr != nil {
+		e.Log.Warn("mobilithek: bump push heartbeat", "cpo", cpoID, "err", berr)
+	}
 
 	switch doc.Kind {
 	case "table":
