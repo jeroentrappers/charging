@@ -38,6 +38,11 @@ Everything below optimizes for the primary job; the rest are secondary views.
 ## Screens
 
 ### 1. Find (primary) — map + list, one screen
+- **Basemap**: self-hosted vector tiles (`tiles.appmire.be`, shared appmire infra —
+  PMTiles + MapLibre styles, theme-matched light/dark), rendered as a MapLibre GL
+  layer *under* the Leaflet overlays via `@maplibre/maplibre-gl-leaflet` (loaded
+  lazily — MapLibre is a separate chunk). Configured by `TILES_URL`/`TILES_KEY`
+  (runtime `/config.js`); with no key it falls back to raster OpenStreetMap.
 - **Map** (default to current location): markers colored on a **price scale**
   (green = cheap → red = pricey) for the selected session; a compact price label
   on each marker (e.g. "€0.42"). Availability shown by marker opacity/ring.

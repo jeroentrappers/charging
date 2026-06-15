@@ -81,6 +81,9 @@ services:
     image: charging-web:latest
     environment:
       VITE_API_BASE: ${WEB_API_BASE:-http://localhost:8080}
+      # Self-hosted vector basemap (tiles.appmire.be). Empty → raster OSM fallback.
+      VITE_TILES_URL: ${TILES_URL:-}
+      VITE_TILES_KEY: ${TILES_KEY:-}
     ports:
       - "5173:80"
     depends_on:
