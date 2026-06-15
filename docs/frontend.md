@@ -113,7 +113,9 @@ Everything below optimizes for the primary job; the rest are secondary views.
 - **Trip / corridor mode**: a destination (OSM Nominatim geocode) turns the list
   into chargers along the driving route (`/chargers/along-route`, self-hosted
   OSRM), ranked by price + deviation, with a range check; the route + 🏁 draw on
-  the map.
+  the map. The corridor query prefers **priced** chargers — unpriced ones can't
+  fill the candidate budget and crowd out cheaper priced chargers slightly off
+  the line; they're returned only when the route has no priced charger at all.
 - **Charge cards (MSP)**: pick roaming card(s) → price = cheapest of ad-hoc vs
   the card's blended rate, shown `≈ {card}` (estimated). Client-only overlay.
 - **Price provenance**: the detail shows "Price confirmed {ago} · via {source}"

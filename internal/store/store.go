@@ -542,12 +542,19 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 // line (a WKT LINESTRING in lon lat order, SRID 4326), with DistanceM set to the
 // off-route distance (how far the charger sits from the line). The caller prices
 // each and ranks by price + deviation. Ordered by off-route distance.
+//
+// Priced chargers are preferred: the candidate set (capped at Limit) is filled
+// with priced chargers only, so unpriced ones can't crowd out cheaper priced
+// chargers a little further off the line. Unpriced chargers are returned only as
+// a fallback, when the route has no priced chargers at all.
 func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM float64, q NearbyQuery) ([]NearbyCharger, error) {
 	if q.Limit <= 0 || q.Limit > 1000 {
 		q.Limit = 300
 	}
 	staleSecs := q.StaleAfter.Seconds()
 	const freshExpr = `($7 <= 0 OR (st.updated_at IS NOT NULL AND (st.updated_at > now() - make_interval(secs => $7) OR (p.last_push_at IS NOT NULL AND p.last_push_at > now() - make_interval(secs => $7)))))`
+	// $9 = include unpriced. When false, only chargers with a comparable price are
+	// returned (so unpriced ones never displace priced candidates within Limit).
 	query := fmt.Sprintf(`
 		WITH route AS (SELECT ST_SetSRID(ST_GeomFromText($1),4326)::geography AS line)
 		SELECT c.id, c.cpo_id, COALESCE(c.name,''), COALESCE(c.address,''),
@@ -568,30 +575,44 @@ func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM 
 		  AND ($4 = '' OR upper(replace(c.plug_type,'_','')) = upper(replace($4,'_','')))
 		  AND (NOT $5 OR (COALESCE(st.available_count,0) > 0 AND %s))
 		  AND ($8 OR NOT c.private)
+		  AND ($9 OR tv.comparable_price_eur IS NOT NULL)
 		ORDER BY dist ASC
 		LIMIT $6`, freshExpr, freshExpr)
 
-	rows, err := s.Pool.Query(ctx, query,
-		lineWKT, bufferM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs, q.IncludePrivate)
+	fetch := func(includeUnpriced bool) ([]NearbyCharger, error) {
+		rows, err := s.Pool.Query(ctx, query,
+			lineWKT, bufferM, q.MinPowerKW, q.PlugType, q.OnlyAvail, q.Limit, staleSecs, q.IncludePrivate, includeUnpriced)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []NearbyCharger
+		for rows.Next() {
+			var n NearbyCharger
+			var pricesJSON, componentsJSON []byte
+			if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
+				&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
+				&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private,
+				&n.PriceUpdated, &n.Source, &n.SourceType); err != nil {
+				return nil, err
+			}
+			n.Prices = decodePrices(pricesJSON)
+			n.Components = json.RawMessage(componentsJSON)
+			out = append(out, n)
+		}
+		return out, rows.Err()
+	}
+
+	// Priced first; only if the whole route has none, fall back to unpriced so the
+	// corridor isn't left empty.
+	out, err := fetch(false)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []NearbyCharger
-	for rows.Next() {
-		var n NearbyCharger
-		var pricesJSON, componentsJSON []byte
-		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
-			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
-			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private,
-			&n.PriceUpdated, &n.Source, &n.SourceType); err != nil {
-			return nil, err
-		}
-		n.Prices = decodePrices(pricesJSON)
-		n.Components = json.RawMessage(componentsJSON)
-		out = append(out, n)
+	if len(out) == 0 {
+		return fetch(true)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func decodePrices(b []byte) map[string]float64 {
