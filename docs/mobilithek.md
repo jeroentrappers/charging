@@ -53,6 +53,26 @@ from `EnergyRate`/`EnergyPrice`: `pricePerKWh`→ENERGY, `pricePerMinute`→TIME
 point id. From there it flows through the normal SCD2 tariff pipeline like every
 other source.
 
+## Consumer push (and non-DATEX overlays)
+
+Some offerings are delivered by **consumer push** instead of pull: the provider
+POSTs to our Mobilithek push endpoint, which spools each packet durably
+(`incoming/` → `processing/` → drop on success, else `failed/` with a `.reason`
+sidecar) and ingests via `IngestMobilithekPush`. AFIR DATEX II (XML or JSON) is
+parsed by `datex.ParseAFIR`.
+
+Not every pushed feed is DATEX II. **eliso** pushes a flat, non-DATEX JSON
+overlay — `{"evses":[{evseId, adhoc_price, blocking_fee, operational_status,
+availability_status, …}]}` — carrying live availability + ad-hoc price but **no
+locations**. `IngestMobilithekPush` detects this shape first (`parseElisoPush`)
+and applies it as a status + price overlay, matched by `evseId` alone
+(`ChargersForEVSEAny`) because the locations are seeded under a broker/aggregator
+CPO, not a per-operator one. Statuses map operational/availability →
+AVAILABLE/CHARGING/OUTOFORDER/UNKNOWN; `adhoc_price`→ENERGY (the comparable),
+`blocking_fee`→PARKING_TIME (display only, excluded from the comparable). EVSEs
+we have no location for are skipped (the push reports rows=0). A payload that
+matches neither eliso nor a known AFIR publication is quarantined to `failed/`.
+
 ## Reality check
 
 Coverage was ~50% of German charging capacity in late 2025 and **ad-hoc price is

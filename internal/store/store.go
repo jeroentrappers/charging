@@ -198,6 +198,30 @@ func (s *Store) ChargersForEVSE(ctx context.Context, cpoID, evseUID string) ([]E
 	return out, rows.Err()
 }
 
+// ChargersForEVSEAny is ChargersForEVSE without the CPO filter: it matches by the
+// (globally-unique eMI3) EVSE id alone. Used by overlay feeds whose status/price
+// pushes don't carry — or don't agree on — the CPO that originally seeded the
+// charger (e.g. eliso pushes a flat per-EVSE feed, but the locations were seeded
+// under a broker/aggregator CPO).
+func (s *Store) ChargersForEVSEAny(ctx context.Context, evseUID string) ([]EVSEConnector, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id, COALESCE(connector_id,''), COALESCE(power_kw,0)::float8, COALESCE(current_type,'')
+		 FROM charger WHERE evse_uid=$1`, evseUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EVSEConnector
+	for rows.Next() {
+		var e EVSEConnector
+		if err := rows.Scan(&e.ID, &e.ConnectorID, &e.PowerKW, &e.CurrentType); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpsertStatus(ctx context.Context, chargerID int64, status string, availableCount int) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO charger_status (charger_id, status, available_count, updated_at)

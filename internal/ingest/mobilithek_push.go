@@ -18,6 +18,13 @@ import (
 // row is ensured (disabled — push sources aren't polled) so chargers attribute
 // to the right operator/country. Returns the publication kind + rows touched.
 func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind string, n int, err error) {
+	// Non-DATEX overlay feeds pushed to the same endpoint are dispatched first;
+	// parseElisoPush only claims the payload if it clearly matches that shape, so
+	// AFIR DATEX II (XML/JSON) falls through untouched.
+	if p, ok := parseElisoPush(data); ok {
+		return e.ingestElisoPush(ctx, p)
+	}
+
 	// Parse outside any lock so workers decode (big XML/JSON) in parallel.
 	doc, err := datex.ParseAFIR(data) // XML (LISY/broker) or JSON encoding
 	if err != nil {
