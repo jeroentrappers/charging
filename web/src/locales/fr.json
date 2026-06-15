@@ -65,6 +65,7 @@
     "chargers_other": "{{count}} bornes",
     "cheapestFirst": "par prix + détour",
     "detour": "détour",
+    "free": "libres",
     "tapHint": "Touchez la carte pour définir votre position",
     "loadError": "Impossible de charger les bornes. Vérifiez votre connexion.",
     "emptyAvailable": "Aucune borne libre à proximité. Désactivez « Disponible maintenant ».",

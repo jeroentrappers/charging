@@ -65,6 +65,7 @@
     "chargers_other": "{{count}} Ladepunkte",
     "cheapestFirst": "nach Preis + Umweg",
     "detour": "Umweg",
+    "free": "frei",
     "tapHint": "Tippe auf die Karte, um deinen Standort zu setzen",
     "loadError": "Ladepunkte konnten nicht geladen werden. Prüfe deine Verbindung.",
     "emptyAvailable": "Gerade keine freien Ladepunkte in der Nähe. Schalte „Jetzt verfügbar“ aus.",

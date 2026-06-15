@@ -38,9 +38,23 @@ export interface Charger {
   price_updated_at?: string | null // when the tariff was last confirmed
   source?: string // operator / data-source name
   source_type?: string // ocpi (direct) | road | monta | … → confidence
+  evse_uid?: string
+  // Cluster fields: when co-located same-power chargers are grouped, this row
+  // represents the group. group_total absent/0 means it's a single charger.
+  group_total?: number
+  group_available?: number
+  group_busy?: number
+  members?: ClusterMember[]
   // Client-side (set by pricing.ts when a membership beats the ad-hoc price):
   price_via?: string // membership/MSP name the effective price came from
   price_estimated?: boolean // the winning price is an estimated membership rate
+}
+
+// One charger inside a location+power cluster (for drill-down).
+export interface ClusterMember {
+  id: number
+  evse_uid?: string
+  status: 'free' | 'busy' | 'unknown'
 }
 
 // One report type's value payload (only some types carry one).

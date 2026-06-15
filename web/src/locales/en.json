@@ -65,6 +65,7 @@
     "chargers_other": "{{count}} chargers",
     "cheapestFirst": "by price + detour",
     "detour": "detour",
+    "free": "free",
     "tapHint": "Tap the map to set your location",
     "loadError": "Couldn't load chargers. Check your connection.",
     "emptyAvailable": "No chargers free right now nearby. Try turning off \"Available now\".",

@@ -14,6 +14,11 @@ import (
 	"github.com/appmire/charging/internal/store"
 )
 
+// clusterFetchCap is how many raw candidates the clustered list/corridor queries
+// pull before grouping, so per-cluster availability counts are accurate even at
+// dense sites. Bounded so a wide search stays cheap.
+const clusterFetchCap = 3000
+
 // registerPublic wires the read API onto the OpenAPI document.
 func (s *server) registerPublic(api huma.API) {
 	huma.Get(api, "/sessions", s.opSessions, tag("Comparison"),
@@ -205,6 +210,7 @@ type nearbyIn struct {
 	Plug           string  `query:"plug" doc:"OCPI connector standard"`
 	Available      bool    `query:"available" doc:"Only chargers currently reported free"`
 	IncludePrivate bool    `query:"include_private" doc:"Include private (home / peer-to-peer) chargers"`
+	Cluster        bool    `query:"cluster" default:"true" doc:"Group co-located same-power chargers into one result with availability counts"`
 	Limit          int     `query:"limit" default:"200" minimum:"1" maximum:"500" doc:"Maximum candidates to return"`
 }
 
@@ -223,14 +229,23 @@ func (s *server) opNearby(ctx context.Context, in *nearbyIn) (*nearbyOut, error)
 	if radius <= 0 {
 		radius = 50000
 	}
+	// In cluster mode, fetch a wider candidate set so per-cluster availability
+	// counts are accurate, then collapse co-located same-power chargers.
+	fetchLimit := in.Limit
+	if in.Cluster {
+		fetchLimit = clusterFetchCap
+	}
 	res, err := s.st.CheapestNearby(ctx, store.NearbyQuery{
 		Lat: in.Lat, Lon: in.Lon, RadiusM: radius,
 		MinPowerKW: in.MinPower, PlugType: in.Plug, OnlyAvail: in.Available,
-		IncludePrivate: in.IncludePrivate, StaleAfter: s.staleAfter, Limit: in.Limit,
+		IncludePrivate: in.IncludePrivate, StaleAfter: s.staleAfter, Limit: fetchLimit,
 	})
 	if err != nil {
 		s.log.Error("nearby query", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
+	}
+	if in.Cluster {
+		res = store.ClusterByLocationPower(res, in.Limit, false)
 	}
 	s.attachReports(ctx, res)
 	if res == nil {

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, type Charger, type RouteGeometry } from './api'
+import { api, type Charger, type ClusterMember, type RouteGeometry } from './api'
 import { MapView } from './MapView'
 import { rankChargers } from './pricing'
 import { type Place } from './geocode'
@@ -50,6 +50,7 @@ export function FindPage(props: {
   const [view, setView] = useState<{ to: [number, number]; zoom?: number } | null>(null)
   const [viewNonce, setViewNonce] = useState(0)
   const [expanded, setExpanded] = useState(false)
+  const [openClusters, setOpenClusters] = useState<Record<number, boolean>>({})
   // Trip / corridor mode: a destination (props.tripTo, owned by App) turns the
   // list into "chargers along the way", ranked by price + deviation from route.
   const tripTo = props.tripTo
@@ -185,13 +186,30 @@ export function FindPage(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.routeNonce])
 
-  function select(id: number) {
-    const c = chargers.find((x) => x.id === id) ?? null
+  function select(id: number, charger?: Charger) {
+    const c = charger ?? chargers.find((x) => x.id === id) ?? null
     detailOpenRef.current = true
     setSelectedId(id)
     setDetailCharger(c)
     setFocusNonce((n) => n + 1)
     if (c) props.onOpenCharger(c)
+  }
+  // Open one charger inside a cluster: synthesise a full Charger from the cluster
+  // representative (shared location/power/price) + the member's own id/status, so
+  // the detail view works without another round-trip.
+  function selectMember(rep: Charger, m: ClusterMember) {
+    select(m.id, {
+      ...rep,
+      id: m.id,
+      evse_uid: m.evse_uid,
+      available_count: m.status === 'free' ? 1 : 0,
+      availability_stale: m.status === 'unknown',
+      status_updated_at: m.status === 'unknown' ? null : rep.status_updated_at,
+      group_total: undefined,
+      group_available: undefined,
+      group_busy: undefined,
+      members: undefined,
+    })
   }
   function closeDetail() {
     detailOpenRef.current = false
@@ -255,23 +273,53 @@ export function FindPage(props: {
           {!error && !loading && chargers.length === 0 && (
             <div className="state">{props.filters.available ? t('find.emptyAvailable') : t('find.empty')}</div>
           )}
-          {chargers.map((c) => (
-            <button key={c.id} className={`row ${c.id === selectedId ? 'sel' : ''}`} onClick={() => select(c.id)}>
-              <span className="price">
-                {eur(priceOf(c))}
-                {c.price_via && <span className="price-via">{c.price_estimated ? '≈' : ''} {c.price_via}</span>}
-              </span>
-              <span>
-                <div className="name">{c.name || c.cpo_id}</div>
-                <div className="sub">
-                  {c.power_kw} kW {c.current_type} · {plugLabel(c.plug_type)} · {km(c.distance_m)}
-                  {c.detour_eur != null && c.detour_eur > 0 && <span className="detour"> · +{eur(c.detour_eur)} {t('find.detour')}</span>}
-                  {c.avoid && <span className="flag-badge"> · ⚠ {t('report.flagged')}</span>}
-                </div>
-              </span>
-              <span className="right"><AvailBadge a={availOf(c)} /></span>
-            </button>
-          ))}
+          {chargers.map((c) => {
+            const isCluster = (c.group_total ?? 0) > 1
+            const open = isCluster && openClusters[c.id]
+            return (
+              <div key={c.id} className="row-group">
+                <button
+                  className={`row ${c.id === selectedId ? 'sel' : ''}`}
+                  onClick={() => (isCluster ? setOpenClusters((m) => ({ ...m, [c.id]: !m[c.id] })) : select(c.id))}
+                >
+                  <span className="price">
+                    {eur(priceOf(c))}
+                    {c.price_via && <span className="price-via">{c.price_estimated ? '≈' : ''} {c.price_via}</span>}
+                  </span>
+                  <span>
+                    <div className="name">{c.name || c.cpo_id}</div>
+                    <div className="sub">
+                      {c.power_kw} kW {c.current_type} · {plugLabel(c.plug_type)} · {km(c.distance_m)}
+                      {c.detour_eur != null && c.detour_eur > 0 && <span className="detour"> · +{eur(c.detour_eur)} {t('find.detour')}</span>}
+                      {c.avoid && <span className="flag-badge"> · ⚠ {t('report.flagged')}</span>}
+                    </div>
+                  </span>
+                  <span className="right">
+                    {isCluster ? (
+                      <span className="cluster-count">
+                        <span className="free">{c.group_available ?? 0}</span>/{c.group_total} {t('find.free')}
+                        <span className="chev">{open ? '▾' : '▸'}</span>
+                      </span>
+                    ) : (
+                      <AvailBadge a={availOf(c)} />
+                    )}
+                  </span>
+                </button>
+                {open && (
+                  <div className="members">
+                    {(c.members ?? []).map((m: ClusterMember) => (
+                      <button key={m.id} className="member-row" onClick={() => selectMember(c, m)}>
+                        <span className="member-id">{m.evse_uid || `#${m.id}`}</span>
+                        <span className={`badge ${m.status === 'unknown' ? 'unknown' : m.status === 'free' ? 'free' : 'busy'}`}>
+                          {t(`avail.${m.status === 'free' ? 'free' : m.status === 'busy' ? 'busy' : 'unknown'}`)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
           {chargers.length > 0 && <p className="caveat">{t('find.caveat')}</p>}
         </div>
       </div>

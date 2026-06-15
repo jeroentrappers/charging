@@ -23,6 +23,7 @@ type alongRouteIn struct {
 	Plug           string  `query:"plug" doc:"OCPI connector standard"`
 	Available      bool    `query:"available" doc:"Only chargers currently reported free"`
 	IncludePrivate bool    `query:"include_private" doc:"Include private (home / peer-to-peer) chargers"`
+	Cluster        bool    `query:"cluster" default:"true" doc:"Group co-located same-power chargers into one result with availability counts"`
 	Limit          int     `query:"limit" default:"60" minimum:"1" maximum:"300" doc:"Maximum candidates to return"`
 }
 
@@ -47,13 +48,24 @@ func (s *server) opAlongRoute(ctx context.Context, in *alongRouteIn) (*alongRout
 		return nil, huma.Error502BadGateway("could not compute a route")
 	}
 
+	// In cluster mode, pull a wider candidate set (priced + unpriced) so per-cluster
+	// availability counts are accurate, then collapse co-located same-power chargers
+	// — preferring priced clusters (unpriced kept only when the route has none).
+	fetchLimit := in.Limit
+	if in.Cluster {
+		fetchLimit = clusterFetchCap
+	}
 	res, err := s.st.ChargersAlongRoute(ctx, lineWKT(rt.Points), in.Buffer, store.NearbyQuery{
 		MinPowerKW: in.MinPower, PlugType: in.Plug, OnlyAvail: in.Available,
-		IncludePrivate: in.IncludePrivate, StaleAfter: s.staleAfter, Limit: in.Limit,
+		IncludePrivate: in.IncludePrivate, StaleAfter: s.staleAfter, Limit: fetchLimit,
+		Cluster: in.Cluster,
 	})
 	if err != nil {
 		s.log.Error("along-route query", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
+	}
+	if in.Cluster {
+		res = store.ClusterByLocationPower(res, in.Limit, true)
 	}
 	s.attachReports(ctx, res)
 	if res == nil {

@@ -365,6 +365,7 @@ func (s *Store) FinishRun(ctx context.Context, runID int64, rowsSeen, changes in
 
 type NearbyCharger struct {
 	ID           int64              `json:"id"`
+	EVSEUID      string             `json:"evse_uid,omitempty"`
 	CPOID        string             `json:"cpo_id"`
 	Name         string             `json:"name"`
 	Address      string             `json:"address"`
@@ -390,6 +391,20 @@ type NearbyCharger struct {
 	PriceUpdated *time.Time `json:"price_updated_at,omitempty"` // when this tariff was last confirmed (source's last_updated, else first observed)
 	Source       string     `json:"source,omitempty"`           // operator / data-source name (cpo.name)
 	SourceType   string     `json:"source_type,omitempty"`      // how we got it: ocpi (direct), road, monta, … → confidence
+	// Cluster fields (set when co-located same-power chargers are grouped into one
+	// row): counts over the group, and the individual members for drill-down. Zero
+	// GroupTotal (omitted) means this row is a single charger, not a cluster.
+	GroupTotal     int             `json:"group_total,omitempty"`
+	GroupAvailable int             `json:"group_available,omitempty"`
+	GroupBusy      int             `json:"group_busy,omitempty"`
+	Members        []ClusterMember `json:"members,omitempty"`
+}
+
+// ClusterMember is one charger inside a location+power cluster (for drill-down).
+type ClusterMember struct {
+	ID      int64  `json:"id"`
+	EVSEUID string `json:"evse_uid,omitempty"`
+	Status  string `json:"status"` // "free" | "busy" | "unknown"
 }
 
 type NearbyQuery struct {
@@ -411,6 +426,11 @@ type NearbyQuery struct {
 	// register row (bnetza/irve) co-located with a richer priced+live source.
 	// By default those register rows are hidden (see supersededByRicherSource).
 	IncludeDuplicates bool `json:"include_duplicates"`
+	// Cluster: the caller will group the rows by location+power afterwards, so the
+	// query should return the full candidate set (priced AND unpriced) rather than
+	// applying the priced-first corridor filter — priced preference is then decided
+	// per cluster.
+	Cluster bool `json:"cluster"`
 }
 
 // supersededByRicherSource is a SQL boolean (referencing the charger alias `c`
@@ -434,7 +454,7 @@ const supersededByRicherSource = `
 // price+detour cost. Limit caps the candidate pool. Each result carries the
 // stored noon comparable + the per-session map as fallbacks.
 func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyCharger, error) {
-	if q.Limit <= 0 || q.Limit > 1000 {
+	if q.Limit <= 0 || q.Limit > 5000 {
 		q.Limit = 300
 	}
 	staleSecs := q.StaleAfter.Seconds() // 0 -> staleness checks are no-ops
@@ -455,7 +475,8 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		       st.updated_at,
 		       (NOT %s) AS stale,
 		       tv.price_components, c.private,
-		       COALESCE(tv.source_last_updated, tv.observed_from), COALESCE(p.name,''), COALESCE(p.source_type,'')
+		       COALESCE(tv.source_last_updated, tv.observed_from), COALESCE(p.name,''), COALESCE(p.source_type,''),
+			       COALESCE(c.evse_uid,'')
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
@@ -482,7 +503,7 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 			&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
 			&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private,
-			&n.PriceUpdated, &n.Source, &n.SourceType); err != nil {
+			&n.PriceUpdated, &n.Source, &n.SourceType, &n.EVSEUID); err != nil {
 			return nil, err
 		}
 		n.Prices = decodePrices(pricesJSON)
@@ -548,7 +569,7 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 // chargers a little further off the line. Unpriced chargers are returned only as
 // a fallback, when the route has no priced chargers at all.
 func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM float64, q NearbyQuery) ([]NearbyCharger, error) {
-	if q.Limit <= 0 || q.Limit > 1000 {
+	if q.Limit <= 0 || q.Limit > 5000 {
 		q.Limit = 300
 	}
 	staleSecs := q.StaleAfter.Seconds()
@@ -564,7 +585,8 @@ func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM 
 		       COALESCE(st.available_count,0),
 		       tv.comparable_price_eur::float8, COALESCE(tv.comparable_prices,'{}'::jsonb), COALESCE(tv.currency,'EUR'),
 		       st.updated_at, (NOT %s) AS stale, tv.price_components, c.private,
-		       COALESCE(tv.source_last_updated, tv.observed_from), COALESCE(p.name,''), COALESCE(p.source_type,'')
+		       COALESCE(tv.source_last_updated, tv.observed_from), COALESCE(p.name,''), COALESCE(p.source_type,''),
+			       COALESCE(c.evse_uid,'')
 		FROM charger c
 		CROSS JOIN route
 		LEFT JOIN charger_status st ON st.charger_id = c.id
@@ -593,7 +615,7 @@ func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM 
 			if err := rows.Scan(&n.ID, &n.CPOID, &n.Name, &n.Address, &n.Lat, &n.Lon,
 				&n.PowerKW, &n.PlugType, &n.CurrentType, &n.DistanceM, &n.Available,
 				&n.PriceEUR, &pricesJSON, &n.Currency, &n.StatusAt, &n.Stale, &componentsJSON, &n.Private,
-				&n.PriceUpdated, &n.Source, &n.SourceType); err != nil {
+				&n.PriceUpdated, &n.Source, &n.SourceType, &n.EVSEUID); err != nil {
 				return nil, err
 			}
 			n.Prices = decodePrices(pricesJSON)
@@ -603,6 +625,11 @@ func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM 
 		return out, rows.Err()
 	}
 
+	// In cluster mode the caller groups by location+power and decides priced
+	// preference per cluster, so return the full set (priced + unpriced) here.
+	if q.Cluster {
+		return fetch(true)
+	}
 	// Priced first; only if the whole route has none, fall back to unpriced so the
 	// corridor isn't left empty.
 	out, err := fetch(false)

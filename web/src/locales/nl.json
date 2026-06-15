@@ -65,6 +65,7 @@
     "chargers_other": "{{count}} laadpunten",
     "cheapestFirst": "op prijs + omweg",
     "detour": "omweg",
+    "free": "vrij",
     "tapHint": "Tik op de kaart om je locatie te kiezen",
     "loadError": "Kon laadpunten niet laden. Controleer je verbinding.",
     "emptyAvailable": "Geen vrije laadpunten in de buurt. Schakel \"Nu beschikbaar\" uit.",
