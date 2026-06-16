@@ -2,7 +2,33 @@
   "nav": {
     "find": "Find",
     "insights": "Insights",
+    "status": "Status",
     "apiDocs": "API docs"
+  },
+  "status": {
+    "title": "Source health",
+    "summary": "{{count}} sources",
+    "generated": "generated",
+    "autoRefresh": "auto-refresh 30s",
+    "chargers": "Chargers",
+    "priced": "Priced",
+    "available": "Available now",
+    "colSource": "Source",
+    "colType": "Type",
+    "colMode": "Mode",
+    "colCountry": "CC",
+    "colChargers": "Chargers",
+    "colPriced": "Priced",
+    "colAvail": "Avail",
+    "colStatus": "Status",
+    "colPrice": "Price",
+    "mode_poll": "poll",
+    "mode_push": "push",
+    "mode_off": "off",
+    "never": "never",
+    "justNow": "just now",
+    "loading": "Loading source health…",
+    "error": "Could not load source health."
   },
   "geo": {
     "locate": "Locate me",

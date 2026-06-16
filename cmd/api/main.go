@@ -164,7 +164,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	// Operational endpoints — deliberately outside the API contract.
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
-	r.Get("/status", s.statusDashboard) // ops dashboard: per-source health/staleness/availability
+	r.Get("/status", s.statusJSON) // per-source health/staleness/availability (JSON; rendered by the web /status page)
 	r.Handle("/metrics", metrics.Handler())
 
 	cfg := huma.DefaultConfig("Charging API", apiVersion)

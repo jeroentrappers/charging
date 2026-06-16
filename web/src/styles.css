@@ -29,7 +29,6 @@
   color-scheme: dark;
 }
 /* Re-tint the handful of hardcoded light surfaces for dark mode. */
-[data-theme='dark'] .tabs button.active,
 [data-theme='dark'] .navmenu button.active { background: rgba(34, 197, 94, 0.16); }
 [data-theme='dark'] .chip.on { background: rgba(34, 197, 94, 0.16); }
 [data-theme='dark'] .row.sel { background: rgba(34, 197, 94, 0.12); }
@@ -72,13 +71,10 @@ button { font: inherit; cursor: pointer; }
 /* On mobile the brand doubles as the nav menu trigger. */
 .brand-btn { border: 0; background: transparent; font: inherit; font-weight: 700; color: inherit; cursor: pointer; padding: 0; }
 .brand-caret { font-size: 11px; color: var(--muted); margin-left: 2px; }
-.tabs { display: none; gap: 4px; margin-left: auto; }
-.tabs button {
-  border: 0; background: transparent; color: var(--muted);
-  padding: 8px 12px; border-radius: 10px; font-weight: 600;
-}
-.tabs button.active { background: #ecfdf5; color: var(--green); }
-/* Fly-out navigation under the brand (mobile). */
+/* Find controls share the top row with the brand/menu button. Wraps to a
+   second line on narrow screens; the destination search can shrink. */
+.topctrls { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+/* Fly-out navigation under the brand — used on every screen size. */
 .nav-backdrop { position: fixed; inset: 0; z-index: 900; }
 .navmenu {
   position: absolute; top: 100%; left: 8px; margin-top: 4px; min-width: 210px; z-index: 901;
@@ -96,10 +92,6 @@ button { font: inherit; cursor: pointer; }
 .navmenu button.active { background: #ecfdf5; color: var(--green); }
 .navmenu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 @media (prefers-reduced-motion: reduce) { .navmenu { animation: none; } }
-.header-links { display: none; align-items: center; gap: 12px; margin-left: auto; }
-.hlink { color: var(--muted); font-weight: 600; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.hlink:hover { color: var(--green); }
-.hlink svg { width: 18px; height: 18px; fill: currentColor; }
 
 /* Charge-card memberships (Settings) */
 .member-list { display: flex; flex-direction: column; gap: 6px; }
@@ -146,8 +138,6 @@ button { font: inherit; cursor: pointer; }
 .report-thanks { color: var(--green); font-weight: 600; font-size: 13px; margin-top: 6px; }
 .row .flag-badge { color: #b91c1c; font-size: 11px; font-weight: 700; }
 .row .detour { color: var(--amber); font-weight: 600; }
-.hlink-btn { border: 0; background: transparent; cursor: pointer; padding: 0; }
-.hlink-btn svg { width: 20px; height: 20px; }
 .seg .seg-sub { font-weight: 400; opacity: 0.7; font-size: 11px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
 .setting-row span { font-size: 14px; }
@@ -362,14 +352,35 @@ table.matrix tr.warn td { color: var(--amber); font-weight: 700; }
 .meter-fill { display: block; height: 100%; border-radius: 6px; transition: width 0.25s ease; }
 .meter-val { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; min-width: 52px; text-align: right; }
 
+/* ---- status (source health) page ---- */
+.status-page { flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
+.status-inner { max-width: 1100px; margin: 0 auto; padding: 18px 16px 32px; }
+.status-page h1 { font-size: 18px; margin: 0 0 4px; }
+.status-sub { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
+.status-totals { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 16px; }
+.status-totals div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; }
+.status-totals span { color: var(--muted); font-size: 12px; }
+.status-totals b { font-size: 18px; display: block; font-variant-numeric: tabular-nums; }
+.status-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.status-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.status-table th, .status-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.status-table th { background: var(--bg); font-size: 12px; color: var(--muted); position: sticky; top: 0; }
+.status-table tr:last-child td { border-bottom: 0; }
+.status-table td.num, .status-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.status-table .muted { color: var(--muted); font-size: 11px; }
+.status-table .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.status-table .pill-poll { color: var(--green); border-color: var(--green); }
+.status-table .pill-push { color: #2563eb; border-color: #2563eb; }
+.status-table .fresh-ok { color: var(--green); font-weight: 600; }
+.status-table .fresh-stale { color: var(--amber); font-weight: 600; }
+.status-table .fresh-old { color: #b91c1c; font-weight: 600; }
+.status-table .fresh-na { color: var(--muted); }
+
 /* ---- bottom nav (mobile) ---- */
 /* ---- desktop ---- */
 @media (min-width: 880px) {
-  .tabs { display: flex; }
-  .header-links { display: flex; }
-  /* The brand stops being a menu trigger; the tabs + header links take over. */
-  .brand-btn { cursor: default; }
-  .brand-caret, .navmenu, .nav-backdrop { display: none; }
+  /* The brand/menu button + fly-out menu are used on every size now, so no
+     desktop nav overrides — just the find layout grid. */
   .find { display: grid; grid-template-columns: 380px 1fr; }
   .map { position: relative; }
   .sheet {

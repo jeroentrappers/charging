@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -48,6 +49,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	// already-fresh feeds (NL/DE/FR are hundreds of thousands of rows).
 	go s.runStartupCatchup(ctx, srcs)
 	s.ensureCrawlers(ctx, srcs)
+	go s.runMobilithekReconcile(ctx)
 
 	ticker := time.NewTicker(s.reloadEvery)
 	defer ticker.Stop()
@@ -121,6 +123,69 @@ func cronInterval(expr string) time.Duration {
 		return 0
 	}
 	return n2.Sub(n1)
+}
+
+// runMobilithekReconcile periodically pulls each Mobilithek source's STATIC
+// publication (those with a pull_static_id) and ingests it, backstopping the
+// delta-based push feed — which can drop the static snapshot entirely, leaving a
+// source with only status deltas and no chargers to attach them to. Slow +
+// staggered so a fleet of large tables doesn't surge the DB; status stays on
+// push. No-op until sources are configured and the client cert is present.
+func (s *Scheduler) runMobilithekReconcile(ctx context.Context) {
+	every := durationEnv("MOBILITHEK_PULL_EVERY", 24*time.Hour)
+	stagger := durationEnv("MOBILITHEK_PULL_STAGGER", 60*time.Second)
+	// Let boot settle (startup catch-up + push warmup) before the first cycle.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(2 * time.Minute):
+	}
+	for {
+		s.reconcileMobilithekOnce(ctx, stagger)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+	}
+}
+
+func (s *Scheduler) reconcileMobilithekOnce(ctx context.Context, stagger time.Duration) {
+	targets, err := s.eng.Store.MobilithekPullTargets(ctx)
+	if err != nil {
+		s.log.Error("mobilithek reconcile: load targets", "err", err)
+		return
+	}
+	if len(targets) == 0 {
+		return
+	}
+	s.log.Info("mobilithek static reconcile: starting", "sources", len(targets), "stagger", stagger.String())
+	for i, t := range targets {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := s.eng.ReconcileMobilithekStatic(ctx, t.CPOID, t.StaticID); err != nil {
+			s.log.Error("mobilithek static reconcile", "cpo", t.CPOID, "err", err)
+		}
+		if i < len(targets)-1 { // pause between sources to avoid a DB/spool surge
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(stagger):
+			}
+		}
+	}
+}
+
+// durationEnv parses a time.Duration from an env var, falling back to def when
+// unset or invalid.
+func durationEnv(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return def
 }
 
 // ensureCrawlers starts a background price/status crawl for each ready Monta

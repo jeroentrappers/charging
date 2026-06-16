@@ -2,7 +2,33 @@
   "nav": {
     "find": "Zoeken",
     "insights": "Inzichten",
+    "status": "Status",
     "apiDocs": "API-docs"
+  },
+  "status": {
+    "title": "Bronstatus",
+    "summary": "{{count}} bronnen",
+    "generated": "gegenereerd",
+    "autoRefresh": "ververst elke 30s",
+    "chargers": "Laadpunten",
+    "priced": "Met prijs",
+    "available": "Nu beschikbaar",
+    "colSource": "Bron",
+    "colType": "Type",
+    "colMode": "Modus",
+    "colCountry": "Land",
+    "colChargers": "Laadpunten",
+    "colPriced": "Met prijs",
+    "colAvail": "Beschk.",
+    "colStatus": "Status",
+    "colPrice": "Prijs",
+    "mode_poll": "poll",
+    "mode_push": "push",
+    "mode_off": "uit",
+    "never": "nooit",
+    "justNow": "zojuist",
+    "loading": "Bronstatus laden…",
+    "error": "Kon de bronstatus niet laden."
   },
   "geo": {
     "locate": "Mijn locatie",

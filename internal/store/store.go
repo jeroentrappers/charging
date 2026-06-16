@@ -77,6 +77,36 @@ func (s *Store) BumpCPOPush(ctx context.Context, cpoID string) error {
 	return err
 }
 
+// MobPullTarget is one Mobilithek source to reconcile by pulling its static
+// publication (locations + ad-hoc price) over the M2M pull API.
+type MobPullTarget struct {
+	CPOID    string
+	StaticID string // Mobilithek subscription id of the static ("table") publication
+}
+
+// MobilithekPullTargets returns the Mobilithek sources configured for static
+// reconcile (those with a pull_static_id set), busiest-id-first is irrelevant so
+// it's ordered by id for stable staggering.
+func (s *Store) MobilithekPullTargets(ctx context.Context) ([]MobPullTarget, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, pull_static_id FROM cpo
+		WHERE source_type='mobilithek' AND COALESCE(pull_static_id,'') <> ''
+		ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MobPullTarget
+	for rows.Next() {
+		var t MobPullTarget
+		if err := rows.Scan(&t.CPOID, &t.StaticID); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // UpsertCPO fully creates or replaces a source (admin "add/replace"). It does
 // not touch the token (use SetToken) so callers can't accidentally wipe it.
 func (s *Store) UpsertCPO(ctx context.Context, c CPO) error {
