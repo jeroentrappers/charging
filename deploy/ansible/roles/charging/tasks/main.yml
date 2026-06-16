@@ -80,33 +80,53 @@
     dest: "{{ charging_dir }}/.env"
     mode: "0600"
 
-- name: Ensure secrets dir
+# The Mobilithek mTLS cert is read by the api+ingest containers (distroless
+# "nonroot" = uid/gid 65532), which mount ./secrets read-only. Own the dir + key
+# to that uid at 0500/0400 so only the container can read them — not the deploy
+# user or anyone else on the host. Written as root (become) since the deploy user
+# can't chown to another uid.
+- name: Ensure secrets dir (owned by the container user)
+  become: true
   ansible.builtin.file:
     path: "{{ charging_dir }}/secrets"
     state: directory
-    mode: "0700"
+    owner: "{{ mob_secret_uid | default('65532') }}"
+    group: "{{ mob_secret_uid | default('65532') }}"
+    mode: "0500"
 
 - name: Write Mobilithek mTLS cert + key (vault)
   when: secrets_mode == 'vault'
+  become: true
   ansible.builtin.copy:
     content: "{{ item.content }}"
     dest: "{{ charging_dir }}/secrets/{{ item.name }}"
-    mode: "0600"
+    owner: "{{ mob_secret_uid | default('65532') }}"
+    group: "{{ mob_secret_uid | default('65532') }}"
+    mode: "0400"
   loop:
     - { name: mob-cert.pem, content: "{{ mob_cert_pem }}" }
     - { name: mob-key.pem, content: "{{ mob_key_pem }}" }
   no_log: true
 
-- name: Upload secrets from local files (copy mode)
+- name: Upload .env from local file (copy mode)
   when: secrets_mode == 'copy'
   ansible.builtin.copy:
-    src: "{{ item.src }}"
-    dest: "{{ charging_dir }}/{{ item.dest }}"
+    src: files/env
+    dest: "{{ charging_dir }}/.env"
     mode: "0600"
+
+- name: Upload Mobilithek mTLS cert + key from local files (copy mode)
+  when: secrets_mode == 'copy'
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ charging_dir }}/secrets/{{ item | basename }}"
+    owner: "{{ mob_secret_uid | default('65532') }}"
+    group: "{{ mob_secret_uid | default('65532') }}"
+    mode: "0400"
   loop:
-    - { src: files/env, dest: .env }
-    - { src: files/mob-cert.pem, dest: secrets/mob-cert.pem }
-    - { src: files/mob-key.pem, dest: secrets/mob-key.pem }
+    - files/mob-cert.pem
+    - files/mob-key.pem
 
 # --- OSRM data (one-time / on graph change). Cross-country merge can take a
 #     while (download ~10 GB + extract/partition/customize); plenty of RAM. -----
