@@ -19,9 +19,25 @@ offering. We've built the consumer; the credentials are yours to provision.
    **static** offer (locations + ad-hoc price) and a **dynamic/status** offer
    (availability + price updates). Note both IDs per CPO/aggregator.
 
-The pull URLs look like:
+The M2M consumer-pull URL (from the per-subscription OpenAPI spec Mobilithek
+generates — **host is `m2m.mobilithek.info`, response is gzipped JSON**; the
+`mobilithek.info:8443/.../datexv3` form is wrong and 400s):
 ```
-https://mobilithek.info:8443/mobilithek/api/v1.0/subscription/datexv3?subscriptionID=<ID>
+https://m2m.mobilithek.info/mobilithek/api/v1.0/subscription?subscriptionId=<ID>
+```
+Required header `Accept-Encoding: gzip`. PUSH-mode subscriptions are pullable too.
+
+## Static-reconcile pull (backstop for push)
+
+Push delivery is delta-based and can drop the **static** (locations + ad-hoc
+price) snapshot — a source then receives only status deltas and has **zero
+chargers** to attach them to. So even for push sources, set the source's
+`pull_static_id` (the static subscription id) and the ingester pulls that static
+on `MOBILITHEK_PULL_EVERY` (default 24h, staggered by `MOBILITHEK_PULL_STAGGER`),
+ingesting it via the same path as a push. Status is left to push. Enable per
+source with SQL:
+```
+UPDATE cpo SET pull_static_id='<static-subscription-id>' WHERE id='mob-<slug>';
 ```
 
 ## What you configure

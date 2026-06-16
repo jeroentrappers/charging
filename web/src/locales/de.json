@@ -2,7 +2,33 @@
   "nav": {
     "find": "Suchen",
     "insights": "Statistiken",
+    "status": "Status",
     "apiDocs": "API-Doku"
+  },
+  "status": {
+    "title": "Quellen-Status",
+    "summary": "{{count}} Quellen",
+    "generated": "erstellt",
+    "autoRefresh": "Aktualisierung alle 30s",
+    "chargers": "Ladepunkte",
+    "priced": "Mit Preis",
+    "available": "Jetzt verfügbar",
+    "colSource": "Quelle",
+    "colType": "Typ",
+    "colMode": "Modus",
+    "colCountry": "Land",
+    "colChargers": "Ladepunkte",
+    "colPriced": "Mit Preis",
+    "colAvail": "Verfügb.",
+    "colStatus": "Status",
+    "colPrice": "Preis",
+    "mode_poll": "poll",
+    "mode_push": "push",
+    "mode_off": "aus",
+    "never": "nie",
+    "justNow": "gerade eben",
+    "loading": "Quellen-Status wird geladen…",
+    "error": "Quellen-Status konnte nicht geladen werden."
   },
   "geo": {
     "locate": "Standort",

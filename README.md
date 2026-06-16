@@ -139,7 +139,8 @@ each result as a **color-coded price pin**; the charger detail shows price
   *unknown* — excluded from `available=true`.
 - **Overlap-safe**, **hot registry reload** (every 5 min), **graceful shutdown**.
 - **Observability:** Prometheus `/metrics`; `/readyz` fails if an enabled source
-  has no recent successful ingest.
+  has no recent successful ingest; `/status` (JSON) reports per-source
+  staleness/availability and is rendered by the web app's **Status** page.
 
 ### Data honesty rules
 
@@ -198,6 +199,7 @@ Public endpoints:
 | GET | `/sessions` | the comparison-session profiles |
 | GET | `/stats/{overview,sessions,regions,price-trend}` | market statistics |
 | GET | `/export/…` | open bulk dataset dumps ([docs](docs/export.md)) |
+| GET | `/status` | per-source health/staleness/availability (JSON; rendered by the web `/status` page) |
 | GET | `/healthz` · `/readyz` · `/metrics` | ops |
 | — | `/ocpi/…` | OCPI 2.2.1 eMSP (handshake + push receiver, [docs](docs/ocpi.md)) |
 

@@ -151,6 +151,27 @@ export interface SessionStat {
   max_eur: number
 }
 
+// One source's operational health (mirrors the /status endpoint). Timestamps
+// are null when the source has never reported that signal.
+export interface SourceHealth {
+  id: string
+  name: string
+  type: string
+  country: string
+  enabled: boolean
+  chargers: number
+  priced: number
+  available: number
+  newest_status: string | null
+  newest_price: string | null
+}
+
+export interface StatusResponse {
+  generated: string
+  totals: { sources: number; chargers: number; priced: number; available: number }
+  sources: SourceHealth[]
+}
+
 async function get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
   const url = new URL(BASE + path)
   if (params) {
@@ -278,6 +299,7 @@ export const api = {
   regions: (by = 'city') => get<{ by: string; regions: PriceAgg[] }>('/stats/regions', { by }),
   sessionStats: () => get<{ sessions: SessionStat[] }>('/stats/sessions'),
   reports: (id: number) => get<ReportsResult>(`/chargers/${id}/reports`),
+  status: () => get<StatusResponse>('/status'),
   addReport: (id: number, type: string, value?: ReportValue) =>
     post<ReportsResult>(`/chargers/${id}/reports`, { type, value, client_id: clientId() }),
 }

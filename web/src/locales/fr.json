@@ -2,7 +2,33 @@
   "nav": {
     "find": "Rechercher",
     "insights": "Analyses",
+    "status": "Statut",
     "apiDocs": "Doc API"
+  },
+  "status": {
+    "title": "État des sources",
+    "summary": "{{count}} sources",
+    "generated": "généré",
+    "autoRefresh": "rafraîchi toutes les 30s",
+    "chargers": "Bornes",
+    "priced": "Avec prix",
+    "available": "Disponibles",
+    "colSource": "Source",
+    "colType": "Type",
+    "colMode": "Mode",
+    "colCountry": "Pays",
+    "colChargers": "Bornes",
+    "colPriced": "Avec prix",
+    "colAvail": "Dispo.",
+    "colStatus": "Statut",
+    "colPrice": "Prix",
+    "mode_poll": "poll",
+    "mode_push": "push",
+    "mode_off": "off",
+    "never": "jamais",
+    "justNow": "à l'instant",
+    "loading": "Chargement de l'état des sources…",
+    "error": "Impossible de charger l'état des sources."
   },
   "geo": {
     "locate": "Me localiser",

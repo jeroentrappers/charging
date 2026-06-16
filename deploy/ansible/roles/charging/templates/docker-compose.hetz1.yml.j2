@@ -11,10 +11,17 @@ services:
     volumes:
       # Durable Mobilithek push spool (incoming/processing/failed).
       - ./spool:/spool
+      # Mobilithek mutual-TLS client cert (read-only).
+      - ./secrets:/secrets:ro
 {% if mobilithek_capture | default(false) %}
       # Debug: per-request metadata + (optional) payload capture.
       - ./capture:/capture
 {% endif %}
+  ingest:
+    # The scheduler (here) runs the slow Mobilithek static-reconcile pull, which
+    # needs the mutual-TLS client cert.
+    volumes:
+      - ./secrets:/secrets:ro
   web:
     ports: !override
       - "127.0.0.1:{{ web_loopback_port }}:80"
