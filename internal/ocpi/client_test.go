@@ -84,6 +84,56 @@ func TestClient_V221_DiscoveryAndAuth(t *testing.T) {
 	}
 }
 
+// Test the Tesla-shaped 2.2.1 case: a pre-encoded "base64:" token is sent
+// verbatim (not re-encoded), and a CPO that advertises only Locations reports
+// HasModule("tariffs") == false so the engine skips the unsupported tariffs poll.
+func TestClient_V221_PreEncodedTokenAndModuleDiscovery(t *testing.T) {
+	const encoded = "ODhiZmM0ZjQtOGFmMS00YzY0LTg4MmItMWQyOTQ2YjE2OTcz" // base64 of a UUID
+	wantAuth := "Token " + encoded                                     // verbatim, NOT double-encoded
+
+	mux := http.NewServeMux()
+	var srvURL string
+	mux.HandleFunc("/ocpi/cpo/2.2.1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != wantAuth {
+			http.Error(w, "bad auth", http.StatusUnauthorized)
+			return
+		}
+		// Tesla advertises only locations + credentials — no tariffs module.
+		_ = json.NewEncoder(w).Encode(ObjectEnvelope[VersionDetails]{
+			StatusCode: StatusSuccess,
+			Data: VersionDetails{Version: "2.2.1", Endpoints: []Endpoint{
+				{Identifier: "locations", Role: "SENDER", URL: srvURL + "/m/loc"},
+			}},
+		})
+	})
+	mux.HandleFunc("/m/loc", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != wantAuth {
+			http.Error(w, "bad auth", http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Envelope[Location]{
+			StatusCode: StatusSuccess,
+			Data:       []Location{{ID: "L1", EVSEs: []EVSE{{UID: "E1", Status: "AVAILABLE"}}}},
+		})
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	srvURL = srv.URL
+
+	c := NewVersioned(srv.URL+"/ocpi/cpo/2.2.1/", "base64:"+encoded, "2.2.1")
+
+	if _, err := c.Locations(context.Background()); err != nil {
+		t.Fatalf("locations: %v", err)
+	}
+	if c.HasModule(context.Background(), "tariffs") {
+		t.Fatal("HasModule(tariffs) should be false: Tesla advertises no tariffs module")
+	}
+	if !c.HasModule(context.Background(), "locations") {
+		t.Fatal("HasModule(locations) should be true")
+	}
+}
+
 // Test that a 2.1.1 client uses the raw token and the {base}/module fallback
 // (no discovery), so existing CPOs keep working.
 func TestClient_V211_RawTokenAndFallback(t *testing.T) {

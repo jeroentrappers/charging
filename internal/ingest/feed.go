@@ -70,9 +70,14 @@ func (f ocpiFeed) Full(ctx context.Context) ([]model.Connector, map[string]model
 	if err != nil {
 		return nil, nil, err
 	}
-	tars, err := f.client.Tariffs(ctx)
-	if err != nil {
-		return nil, nil, err
+	// Tariffs are optional: some CPOs (e.g. Tesla) expose only Locations and
+	// return "module not supported" for tariffs. Skip the fetch when discovery
+	// says the module is absent, so the price poll still ingests locations+status.
+	var tars []ocpi.Tariff
+	if f.client.HasModule(ctx, "tariffs") {
+		if tars, err = f.client.Tariffs(ctx); err != nil {
+			return nil, nil, err
+		}
 	}
 	r := normalize.FromOCPI(f.cpoID, locs, tars)
 	return r.Connectors, r.Tariffs, nil

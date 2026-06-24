@@ -61,7 +61,14 @@ func Seeds() []store.CPO {
 			Enabled:     false,         // ready for the current client; needs a token
 		},
 		{
-			// OCPI 2.2.1 — the client now supports 2.2.1; enable once a token is set.
+			// 🇧🇪 Tesla Belgium roaming feed (transportdata.be NAP). OCPI 2.2.1,
+			// validated live: ~92 locations with real-time EVSE status
+			// (AVAILABLE/CHARGING/OUTOFORDER). LOCATIONS-ONLY — Tesla advertises no
+			// tariffs module (returns "module not supported"), so the feed ingests
+			// coverage + availability but no price. The NAP credential is handed out
+			// pre-base64-encoded: set TESLA_TOKEN to "base64:<token>" so the OCPI
+			// client sends it verbatim instead of re-encoding it. Only polled once
+			// the token is set (Ready() requires it).
 			ID:          "tesla",
 			Name:        "Tesla Belgium",
 			OCPIBaseURL: "https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/",
@@ -70,7 +77,7 @@ func Seeds() []store.CPO {
 			Country:     "BE",
 			PollCron:    "0 4 * * *",
 			StatusCron:  "*/5 * * * *", // Tesla refreshes every 5 min
-			Enabled:     false,
+			Enabled:     true,
 		},
 		{
 			// Monta Public API: open AFIR list (locations) + authed per-EVSE

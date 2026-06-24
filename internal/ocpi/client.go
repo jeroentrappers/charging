@@ -49,15 +49,39 @@ func (c *Client) isV2_2() bool { return strings.HasPrefix(c.Version, "2.2") }
 
 // authValue returns the Authorization header value. OCPI 2.2+ requires the
 // token to be base64-encoded; 2.1.1 sends it raw. Both use the "Token" scheme.
+//
+// A "base64:" token prefix means the configured token is already base64-encoded
+// (some CPOs, e.g. Tesla, hand out the pre-encoded credential "to use as is"):
+// it is sent verbatim, never re-encoded — re-encoding would double-encode and 401.
 func (c *Client) authValue() string {
 	if c.Token == "" {
 		return ""
+	}
+	if tok, ok := strings.CutPrefix(c.Token, "base64:"); ok {
+		return "Token " + tok
 	}
 	tok := c.Token
 	if c.isV2_2() {
 		tok = base64.StdEncoding.EncodeToString([]byte(c.Token))
 	}
 	return "Token " + tok
+}
+
+// HasModule reports whether the CPO advertises the given OCPI module (e.g.
+// "tariffs"). For 2.2+ it consults version discovery; if discovery is
+// unavailable or returned no endpoints it returns true, so callers still attempt
+// the {base}{module} fallback rather than silently skipping. For 2.1.1 (no
+// discovery) it always returns true, preserving prior behavior.
+func (c *Client) HasModule(ctx context.Context, module string) bool {
+	if !c.isV2_2() {
+		return true
+	}
+	c.discoverOnce.Do(func() { c.discover(ctx) })
+	if len(c.endpoints) == 0 {
+		return true
+	}
+	_, ok := c.endpoints[module]
+	return ok
 }
 
 // Locations fetches all pages of the Locations module.
