@@ -60,7 +60,10 @@ func Fetch(ctx context.Context, cpoID, url, token string) ([]model.Connector, ma
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Accept", "application/xml")
-	resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
+	// Generous cap: the NAP feeds are large (Eco-Movement ≈ 31 MB) and generated
+	// on demand, so the server can be slow to start responding. Cancellation
+	// still honors the caller's ctx; this is just an upper bound.
+	resp, err := (&http.Client{Timeout: 300 * time.Second}).Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
