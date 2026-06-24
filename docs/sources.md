@@ -6,6 +6,8 @@ Adding a source to the running system = insert a `cpo` row (+ token env) — the
 scheduler hot-reloads it.
 
 Last researched: 2026-06-09 (BE), 2026-06-11 (NL/DE/FR expansion).
+Live update 2026-06-24: **Tesla**, **Group Indigo** and **Eco-Movement** are now
+enabled and ingesting in production (see status notes below).
 
 ## Beyond Belgium — wired 2026-06-11 (no paid feeds)
 
@@ -31,9 +33,9 @@ in Mobilithek (DE) and the IRVE-dynamique feed (FR).
 | **Road** | ✅ yes | ✅ **yes** | ✅ yes (status) |
 | **Monta** (Public API) | list: ✅ open / price: ⚠️ key | ⚠️ key + **per-EVSE** only | ⚠️ key + per-EVSE |
 | EnergyVision | ⚠️ free key (email) | likely (OCPI Tariffs) | ✅ |
-| Tesla | ⚠️ key (401 without) | likely (OCPI Tariffs) | ✅ |
-| Eco-Movement (NAP feed) | ✅ yes | ❌ no | ❌ no |
-| INDIGO | ✅ yes | ❌ no (static) | ❌ no |
+| **Tesla** ✅LIVE | ⚠️ key (pre-encoded) | ❌ **no tariffs module** | ✅ yes (live status) |
+| **Eco-Movement** ✅LIVE | ✅ yes (token in URL) | ❌ no | ❌ no |
+| **INDIGO** ✅LIVE | ✅ yes | ❌ no (static) | ❌ no |
 | Gireve (EVCI) | ❌ fee-based license | ❌ not in open set | — |
 
 **Conclusion:** **Road is the only fully-open (no-credential) source with ad-hoc
@@ -77,12 +79,12 @@ verified against the actual 1.2 MB file (37 element types, none price-related).
 | Provider | Coverage | Format | Endpoint | Consumable now? | Access contact |
 |---|---|---|---|---|---|
 | **EnergyVision** | 1 CPO | OCPI **2.1.1** | `https://ocpi.energyvision.be/cpo/2.1.1/` | ✅ matches our client | myevplatform@energyvision.be |
-| **Tesla Belgium** | 1 CPO (Superchargers) | OCPI **2.2.1** | `https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/` | ⚠️ needs 2.2.1 support | spolireddi@tesla.com |
+| **Tesla Belgium** ✅LIVE | 1 CPO (~92 sites / 456 connectors) | OCPI **2.2.1** | `https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/` | ✅ wired & ingesting — locations + **live status**, no tariffs module. Token is pre-base64 (`TESLA_TOKEN=base64:…`) | spolireddi@tesla.com |
 | **Monta** | 1 CPO | AFIR JSON (OCPI 2.2.1) | `https://docs.partner-api.monta.com/reference/get-afir-charge-points` | ⚠️ needs 2.2.1 / adapter | data@monta.com |
 | **Road** ✅LIVE | 1 CPO (~3,300 sites / 7,700 connectors) | OCPI 2.2.1 static JSON | `https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305/{locations,tariffs}.json` | ✅ **open, no key** — wired & ingesting (incl. prices) | roaming-dev@road.io |
-| **Eco-Movement** ⭐ | **~20 networks (~36k connectors)** | **DATEX II** XML (open, token in URL) | `https://api.eco-movement.com/api/nap/datexii/locations?token=…` | ✅ reader works — but **locations + power only, NO price/availability** (≈31 MB) | nap@eco-movement.com |
+| **Eco-Movement** ⭐ ✅LIVE | **~20 networks (~35,800 connectors)** | **DATEX II** XML (open, token in URL) | `https://api.eco-movement.com/api/nap/datexii/locations?token=…` | ✅ wired & ingesting — **locations + power only, NO price/availability** (≈31 MB). Token set in DB via `chargingctl sources set-token ecomovement …` (folded into `?token=`) | nap@eco-movement.com |
 | **Gireve (EVCI)** | many (roaming) | DATEX II XML | dataset `/en/dataset/evci` | ❌ needs DATEX II reader | via dataset page |
-| **Group INDIGO** | 1 CPO | DATEX II XML | dataset `/en/dataset/indigo-open-data-evcharging` | ❌ needs DATEX II reader | via dataset page |
+| **Group INDIGO** ✅LIVE | 1 CPO (~2,300 connectors) | DATEX II XML (open) | `…/resource/d4bc8ddd-…/download/indigo-data-evcharging-static-datexii.xml` | ✅ wired & ingesting — **location-only** (no price/status), open, no key | via dataset page |
 
 ⭐ **Eco-Movement is the highest-leverage source**: one integration covers
 Allego, bp pulse, Blink Charging, ChargePoint, Circle K, Dats24, Electra,
@@ -96,12 +98,15 @@ commercial **OCPI** API is the richer alternative.
 
 - **OCPI 2.1.1** — ✅ supported (EnergyVision). Just needs a token.
 - **OCPI 2.2.1** — ✅ supported: `/versions` discovery, base64 `Token` auth, and
-  2.2.1 fields (`max_electric_power`, `tariff_ids`). Unlocks Tesla + Monta once
-  tokens are set.
+  2.2.1 fields (`max_electric_power`, `tariff_ids`). **Tesla is live** (locations +
+  live status; it advertises no tariffs module, so the engine skips the tariffs
+  fetch via `Client.HasModule`). A `base64:` token prefix sends a pre-encoded
+  credential verbatim. Monta uses its own adapter.
 - **DATEX II** — ✅ reader built (`internal/datex`, v3 EnergyInfrastructure),
-  wired via `cpo.source_type='datex'`, and **validated against the live
-  Eco-Movement feed** (parses 35,980 connectors). Caveat: that open feed is
-  **coverage only — no ad-hoc price, no live status** (≈31 MB), so enable it for
+  wired via `cpo.source_type='datex'`. **Live: Eco-Movement (~35,800 connectors)
+  and Group Indigo (~2,300 connectors)**. The NAP feeds authenticate with a
+  `?token=` query param (folded in by `feedFor`), not a Bearer header. Caveat:
+  both are **coverage only — no ad-hoc price, no live status**, so enable them for
   reach, not for price comparison. Mandatory NAP format from 2026-04-14.
 - **Static JSON file** (Road) — ✅ **done** (`source_type='ocpi_file'`): fetches
   `{base}/locations.json` + `{base}/tariffs.json` (bare OCPI arrays). It's **open
@@ -109,8 +114,9 @@ commercial **OCPI** API is the richer alternative.
   ingesting today — the live proof of the whole pipeline before any key arrives.
   (The file's UUID path may rotate; update via `chargingctl sources add road --url …`.)
 
-Seeded (disabled) sources: `energyvision` (OCPI 2.1.1), `tesla` (OCPI 2.2.1),
-`ecomovement` (DATEX II). Enable with a token once access is granted.
+Live sources: `road`, `dotnl`, `bnetza`, `irve`, `monta`, **`tesla`** (OCPI 2.2.1),
+**`indigo`** + **`ecomovement`** (DATEX II). Still seeded but disabled (needs a
+token / access): `energyvision` (OCPI 2.1.1).
 
 ## Access-request checklist
 
@@ -119,11 +125,11 @@ Each direct CPO needs its own free key (AFIR: non-discriminatory, no cost).
 replies. Tick off and set the token env once each arrives.
 
 - [x] EnergyVision — myevplatform@energyvision.be → `ENERGYVISION_TOKEN` — sent, awaiting reply
-- [x] Tesla Belgium — spolireddi@tesla.com / aboumssimrat@tesla.com → `TESLA_TOKEN` — sent, awaiting reply
+- [x] Tesla Belgium — spolireddi@tesla.com / aboumssimrat@tesla.com → `TESLA_TOKEN` — ✅ **token received & live** (transportdata.be NAP; pre-base64, set as `TESLA_TOKEN=base64:…`)
 - [x] Monta — data@monta.com → `MONTA_TOKEN` — sent, awaiting reply
 - [x] Road — roaming-dev@road.io — **not needed**: public file is live & ingesting (a token may add more, but the open feed works)
-- [x] Eco-Movement — nap@eco-movement.com → `ECOMOVEMENT_TOKEN` — sent, awaiting reply
-      (asked about OCPI access + whether price/availability are included)
+- [x] Eco-Movement — nap@eco-movement.com → `ECOMOVEMENT_TOKEN` — ✅ **token received & live** (token in `?token=` URL; set in DB via `chargingctl sources set-token`)
+- [x] Group Indigo — transportdata.be open dataset — **not needed**: open static DATEX II, live & ingesting
 
 ## Suggested integration order
 
