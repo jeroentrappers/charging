@@ -6,3 +6,11 @@ docs
 .env.local
 .github
 testdata
+# Runtime state living alongside the deployed tree (see deploy rsync excludes).
+# Not part of the Go build context; `secrets` is 0500/uid-65532 so the build
+# user can't even read it — keep it out or the context load fails.
+secrets
+osrm-data
+spool
+capture
+data
