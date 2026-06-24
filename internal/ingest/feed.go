@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"net/url"
 	"strings"
 
 	"github.com/appmire/charging/internal/bnetza"
@@ -27,7 +28,10 @@ type feed interface {
 func feedFor(src source.Source) feed {
 	switch src.CPO.SourceType {
 	case "datex":
-		return datexFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token}
+		// The Belgian NAP DATEX II feeds (Eco-Movement) authenticate with a
+		// ?token= query param, not a Bearer header. Fold the resolved token into
+		// the URL; open feeds (Indigo) carry no token and pass through unchanged.
+		return datexFeed{cpoID: src.CPO.ID, url: datexURL(src.CPO.OCPIBaseURL, src.Token)}
 	case "mobilithek":
 		// DE Mobilithek AFIR DATEX II (mutual-TLS). OCPIBaseURL = "<static>|<status>".
 		return newMobilithekFeed(src.CPO.ID, src.CPO.OCPIBaseURL)
@@ -87,17 +91,31 @@ func (f ocpiFeed) Full(ctx context.Context) ([]model.Connector, map[string]model
 
 type datexFeed struct {
 	cpoID string
-	url   string
-	token string
+	url   string // feed URL with any auth token already folded in (see datexURL)
 }
 
 func (f datexFeed) Availability(ctx context.Context) ([]model.Connector, error) {
-	conns, _, err := datex.Fetch(ctx, f.cpoID, f.url, f.token)
+	conns, _, err := datex.Fetch(ctx, f.cpoID, f.url, "")
 	return conns, err
 }
 
 func (f datexFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
-	return datex.Fetch(ctx, f.cpoID, f.url, f.token)
+	return datex.Fetch(ctx, f.cpoID, f.url, "")
+}
+
+// datexURL folds a NAP token into the feed URL as a ?token= query param — the
+// auth scheme the Belgian DATEX II feeds (Eco-Movement) use. An empty token
+// (open feeds such as Indigo, or a URL that already embeds its token) returns
+// the URL unchanged.
+func datexURL(base, token string) string {
+	if token == "" {
+		return base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + "token=" + url.QueryEscape(token)
 }
 
 // ---- Static OCPI JSON files (e.g. Road) ----

@@ -153,6 +153,20 @@ func Seeds() []store.CPO {
 			Enabled:     true,
 		},
 		{
+			// 🇧🇪 Group Indigo (parking operator) — open static DATEX II (schema 3)
+			// on the BE NAP. LOCATION-ONLY (no price, no live status): ~2,300
+			// connectors in Indigo car parks, mostly 22 kW AC. Same DATEX II profile
+			// as Eco-Movement, parsed by the shared `datex` reader. Open, no key.
+			ID:          "indigo",
+			Name:        "Group Indigo (BE)",
+			OCPIBaseURL: "https://transportdata.be/dataset/27f1357d-71ee-48cb-84a1-96f3f4f034b8/resource/d4bc8ddd-c80f-4330-98e5-d86e5b2147c3/download/indigo-data-evcharging-static-datexii.xml",
+			SourceType:  "datex",
+			Country:     "BE",
+			PollCron:    "0 5 * * *",
+			StatusCron:  "0 5 * * *", // no live status; daily refresh is plenty
+			Enabled:     true,        // open data, no key required
+		},
+		{
 			// DATEX II aggregator (~20 networks, ~36k connectors). Validated
 			// against the live feed: it carries locations + connector type +
 			// power, but NO price and NO live status, and the response is ~31 MB,
