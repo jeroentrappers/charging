@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type SourceHealth, type StatusResponse } from './api'
 
@@ -34,10 +34,32 @@ function pollHealthy(now: number, s: SourceHealth): boolean {
   return !!s.last_run_at && s.last_run_error === '' && now - new Date(s.last_run_at).getTime() < 2 * 864e5
 }
 
+type SortKey = 'source' | 'type' | 'mode' | 'poll' | 'country' | 'chargers' | 'priced' | 'avail' | 'status' | 'price'
+
+// Numeric/time columns open descending (biggest/freshest first); text ascending.
+const DESC_FIRST = new Set<SortKey>(['poll', 'chargers', 'priced', 'avail', 'status', 'price'])
+
+function sortValue(s: SourceHealth, k: SortKey): string | number {
+  switch (k) {
+    case 'source': return (s.name || s.id).toLowerCase()
+    case 'type': return s.type
+    case 'mode': return mode(s)
+    case 'poll': return s.last_run_at ? new Date(s.last_run_at).getTime() : -1
+    case 'country': return s.country
+    case 'chargers': return s.chargers
+    case 'priced': return s.priced
+    case 'avail': return s.available
+    case 'status': return s.newest_status ? new Date(s.newest_status).getTime() : -1
+    case 'price': return s.newest_price ? new Date(s.newest_price).getTime() : -1
+  }
+}
+
 export function StatusPage() {
   const { t } = useTranslation()
   const [data, setData] = useState<StatusResponse | null>(null)
   const [err, setErr] = useState(false)
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -54,11 +76,50 @@ export function StatusPage() {
     }
   }, [])
 
+  const rows = useMemo(() => {
+    if (!data) return []
+    let out = data.sources
+    const needle = q.trim().toLowerCase()
+    if (needle) {
+      out = out.filter((s) =>
+        [s.name, s.id, s.type, s.country, mode(s)].some((f) => f && f.toLowerCase().includes(needle)),
+      )
+    }
+    if (sort) {
+      out = [...out].sort((a, b) => {
+        const va = sortValue(a, sort.key)
+        const vb = sortValue(b, sort.key)
+        if (va < vb) return -sort.dir
+        if (va > vb) return sort.dir
+        return a.id < b.id ? -1 : 1 // stable tiebreak
+      })
+    }
+    return out
+  }, [data, q, sort])
+
   if (err && !data) return <div className="status-page"><div className="state">{t('status.error')}</div></div>
   if (!data) return <div className="status-page"><div className="state"><div className="spinner" />{t('status.loading')}</div></div>
 
   const now = Date.now()
   const generated = new Date(data.generated).toLocaleString()
+
+  // Header cell: click cycles column → reversed → back to server order.
+  const TH = ({ k, label, num }: { k: SortKey; label: string; num?: boolean }) => {
+    const active = sort?.key === k
+    const arrow = active ? (sort!.dir === 1 ? ' ▲' : ' ▼') : ''
+    const onClick = () => {
+      const first = DESC_FIRST.has(k) ? -1 : 1
+      if (!active) setSort({ key: k, dir: first as 1 | -1 })
+      else if (sort!.dir === first) setSort({ key: k, dir: -first as 1 | -1 })
+      else setSort(null)
+    }
+    return (
+      <th className={`sortable${num ? ' num' : ''}${active ? ' sorted' : ''}`} onClick={onClick} role="button" tabIndex={0}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}>
+        {label}{arrow}
+      </th>
+    )
+  }
 
   return (
     <div className="status-page">
@@ -72,24 +133,32 @@ export function StatusPage() {
           <div><span>{t('status.priced')}</span><b>{data.totals.priced.toLocaleString()}</b></div>
           <div><span>{t('status.available')}</span><b>{data.totals.available.toLocaleString()}</b></div>
         </div>
+        <input
+          className="status-search"
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t('status.searchPlaceholder')}
+          aria-label={t('status.searchPlaceholder')}
+        />
         <div className="status-table-wrap">
           <table className="status-table">
             <thead>
               <tr>
-                <th>{t('status.colSource')}</th>
-                <th>{t('status.colType')}</th>
-                <th>{t('status.colMode')}</th>
-                <th>{t('status.colPoll')}</th>
-                <th>{t('status.colCountry')}</th>
-                <th className="num">{t('status.colChargers')}</th>
-                <th className="num">{t('status.colPriced')}</th>
-                <th className="num">{t('status.colAvail')}</th>
-                <th>{t('status.colStatus')}</th>
-                <th>{t('status.colPrice')}</th>
+                <TH k="source" label={t('status.colSource')} />
+                <TH k="type" label={t('status.colType')} />
+                <TH k="mode" label={t('status.colMode')} />
+                <TH k="poll" label={t('status.colPoll')} />
+                <TH k="country" label={t('status.colCountry')} />
+                <TH k="chargers" label={t('status.colChargers')} num />
+                <TH k="priced" label={t('status.colPriced')} num />
+                <TH k="avail" label={t('status.colAvail')} num />
+                <TH k="status" label={t('status.colStatus')} />
+                <TH k="price" label={t('status.colPrice')} />
               </tr>
             </thead>
             <tbody>
-              {data.sources.map((s) => {
+              {rows.map((s) => {
                 const m = mode(s)
                 const locOnly = LOCATION_ONLY.has(s.type)
                 // A source whose polls succeed but which yields zero chargers
@@ -120,6 +189,9 @@ export function StatusPage() {
                   </tr>
                 )
               })}
+              {rows.length === 0 && (
+                <tr><td colSpan={10} className="muted status-empty">{t('status.noMatches')}</td></tr>
+              )}
             </tbody>
           </table>
         </div>

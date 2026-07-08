@@ -30,7 +30,9 @@
     "justNow": "just now",
     "loading": "Loading source health…",
     "error": "Could not load source health.",
-    "pollFailed": "last poll failed"
+    "pollFailed": "last poll failed",
+    "searchPlaceholder": "Filter sources…",
+    "noMatches": "No sources match"
   },
   "geo": {
     "locate": "Locate me",

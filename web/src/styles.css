@@ -391,3 +391,11 @@ table.matrix tr.warn td { color: var(--amber); font-weight: 700; }
   .insights { padding: 20px 24px; }
   .insights-wrap { max-width: 1000px; margin: 0 auto; }
 }
+
+/* Status table: search + sortable headers */
+.status-search { display: block; width: 100%; max-width: 320px; margin: 0 0 10px; padding: 7px 10px; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.status-search:focus { outline: none; border-color: var(--accent, #4a90d9); }
+.status-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.status-table th.sortable:hover { color: var(--text); }
+.status-table th.sorted { color: var(--text); }
+.status-empty { text-align: center; padding: 18px 0; }

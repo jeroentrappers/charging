@@ -30,7 +30,9 @@
     "justNow": "gerade eben",
     "loading": "Quellen-Status wird geladen…",
     "error": "Quellen-Status konnte nicht geladen werden.",
-    "pollFailed": "letzter Abruf fehlgeschlagen"
+    "pollFailed": "letzter Abruf fehlgeschlagen",
+    "searchPlaceholder": "Quellen filtern…",
+    "noMatches": "Keine Quellen gefunden"
   },
   "geo": {
     "locate": "Standort",

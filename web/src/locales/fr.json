@@ -30,7 +30,9 @@
     "justNow": "à l'instant",
     "loading": "Chargement de l'état des sources…",
     "error": "Impossible de charger l'état des sources.",
-    "pollFailed": "dernier poll en échec"
+    "pollFailed": "dernier poll en échec",
+    "searchPlaceholder": "Filtrer les sources…",
+    "noMatches": "Aucune source trouvée"
   },
   "geo": {
     "locate": "Me localiser",

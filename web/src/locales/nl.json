@@ -30,7 +30,9 @@
     "justNow": "zojuist",
     "loading": "Bronstatus laden…",
     "error": "Kon de bronstatus niet laden.",
-    "pollFailed": "laatste poll mislukt"
+    "pollFailed": "laatste poll mislukt",
+    "searchPlaceholder": "Filter bronnen…",
+    "noMatches": "Geen bronnen gevonden"
   },
   "geo": {
     "locate": "Mijn locatie",
