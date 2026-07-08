@@ -1,0 +1,14 @@
+HTTP/2 200 
+date: Wed, 08 Jul 2026 06:41:59 GMT
+content-type: application/xml; charset=utf-8
+server: nginx/1.24.0 (Ubuntu)
+x-powered-by: PHP/8.3.6
+cache-control: max-age=0, must-revalidate, private
+x-content-type-options: nosniff
+referrer-policy: no-referrer, strict-origin-when-cross-origin
+x-frame-options: DENY
+content-security-policy: default-src 'self'; base-uri 'self'; block-all-mixed-content; connect-src 'self' https://api.stripe.com; font-src 'self' data: https://fonts.gstatic.com; form-action 'self'; frame-ancestors 'none'; frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com; img-src 'self' data: blob: https:; object-src 'none'; script-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
+x-content-security-policy: default-src 'self'; base-uri 'self'; block-all-mixed-content; connect-src 'self' https://api.stripe.com; font-src 'self' data: https://fonts.gstatic.com; form-action 'self'; frame-ancestors 'none'; frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com; img-src 'self' data: blob: https:; object-src 'none'; script-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
+expires: Wed, 08 Jul 2026 06:41:59 GMT
+set-cookie: PHPSESSID=c374c33203c9abfa418a89f55287dfea; path=/; secure; httponly; samesite=lax
+

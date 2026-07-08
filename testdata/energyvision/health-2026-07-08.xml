@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<datexHealth version="1.0">
+    <checkedAt>2026-07-08T06:42:02.271907Z</checkedAt>
+    <appReachable>true</appReachable>
+    <status>ok</status>
+    <feeds>
+        <feed>
+            <name>energy-infrastructure-table</name>
+            <generationOk>true</generationOk>
+            <lastSuccessfulGenerationAt>2026-07-08T06:42:03.720393Z</lastSuccessfulGenerationAt>
+            <cacheTtlSeconds>86400</cacheTtlSeconds>
+        </feed>
+        <feed>
+            <name>energy-infrastructure-status</name>
+            <generationOk>true</generationOk>
+            <lastSuccessfulGenerationAt>2026-07-08T06:42:04.786508Z</lastSuccessfulGenerationAt>
+            <cacheTtlSeconds>60</cacheTtlSeconds>
+        </feed>
+    </feeds>
+</datexHealth>
