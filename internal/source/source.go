@@ -63,9 +63,9 @@ func Seeds() []store.CPO {
 			SourceType:  "datex_afir",
 			TokenEnv:    "ENERGYVISION_TOKEN",
 			Country:     "BE",
-			PollCron:    "0 4 * * *",   // daily; the table is server-cached for 24h
-			StatusCron:  "*/5 * * * *", // status feed TTL is 60s; 5 min is plenty
-			Enabled:     true,          // polled once ENERGYVISION_TOKEN is set
+			PollCron:    "0 4 * * *", // daily; the table is server-cached for 24h
+			StatusCron:  "* * * * *", // matches the feed's 60s regeneration; the sig cache makes unchanged polls cheap
+			Enabled:     true,        // polled once ENERGYVISION_TOKEN is set
 		},
 		{
 			// 🇧🇪 Tesla Belgium roaming feed (transportdata.be NAP). OCPI 2.2.1,
