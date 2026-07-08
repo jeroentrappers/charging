@@ -31,6 +31,10 @@
       - --exclude=web/dist
       - --exclude=deploy/ansible/.vault-pass
       - --exclude=deploy/ansible/group_vars/charging/vault.yml
+      # root-owned, box-local artifacts that never lived in this repo (a DB
+      # backup timer + a CI workflow); --delete would fail trying to remove them.
+      - --exclude=.github
+      - --exclude=deploy/systemd
       - -e
       - "ssh -p {{ ansible_port | default(22) }} -i {{ ansible_ssh_private_key_file }} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
       - "./"
