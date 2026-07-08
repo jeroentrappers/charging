@@ -37,6 +37,7 @@ const apiVersion = "1.0.0"
 type server struct {
 	st              *store.Store
 	log             *slog.Logger
+	stats           *statsCache // memoizes the /stats/* analytics queries
 	vehicle         pricing.Vehicle
 	staleAfter      time.Duration
 	priceStaleAfter time.Duration
@@ -75,8 +76,9 @@ func main() {
 	defer st.Close()
 
 	s := &server{
-		st:  st,
-		log: log,
+		st:    st,
+		log:   log,
+		stats: newStatsCache(),
 		vehicle: pricing.Vehicle{
 			UsableKWh:         cfg.VehicleUsableKWh,
 			ConsumptionKWh100: cfg.VehicleConsumption,
@@ -134,6 +136,10 @@ func main() {
 		}
 		go snap.Run(context.Background())
 	}
+
+	// Warm the insights caches so the first visitor after a restart doesn't
+	// pay for the cold queries (the price-trend history scan takes seconds).
+	go s.warmStats(context.Background())
 
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,

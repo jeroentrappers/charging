@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"time"
 
@@ -453,12 +454,14 @@ func (s *server) opPriceHistory(ctx context.Context, in *historyIn) (*historyOut
 type overviewOut struct{ Body store.Overview }
 
 func (s *server) opStatsOverview(ctx context.Context, _ *struct{}) (*overviewOut, error) {
-	o, err := s.st.Overview(ctx)
+	v, err := s.stats.get(ctx, "overview", 10*time.Minute, func(ctx context.Context) (any, error) {
+		return s.st.Overview(ctx)
+	})
 	if err != nil {
 		s.log.Error("stats overview", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
 	}
-	return &overviewOut{Body: o}, nil
+	return &overviewOut{Body: v.(store.Overview)}, nil
 }
 
 type sessionStatsOut struct {
@@ -468,16 +471,19 @@ type sessionStatsOut struct {
 }
 
 func (s *server) opStatsSessions(ctx context.Context, _ *struct{}) (*sessionStatsOut, error) {
-	st, err := s.st.SessionStats(ctx)
+	v, err := s.stats.get(ctx, "sessions", 10*time.Minute, func(ctx context.Context) (any, error) {
+		st, err := s.st.SessionStats(ctx)
+		if st == nil {
+			st = []store.SessionStat{}
+		}
+		return st, err
+	})
 	if err != nil {
 		s.log.Error("stats sessions", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
 	}
-	if st == nil {
-		st = []store.SessionStat{}
-	}
 	out := &sessionStatsOut{}
-	out.Body.Sessions = st
+	out.Body.Sessions = v.([]store.SessionStat)
 	return out, nil
 }
 
@@ -494,17 +500,21 @@ type regionsOut struct {
 }
 
 func (s *server) opStatsRegions(ctx context.Context, in *regionsIn) (*regionsOut, error) {
-	res, err := s.st.RegionStats(ctx, in.By, in.Limit)
+	key := fmt.Sprintf("regions/%s/%d", in.By, in.Limit)
+	v, err := s.stats.get(ctx, key, 10*time.Minute, func(ctx context.Context) (any, error) {
+		res, err := s.st.RegionStats(ctx, in.By, in.Limit)
+		if res == nil {
+			res = []store.PriceAgg{}
+		}
+		return res, err
+	})
 	if err != nil {
 		s.log.Error("stats regions", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
 	}
-	if res == nil {
-		res = []store.PriceAgg{}
-	}
 	out := &regionsOut{}
 	out.Body.By = in.By
-	out.Body.Regions = res
+	out.Body.Regions = v.([]store.PriceAgg)
 	return out, nil
 }
 
@@ -519,15 +529,21 @@ type trendOut struct {
 }
 
 func (s *server) opStatsTrend(ctx context.Context, in *trendIn) (*trendOut, error) {
-	res, err := s.st.PriceTrend(ctx, in.Months)
+	// The heavy one: a temporal aggregation over the full SCD2 tariff history
+	// (~8s cold). Monthly buckets barely move, so cache for an hour.
+	key := fmt.Sprintf("trend/%d", in.Months)
+	v, err := s.stats.get(ctx, key, time.Hour, func(ctx context.Context) (any, error) {
+		res, err := s.st.PriceTrend(ctx, in.Months)
+		if res == nil {
+			res = []store.TrendPoint{}
+		}
+		return res, err
+	})
 	if err != nil {
 		s.log.Error("stats price-trend", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
 	}
-	if res == nil {
-		res = []store.TrendPoint{}
-	}
 	out := &trendOut{}
-	out.Body.Trend = res
+	out.Body.Trend = v.([]store.TrendPoint)
 	return out, nil
 }

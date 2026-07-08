@@ -130,4 +130,3 @@ func (s *server) logMobilithekRequest(next http.Handler) http.Handler {
 		}
 	})
 }
-
