@@ -27,9 +27,29 @@ type afirCreatorXML struct {
 	NationalIdentifier string `xml:"nationalIdentifier"`
 }
 
+// Publishers differ in their envelope: Mobilithek wraps the publication in a
+// container with a <payload> child, while EnergyVision's document root IS the
+// payload element. Each pub struct therefore embeds its body twice — once for
+// the root's own children, once under "payload" — and merges the two.
+type afirStaticBody struct {
+	Creator afirCreatorXML `xml:"publicationCreator"`
+	Sites   []afirSite     `xml:"energyInfrastructureTable>energyInfrastructureSite"`
+}
+
 type afirStaticPub struct {
-	Creator afirCreatorXML `xml:"payload>publicationCreator"`
-	Sites   []afirSite     `xml:"payload>energyInfrastructureTable>energyInfrastructureSite"`
+	afirStaticBody
+	Wrapped afirStaticBody `xml:"payload"`
+}
+
+func (p afirStaticPub) allSites() []afirSite {
+	return append(append([]afirSite(nil), p.Sites...), p.Wrapped.Sites...)
+}
+
+func (p afirStaticPub) creator() afirCreatorXML {
+	if p.Creator != (afirCreatorXML{}) {
+		return p.Creator
+	}
+	return p.Wrapped.Creator
 }
 
 type afirSite struct {
@@ -86,20 +106,38 @@ type afirPrice struct {
 
 // ---- Status publication (EnergyInfrastructureStatusPublication) ----
 
-type afirStatusPub struct {
-	Creator afirCreatorXML `xml:"payload>publicationCreator"`
+type afirStatusBody struct {
+	Creator afirCreatorXML `xml:"publicationCreator"`
 	// Publishers wrap station statuses under either energyInfrastructureStatus
-	// or energyInfrastructureSiteStatus (e.g. DELND). Accept both.
-	Stations     []afirStationStatus `xml:"payload>energyInfrastructureStatus>energyInfrastructureStationStatus"`
-	SiteStations []afirStationStatus `xml:"payload>energyInfrastructureSiteStatus>energyInfrastructureStationStatus"`
+	// or energyInfrastructureSiteStatus (e.g. DELND, EnergyVision). Accept both.
+	Stations     []afirStationStatus `xml:"energyInfrastructureStatus>energyInfrastructureStationStatus"`
+	SiteStations []afirStationStatus `xml:"energyInfrastructureSiteStatus>energyInfrastructureStationStatus"`
+}
+
+type afirStatusPub struct {
+	afirStatusBody
+	Wrapped afirStatusBody `xml:"payload"`
 }
 
 func (p afirStatusPub) allStations() []afirStationStatus {
-	return append(append([]afirStationStatus(nil), p.Stations...), p.SiteStations...)
+	out := append(append([]afirStationStatus(nil), p.Stations...), p.SiteStations...)
+	return append(append(out, p.Wrapped.Stations...), p.Wrapped.SiteStations...)
+}
+
+func (p afirStatusPub) creator() afirCreatorXML {
+	if p.Creator != (afirCreatorXML{}) {
+		return p.Creator
+	}
+	return p.Wrapped.Creator
 }
 
 type afirStationStatus struct {
 	RefillPoints []afirRefillPointStatus `xml:"refillPointStatus"`
+	// Some publishers (e.g. EnergyVision) attach the ad-hoc price update to the
+	// station rather than to each refill point; it then applies to every refill
+	// point in the station that has no update of its own.
+	UpdateRates []afirPrice `xml:"energyRateUpdate>energyPrice"`
+	UpdateCurr  string      `xml:"energyRateUpdate>applicableCurrency"`
 }
 
 type afirRefillPointStatus struct {
@@ -240,7 +278,7 @@ func buildStaticConnectors(pub afirStaticPub, cpoID string) ([]model.Connector, 
 	tariffs := map[string]model.Tariff{}
 	var conns []model.Connector
 
-	for _, s := range pub.Sites {
+	for _, s := range pub.allSites() {
 		for _, st := range s.Stations {
 			for _, rp := range st.RefillPoints {
 				conn := model.Connector{
@@ -293,22 +331,35 @@ func ParseAFIRStatus(data []byte) (map[string]AFIRStatus, error) {
 		return nil, fmt.Errorf("decode afir status: %w", err)
 	}
 	out := map[string]AFIRStatus{}
-	for _, st := range pub.allStations() {
+	pub.each(func(id, status string, tariff *model.Tariff) {
+		out[id] = AFIRStatus{Status: status, Tariff: tariff}
+	})
+	return out, nil
+}
+
+// each walks every refill point status in the publication, resolving the price
+// update per refill point: its own energyRateUpdate wins, else the enclosing
+// station's (EnergyVision publishes station-level updates only).
+func (p afirStatusPub) each(fn func(id, status string, tariff *model.Tariff)) {
+	for _, st := range p.allStations() {
 		for _, rps := range st.RefillPoints {
 			id := rps.refID()
 			if id == "" {
 				continue
 			}
-			as := AFIRStatus{Status: statusVocab(rps.Status)}
-			if len(rps.UpdateRates) > 0 {
-				if t, ok := buildTariff(id, afirRate{Currency: rps.UpdateCurr, Prices: rps.UpdateRates}); ok {
-					as.Tariff = &t
+			rates, curr := rps.UpdateRates, rps.UpdateCurr
+			if len(rates) == 0 {
+				rates, curr = st.UpdateRates, st.UpdateCurr
+			}
+			var tariff *model.Tariff
+			if len(rates) > 0 {
+				if t, ok := buildTariff(id, afirRate{Currency: curr, Prices: rates}); ok {
+					tariff = &t
 				}
 			}
-			out[id] = as
+			fn(id, statusVocab(rps.Status), tariff)
 		}
 	}
-	return out, nil
 }
 
 // ParseAFIR decodes one Mobilithek AFIR push regardless of encoding: DATEX II
@@ -335,30 +386,18 @@ func parseAFIRXML(data []byte) (*AFIRDoc, error) {
 			return nil, fmt.Errorf("decode afir xml status: %w", err)
 		}
 		doc.Kind = "status"
-		doc.Creator = AFIRCreator{Country: pub.Creator.Country, NationalIdentifier: pub.Creator.NationalIdentifier}
-		for _, st := range pub.allStations() {
-			for _, rps := range st.RefillPoints {
-				id := rps.refID()
-				if id == "" {
-					continue
-				}
-				upd := AFIRStatusUpdate{EVSEUID: id, Status: statusVocab(rps.Status)}
-				if len(rps.UpdateRates) > 0 {
-					if tf, ok := buildTariff(id, afirRate{Currency: rps.UpdateCurr, Prices: rps.UpdateRates}); ok {
-						upd.Tariff = &tf
-					}
-				}
-				doc.Statuses = append(doc.Statuses, upd)
-			}
-		}
+		doc.Creator = AFIRCreator{Country: pub.creator().Country, NationalIdentifier: pub.creator().NationalIdentifier}
+		pub.each(func(id, status string, tariff *model.Tariff) {
+			doc.Statuses = append(doc.Statuses, AFIRStatusUpdate{EVSEUID: id, Status: status, Tariff: tariff})
+		})
 	case bytes.Contains(data, []byte("EnergyInfrastructureTablePublication")):
 		var pub afirStaticPub
 		if err := xml.Unmarshal(data, &pub); err != nil {
 			return nil, fmt.Errorf("decode afir xml table: %w", err)
 		}
 		doc.Kind = "table"
-		doc.Creator = AFIRCreator{Country: pub.Creator.Country, NationalIdentifier: pub.Creator.NationalIdentifier}
-		for _, s := range pub.Sites {
+		doc.Creator = AFIRCreator{Country: pub.creator().Country, NationalIdentifier: pub.creator().NationalIdentifier}
+		for _, s := range pub.allSites() {
 			if s.Operator != "" {
 				doc.Operator = s.Operator
 				break

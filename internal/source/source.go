@@ -50,15 +50,23 @@ func Resolve(cpos []store.CPO) []Source {
 func Seeds() []store.CPO {
 	return []store.CPO{
 		{
+			// 🇧🇪 EnergyVision DATEX II (AFIR v3.7, docs 2026-06-30): a static table
+			// (24h cache) plus a 60s status feed with live availability AND
+			// station-level ad-hoc price updates — parsed by the shared AFIR reader.
+			// Bearer API key from myevplatform@energyvision.be; keys EXPIRE EVERY
+			// 6 MONTHS and must be re-requested by email. Caveat: the v1 table
+			// carries no coordinates/names/addresses yet (reported 2026-07), so the
+			// feed drops all rows until that's fixed; once coordinates appear the
+			// ~1,238 sites / 3,757 charging points ingest without a code change.
 			ID:          "energyvision",
 			Name:        "EnergyVision",
-			OCPIBaseURL: "https://ocpi.energyvision.be/cpo/2.1.1/",
-			OCPIVersion: "2.1.1",
+			OCPIBaseURL: "https://datex.cpo.energyvision.be/datex/energy-infrastructure-table|https://datex.cpo.energyvision.be/datex/energy-infrastructure-status",
+			SourceType:  "datex_afir",
 			TokenEnv:    "ENERGYVISION_TOKEN",
 			Country:     "BE",
-			PollCron:    "0 4 * * *",   // daily 04:00; price changes are rare
-			StatusCron:  "*/3 * * * *", // availability every 3 min
-			Enabled:     false,         // ready for the current client; needs a token
+			PollCron:    "0 4 * * *",   // daily; the table is server-cached for 24h
+			StatusCron:  "*/5 * * * *", // status feed TTL is 60s; 5 min is plenty
+			Enabled:     true,          // polled once ENERGYVISION_TOKEN is set
 		},
 		{
 			// 🇧🇪 Tesla Belgium roaming feed (transportdata.be NAP). OCPI 2.2.1,

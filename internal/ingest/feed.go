@@ -2,8 +2,13 @@ package ingest
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/appmire/charging/internal/bnetza"
 	"github.com/appmire/charging/internal/datex"
@@ -32,6 +37,10 @@ func feedFor(src source.Source) feed {
 		// ?token= query param, not a Bearer header. Fold the resolved token into
 		// the URL; open feeds (Indigo) carry no token and pass through unchanged.
 		return datexFeed{cpoID: src.CPO.ID, url: datexURL(src.CPO.OCPIBaseURL, src.Token)}
+	case "datex_afir":
+		// AFIR DATEX II table+status pair over plain Bearer auth (EnergyVision).
+		// OCPIBaseURL = "<table-url>|<status-url>".
+		return newAFIRPairFeed(src.CPO.ID, src.CPO.OCPIBaseURL, src.Token)
 	case "mobilithek":
 		// DE Mobilithek AFIR DATEX II (mutual-TLS). OCPIBaseURL = "<static>|<status>".
 		return newMobilithekFeed(src.CPO.ID, src.CPO.OCPIBaseURL)
@@ -116,6 +125,149 @@ func datexURL(base, token string) string {
 		sep = "&"
 	}
 	return base + sep + "token=" + url.QueryEscape(token)
+}
+
+// ---- AFIR DATEX II table+status pairs over Bearer auth (e.g. EnergyVision) ----
+// The static EnergyInfrastructureTablePublication carries identity (sites,
+// refill points, connector type, power); the EnergyInfrastructureStatusPublication
+// carries live availability + ad-hoc price updates. Both authenticate with an
+// "Authorization: Bearer <key>" header.
+
+type afirPairFeed struct {
+	cpoID     string
+	staticURL string
+	statusURL string
+	token     string
+}
+
+func newAFIRPairFeed(cpoID, baseURL, token string) afirPairFeed {
+	st, dyn, _ := strings.Cut(baseURL, "|")
+	return afirPairFeed{cpoID: cpoID, staticURL: strings.TrimSpace(st), statusURL: strings.TrimSpace(dyn), token: token}
+}
+
+func (f afirPairFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	conns, _, err := f.load(ctx)
+	return conns, err
+}
+
+func (f afirPairFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	return f.load(ctx)
+}
+
+// afirStaticCache remembers the parsed table per feed URL. The publishers
+// regenerate the table at most daily (EnergyVision serves it from a 24h cache
+// and asks consumers to avoid unnecessary traffic), but the engine rebuilds the
+// feed for every availability pass — without this, each 5-minute status poll
+// would re-download a multi-MB table that hasn't changed.
+var (
+	afirStaticMu    sync.Mutex
+	afirStaticCache = map[string]afirStaticEntry{}
+)
+
+const afirStaticTTL = time.Hour
+
+type afirStaticEntry struct {
+	fetched time.Time
+	conns   []model.Connector
+	tariffs map[string]model.Tariff
+}
+
+// load fetches (or reuses) the static table, then overlays the status
+// publication's live availability + price updates.
+func (f afirPairFeed) load(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	conns, tariffs, err := f.static(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if f.statusURL != "" {
+		statusXML, serr := fetchBearerXML(ctx, f.statusURL, f.token)
+		if serr != nil {
+			return nil, nil, fmt.Errorf("afir status %s: %w", f.cpoID, serr)
+		}
+		st, perr := datex.ParseAFIRStatus(statusXML)
+		if perr != nil {
+			return nil, nil, fmt.Errorf("parse afir status: %w", perr)
+		}
+		for i := range conns {
+			s, ok := st[conns[i].EVSEUID]
+			if !ok {
+				continue
+			}
+			if s.Status != "" {
+				conns[i].EVSEStatus = s.Status
+			}
+			if s.Tariff != nil { // live price update wins
+				if conns[i].TariffID == "" {
+					conns[i].TariffID = conns[i].EVSEUID
+				}
+				tariffs[conns[i].TariffID] = *s.Tariff
+			}
+		}
+	}
+	// EnergyVision's v1 table publishes no coordinates yet (reported 2026-07);
+	// a (0,0) charger would land on Null Island, so drop coordinate-less rows.
+	// The source lights up automatically once the publisher adds locations.
+	kept := conns[:0]
+	for _, c := range conns {
+		if c.Lat != 0 || c.Lon != 0 {
+			kept = append(kept, c)
+		}
+	}
+	return kept, tariffs, nil
+}
+
+// static returns a fresh copy of the parsed table, from cache when younger than
+// afirStaticTTL. Copies protect the cached slice/map from the status overlay.
+func (f afirPairFeed) static(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	afirStaticMu.Lock()
+	e, ok := afirStaticCache[f.staticURL]
+	afirStaticMu.Unlock()
+	if !ok || time.Since(e.fetched) > afirStaticTTL {
+		staticXML, err := fetchBearerXML(ctx, f.staticURL, f.token)
+		if err != nil {
+			return nil, nil, fmt.Errorf("afir static %s: %w", f.cpoID, err)
+		}
+		conns, tariffs, err := datex.ParseAFIRStatic(f.cpoID, staticXML)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse afir static: %w", err)
+		}
+		e = afirStaticEntry{fetched: time.Now(), conns: conns, tariffs: tariffs}
+		afirStaticMu.Lock()
+		afirStaticCache[f.staticURL] = e
+		afirStaticMu.Unlock()
+	}
+	conns := append([]model.Connector(nil), e.conns...)
+	tariffs := make(map[string]model.Tariff, len(e.tariffs))
+	for k, v := range e.tariffs {
+		tariffs[k] = v
+	}
+	return conns, tariffs, nil
+}
+
+// fetchBearerXML GETs a DATEX II feed with Bearer auth. Generous timeout: NAP
+// feeds are large and can be generated on demand.
+func fetchBearerXML(ctx context.Context, feedURL, token string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/xml")
+	resp, err := (&http.Client{Timeout: 300 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http %d", resp.StatusCode)
+	}
+	return body, nil
 }
 
 // ---- Static OCPI JSON files (e.g. Road) ----
