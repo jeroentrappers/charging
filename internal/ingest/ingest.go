@@ -200,6 +200,10 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 		prev := e.prevSigs(cacheKey)
 		next := make(map[string]uint64, len(conns))
 		changes := 0
+		// EVSEs re-observed with a price this pass — bulk-confirmed at the end so
+		// a stable-but-still-published price counts as "confirmed now", including
+		// the ones the signature cache skips below (whose price didn't change).
+		var pricedSeen []string
 		for _, conn := range conns {
 			// Include the tariff content in the signature, so a row is reprocessed
 			// when its identity, status, OR price changes.
@@ -207,6 +211,7 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 			if conn.TariffID != "" {
 				if t, ok := tariffs[conn.TariffID]; ok {
 					tariffHash = t.Hash()
+					pricedSeen = append(pricedSeen, conn.EVSEUID)
 				}
 			}
 			k := connKey(conn)
@@ -233,6 +238,9 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 			next[k] = sig
 		}
 		e.storeSigs(cacheKey, next)
+		if err := e.Store.ConfirmTariffsSeen(ctx, src.CPO.ID, pricedSeen); err != nil {
+			e.Log.Error("confirm tariffs", "cpo", src.CPO.ID, "err", err)
+		}
 		return len(conns), changes, nil
 	})
 }
@@ -262,10 +270,16 @@ func (e *Engine) recordRun(ctx context.Context, cpoID, kind string, fn func() (r
 // the number of tariff versions recorded.
 func (e *Engine) IngestOCPI(ctx context.Context, conns []model.Connector, tariffs map[string]model.Tariff) (int, error) {
 	changes := 0
+	pricedSeen := map[string][]string{} // cpo_id -> evse_uids re-observed with a price
 	for _, conn := range conns {
 		id, err := e.upsertConnector(ctx, conn)
 		if err != nil {
 			return changes, err
+		}
+		if conn.TariffID != "" {
+			if _, ok := tariffs[conn.TariffID]; ok {
+				pricedSeen[conn.CPOID] = append(pricedSeen[conn.CPOID], conn.EVSEUID)
+			}
 		}
 		ch, err := e.processTariff(ctx, id, conn, tariffs)
 		if err != nil {
@@ -273,6 +287,11 @@ func (e *Engine) IngestOCPI(ctx context.Context, conns []model.Connector, tariff
 		}
 		if ch {
 			changes++
+		}
+	}
+	for cpoID, evses := range pricedSeen {
+		if err := e.Store.ConfirmTariffsSeen(ctx, cpoID, evses); err != nil {
+			e.Log.Error("confirm tariffs", "cpo", cpoID, "err", err)
 		}
 	}
 	return changes, nil
@@ -309,6 +328,11 @@ func (e *Engine) RecordLive(ctx context.Context, chargerID int64, conn model.Con
 	}
 	if tar != nil {
 		if _, err := e.processTariff(ctx, chargerID, conn, map[string]model.Tariff{conn.TariffID: *tar}); err != nil {
+			return err
+		}
+		// A live lookup re-observed the price — confirm it even if unchanged, so
+		// the freshness reflects the check (processTariff no-ops when unchanged).
+		if err := e.Store.ConfirmTariff(ctx, chargerID); err != nil {
 			return err
 		}
 	}

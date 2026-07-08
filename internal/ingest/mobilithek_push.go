@@ -70,6 +70,7 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 	case "table":
 		// Full snapshot — upsert every connector + its tariff (resilient: a bad
 		// row is logged and skipped, never aborting the whole push).
+		var pricedSeen []string
 		for _, conn := range doc.Connectors {
 			conn.CPOID = cpoID
 			id, uerr := e.upsertConnector(ctx, conn)
@@ -77,11 +78,19 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 				e.Log.Error("mobilithek upsert connector", "cpo", cpoID, "evse", conn.EVSEUID, "err", uerr)
 				continue
 			}
+			if conn.TariffID != "" {
+				if _, ok := doc.Tariffs[conn.TariffID]; ok {
+					pricedSeen = append(pricedSeen, conn.EVSEUID)
+				}
+			}
 			if ch, perr := e.processTariff(ctx, id, conn, doc.Tariffs); perr != nil {
 				e.Log.Error("mobilithek process tariff", "cpo", cpoID, "evse", conn.EVSEUID, "err", perr)
 			} else if ch {
 				n++
 			}
+		}
+		if cerr := e.Store.ConfirmTariffsSeen(ctx, cpoID, pricedSeen); cerr != nil {
+			e.Log.Error("mobilithek confirm tariffs", "cpo", cpoID, "err", cerr)
 		}
 		e.Log.Info("mobilithek push ingested", "cpo", cpoID, "kind", "table", "connectors", len(doc.Connectors), "tariff_changes", n)
 		return "table", n, nil
@@ -111,6 +120,8 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 					}
 					if _, perr := e.processTariff(ctx, row.ID, conn, map[string]model.Tariff{u.Tariff.OCPIID: *u.Tariff}); perr != nil {
 						e.Log.Error("mobilithek status tariff", "id", row.ID, "err", perr)
+					} else if cerr := e.Store.ConfirmTariff(ctx, row.ID); cerr != nil {
+						e.Log.Error("mobilithek confirm tariff", "id", row.ID, "err", cerr)
 					}
 				}
 				n++

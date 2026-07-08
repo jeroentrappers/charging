@@ -163,6 +163,8 @@ export interface SourceHealth {
   priced: number
   available: number
   newest_status: string | null
+  // Most recent time a current price was CONFIRMED (re-observed by a pass),
+  // not necessarily changed — a stable price reads fresh, not stale.
   newest_price: string | null
   last_run_at: string | null
   last_run_error: string

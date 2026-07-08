@@ -100,6 +100,8 @@ func (e *Engine) ingestElisoPush(ctx context.Context, p *elisoPush) (string, int
 				}
 				if _, perr := e.processTariff(ctx, row.ID, conn, map[string]model.Tariff{tar.OCPIID: *tar}); perr != nil {
 					e.Log.Error("eliso process tariff", "id", row.ID, "err", perr)
+				} else if cerr := e.Store.ConfirmTariff(ctx, row.ID); cerr != nil {
+					e.Log.Error("eliso confirm tariff", "id", row.ID, "err", cerr)
 				}
 			}
 			n++

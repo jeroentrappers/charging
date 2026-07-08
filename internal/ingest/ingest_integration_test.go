@@ -88,12 +88,21 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 		}
 	}
 
-	// --- Pass 2: identical feed -> NO new version (change detection holds).
+	// last_confirmed_at is set on the opening pass too.
+	confirmedAfter1 := currentConfirmedAt(t, st, chargerID)
+
+	// --- Pass 2: identical feed -> NO new version (change detection holds),
+	// but the price IS re-confirmed: last_confirmed_at advances even though the
+	// content and observed_from (version-open time) do not.
+	time.Sleep(10 * time.Millisecond) // ensure a distinguishable now()
 	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{sampleTariff(0.45, t0)})
 	if err := eng.RunPrices(ctx, src); err != nil {
 		t.Fatalf("pass 2: %v", err)
 	}
 	assertCounts(t, st, 1, 1, 1) // still exactly one version
+	if confirmedAfter2 := currentConfirmedAt(t, st, chargerID); !confirmedAfter2.After(confirmedAfter1) {
+		t.Fatalf("unchanged price should still be re-confirmed: pass1=%v pass2=%v", confirmedAfter1, confirmedAfter2)
+	}
 
 	// --- Pass 3: price change -> new version, previous one closed.
 	t1 := t0.Add(48 * time.Hour)
@@ -120,6 +129,53 @@ func TestIngest_EndToEnd_SCD2(t *testing.T) {
 	// Availability flipped to CHARGING -> not available.
 	if avail := availableCount(t, st, chargerID); avail != 0 {
 		t.Fatalf("expected available_count 0 after CHARGING, got %d", avail)
+	}
+}
+
+// TestConfirmTariffsSeen_NotFalselyConfirmedWhenDropped proves ConfirmTariffsSeen
+// scopes to the EVSEs actually present in a pass: a charger that disappears from
+// the feed (e.g. temporarily delisted) must NOT have its price freshness bumped,
+// since we have no evidence its price is still current.
+func TestConfirmTariffsSeen_NotFalselyConfirmedWhenDropped(t *testing.T) {
+	ctx := context.Background()
+	st := setup(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	const token = "test-token"
+	feed := newMockFeed(token)
+	srv := feed.server()
+	defer srv.Close()
+
+	cpo := store.CPO{
+		ID: "mockcpo", Name: "Mock CPO",
+		OCPIBaseURL: srv.URL + "/", OCPIVersion: "2.1.1",
+		PollCron: "0 4 * * *", Enabled: true,
+	}
+	if err := st.UpsertCPO(ctx, cpo); err != nil {
+		t.Fatal(err)
+	}
+	src := source.Source{CPO: cpo, Token: token}
+	eng := NewEngine(st, log)
+	t0 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+
+	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{sampleTariff(0.45, t0)})
+	if err := eng.RunPrices(ctx, src); err != nil {
+		t.Fatalf("pass 1: %v", err)
+	}
+	chargerID := singleChargerID(t, st)
+	confirmedAfter1 := currentConfirmedAt(t, st, chargerID)
+
+	// Pass 2: the charger vanishes from the feed entirely (e.g. dropped from the
+	// CPO's location list). Its stored tariff version is untouched (honesty: we
+	// don't close it on a feed gap — see processTariff), but confirmation must
+	// NOT advance, since this pass produced no evidence for that price.
+	time.Sleep(10 * time.Millisecond)
+	feed.set(nil, nil)
+	if err := eng.RunPrices(ctx, src); err != nil {
+		t.Fatalf("pass 2: %v", err)
+	}
+	if confirmedAfter2 := currentConfirmedAt(t, st, chargerID); !confirmedAfter2.Equal(confirmedAfter1) {
+		t.Fatalf("dropped-from-feed charger must not be re-confirmed: pass1=%v pass2=%v", confirmedAfter1, confirmedAfter2)
 	}
 }
 
@@ -273,6 +329,17 @@ func currentPrice(t *testing.T, st *store.Store, chargerID int64) *float64 {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func currentConfirmedAt(t *testing.T, st *store.Store, chargerID int64) time.Time {
+	t.Helper()
+	var ts time.Time
+	if err := st.Pool.QueryRow(context.Background(),
+		`SELECT last_confirmed_at FROM tariff_version WHERE charger_id=$1 AND observed_to IS NULL`,
+		chargerID).Scan(&ts); err != nil {
+		t.Fatal(err)
+	}
+	return ts
 }
 
 func currentPrices(t *testing.T, st *store.Store, chargerID int64) map[string]float64 {

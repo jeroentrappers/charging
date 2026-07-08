@@ -346,11 +346,40 @@ func (s *Store) ReplaceTariff(ctx context.Context, chargerID int64, w TariffWrit
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO tariff_version
-				(charger_id, tariff_hash, price_components, comparable_price_eur, comparable_prices, currency, observed_from, source_last_updated)
-			VALUES ($1,$2,$3,$4,$5,$6, now(), $7)`,
+				(charger_id, tariff_hash, price_components, comparable_price_eur, comparable_prices, currency, observed_from, last_confirmed_at, source_last_updated)
+			VALUES ($1,$2,$3,$4,$5,$6, now(), now(), $7)`,
 			chargerID, w.Hash, w.Components, w.Comparable, prices, w.Currency, w.SourceLastUpdated)
 		return err
 	})
+}
+
+// ConfirmTariff bumps last_confirmed_at on one charger's open tariff version —
+// used by the on-demand live lookup, which already knows the charger id.
+func (s *Store) ConfirmTariff(ctx context.Context, chargerID int64) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE tariff_version SET last_confirmed_at = now() WHERE charger_id=$1 AND observed_to IS NULL`,
+		chargerID)
+	return err
+}
+
+// ConfirmTariffsSeen bumps last_confirmed_at to now() on the open tariff version
+// of the given source's chargers whose EVSE was re-observed (with a price) in a
+// pass — recording that the price is still current even when it didn't change.
+// Scoped to the evse_uids actually seen, so a charger that dropped out of the
+// feed is NOT falsely confirmed. A no-op on an empty set.
+func (s *Store) ConfirmTariffsSeen(ctx context.Context, cpoID string, evseUIDs []string) error {
+	if len(evseUIDs) == 0 {
+		return nil
+	}
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE tariff_version tv SET last_confirmed_at = now()
+		FROM charger c
+		WHERE tv.charger_id = c.id
+		  AND tv.observed_to IS NULL
+		  AND c.cpo_id = $1
+		  AND c.evse_uid = ANY($2)`,
+		cpoID, evseUIDs)
+	return err
 }
 
 // ---- Ingestion run log ----

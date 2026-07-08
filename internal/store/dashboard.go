@@ -16,7 +16,7 @@ type SourceHealth struct {
 	Priced     int
 	Available  int        // chargers currently reporting >0 available connectors
 	NewestStatus *time.Time // most recent availability update across the source
-	NewestPrice  *time.Time // most recent current-tariff timestamp
+	NewestPrice  *time.Time // most recent time a current price was CONFIRMED (re-observed), not necessarily changed
 
 	// Last finished ingest pass (any kind), straight from the run log. Lets the
 	// dashboard distinguish "pipeline runs fine but the feed yields no usable
@@ -36,7 +36,7 @@ func (s *Store) SourceHealthAll(ctx context.Context) ([]SourceHealth, error) {
 		       count(tv.charger_id) AS priced,
 		       count(*) FILTER (WHERE COALESCE(st.available_count,0) > 0) AS available,
 		       max(st.updated_at) AS newest_status,
-		       max(tv.observed_from) AS newest_price,
+		       max(tv.last_confirmed_at) AS newest_price,
 		       max(lr.finished_at) AS last_run_at,
 		       COALESCE(max(lr.error), '') AS last_run_error
 		FROM cpo p

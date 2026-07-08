@@ -69,6 +69,8 @@ func (e *Engine) RunMontaCrawl(ctx context.Context, src source.Source) {
 				}
 				if _, err := e.processTariff(ctx, t.ID, conn, map[string]model.Tariff{t.EVSEUID: *tar}); err != nil {
 					e.Log.Error("monta crawl: tariff", "evse", t.EVSEUID, "err", err)
+				} else if cerr := e.Store.ConfirmTariff(ctx, t.ID); cerr != nil {
+					e.Log.Error("monta crawl: confirm tariff", "evse", t.EVSEUID, "err", cerr)
 				}
 			}
 		}
