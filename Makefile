@@ -6,7 +6,7 @@ DATABASE_URL ?= postgres://charging:charging@localhost:5433/charging?sslmode=dis
 GOOSE_DRIVER ?= postgres
 MIGRATIONS_DIR := db/migrations
 
-.PHONY: help db-up db-down db-wait migrate migrate-down sqlc tidy build test run-ingest run-ingest-once run-api fmt vet
+.PHONY: help db-up db-down db-wait migrate migrate-down sqlc tidy build test run-ingest run-ingest-once run-api fmt vet validate-datex
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n", $$1, $$2}'
@@ -37,6 +37,9 @@ fmt: ## gofmt
 
 vet: ## go vet
 	go vet ./...
+
+validate-datex: ## Validate DATEX II feeds against official v3.7 XSDs (FEEDS=file|url…; default: live EnergyVision, needs ENERGYVISION_TOKEN)
+	@scripts/validate-datex.sh $(FEEDS)
 
 build: ## Build all binaries (api, ingest, migrate, chargingctl)
 	go build -o bin/ingest ./cmd/ingest

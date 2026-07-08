@@ -78,7 +78,7 @@ verified against the actual 1.2 MB file (37 element types, none price-related).
 
 | Provider | Coverage | Format | Endpoint | Consumable now? | Access contact |
 |---|---|---|---|---|---|
-| **EnergyVision** ✅LIVE | 1 CPO (~1,238 sites / 3,757 charging points) | **DATEX II v3.7 AFIR** (Bearer key) | `https://datex.cpo.energyvision.be/datex/energy-infrastructure-{table,status}` | ✅ wired (`source_type='datex_afir'`) — table + 60s status feed with **live availability AND station-level ad-hoc prices**. ⚠️ **v1 table ships NO coordinates/names/addresses** (reported 2026-07), so rows are dropped until fixed; then it lights up with no code change. Key expires every 6 months | myevplatform@energyvision.be |
+| **EnergyVision** ✅LIVE | 1 CPO (~1,238 sites / 3,757 charging points) | **DATEX II v3.7 AFIR** (Bearer key) | `https://datex.cpo.energyvision.be/datex/energy-infrastructure-{table,status}` | ✅ wired & ingesting (`source_type='datex_afir'`) — table + 60s status feed with **live availability AND station-level ad-hoc prices**. Coordinates + street addresses landed with their 2026-07-08 revision (on `aegi:entrance`) after our feedback. Key expires every 6 months | myevplatform@energyvision.be |
 | **Tesla Belgium** ✅LIVE | 1 CPO (~92 sites / 456 connectors) | OCPI **2.2.1** | `https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/` | ✅ wired & ingesting — locations + **live status**, no tariffs module. Token is pre-base64 (`TESLA_TOKEN=base64:…`) | spolireddi@tesla.com |
 | **Monta** | 1 CPO | AFIR JSON (OCPI 2.2.1) | `https://docs.partner-api.monta.com/reference/get-afir-charge-points` | ⚠️ needs 2.2.1 / adapter | data@monta.com |
 | **Road** ✅LIVE | 1 CPO (~3,300 sites / 7,700 connectors) | OCPI 2.2.1 static JSON | `https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305/{locations,tariffs}.json` | ✅ **open, no key** — wired & ingesting (incl. prices) | roaming-dev@road.io |
@@ -121,8 +121,7 @@ commercial **OCPI** API is the richer alternative.
 
 Live sources: `road`, `dotnl`, `bnetza`, `irve`, `monta`, **`tesla`** (OCPI 2.2.1),
 **`indigo`** + **`ecomovement`** (DATEX II), **`energyvision`** (DATEX II AFIR
-pair — polls once `ENERGYVISION_TOKEN` is set; connectors appear once the feed
-publishes coordinates).
+pair — live availability + prices; polls once `ENERGYVISION_TOKEN` is set).
 
 ## Access-request checklist
 
@@ -130,7 +129,7 @@ Each direct CPO needs its own free key (AFIR: non-discriminatory, no cost).
 **All requests sent 2026-06-10** (drafts in `access-request-emails.md`); awaiting
 replies. Tick off and set the token env once each arrives.
 
-- [x] EnergyVision — myevplatform@energyvision.be → `ENERGYVISION_TOKEN` — ✅ **docs + API key received 2026-07-08** (DATEX II v3.7, not OCPI). Wired & enabled; ⚠️ blocked on missing coordinates in their v1 table (feedback sent). NOTE: key expires every 6 months — re-request by email.
+- [x] EnergyVision — myevplatform@energyvision.be → `ENERGYVISION_TOKEN` — ✅ **docs + API key received 2026-07-08** (DATEX II v3.7, not OCPI). Wired, enabled & ingesting (~3,765 points, live status + prices; they added the missing coordinates on 2026-07-08 after our feedback). NOTE: key expires every 6 months — re-request by email.
 - [x] Tesla Belgium — spolireddi@tesla.com / aboumssimrat@tesla.com → `TESLA_TOKEN` — ✅ **token received & live** (transportdata.be NAP; pre-base64, set as `TESLA_TOKEN=base64:…`)
 - [x] Monta — data@monta.com → `MONTA_TOKEN` — sent, awaiting reply
 - [x] Road — roaming-dev@road.io — **not needed**: public file is live & ingesting (a token may add more, but the open feed works)

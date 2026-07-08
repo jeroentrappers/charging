@@ -204,9 +204,9 @@ func (f afirPairFeed) load(ctx context.Context) ([]model.Connector, map[string]m
 			}
 		}
 	}
-	// EnergyVision's v1 table publishes no coordinates yet (reported 2026-07);
-	// a (0,0) charger would land on Null Island, so drop coordinate-less rows.
-	// The source lights up automatically once the publisher adds locations.
+	// Safety net: drop coordinate-less rows so a publisher regression (e.g.
+	// EnergyVision's first table revision shipped without any locations) puts
+	// nothing on Null Island.
 	kept := conns[:0]
 	for _, c := range conns {
 		if c.Lat != 0 || c.Lon != 0 {

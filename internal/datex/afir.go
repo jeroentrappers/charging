@@ -59,8 +59,80 @@ type afirSite struct {
 	PostalCode string        `xml:"locationReference>_pointLocationExtension>facilityLocation>address>postcode"`
 	City       string        `xml:"locationReference>_pointLocationExtension>facilityLocation>address>city"`
 	Operator   string        `xml:"operator>name>values>value"`
+	Brand      string        `xml:"brand>values>value"`
 	Rates      []afirRate    `xml:"energyRate"`
 	Stations   []afirStation `xml:"energyInfrastructureStation"`
+
+	// Some publishers (EnergyVision) carry the site location on an
+	// aegi:entrance PointLocation instead of locationReference, with the AFIR
+	// facility address (multilingual city, typed address lines) under
+	// _locationExtension. Used as fallbacks when the primary paths are empty.
+	EntLatitude  float64        `xml:"entrance>pointByCoordinates>pointCoordinates>latitude"`
+	EntLongitude float64        `xml:"entrance>pointByCoordinates>pointCoordinates>longitude"`
+	EntPostcode  string         `xml:"entrance>_locationExtension>afirFacilityLocation>address>postcode"`
+	EntCity      string         `xml:"entrance>_locationExtension>afirFacilityLocation>address>city>values>value"`
+	EntLines     []afirAddrLine `xml:"entrance>_locationExtension>afirFacilityLocation>address>addressLine"`
+}
+
+type afirAddrLine struct {
+	Type string `xml:"type"`
+	Text string `xml:"text>values>value"`
+}
+
+// lat/lon/postcode/city resolve the primary location path with the entrance
+// fallback.
+func (s afirSite) lat() float64 {
+	if s.Latitude != 0 {
+		return s.Latitude
+	}
+	return s.EntLatitude
+}
+
+func (s afirSite) lon() float64 {
+	if s.Longitude != 0 {
+		return s.Longitude
+	}
+	return s.EntLongitude
+}
+
+func (s afirSite) postcode() string {
+	if s.PostalCode != "" {
+		return s.PostalCode
+	}
+	return s.EntPostcode
+}
+
+func (s afirSite) city() string {
+	if s.City != "" {
+		return s.City
+	}
+	return s.EntCity
+}
+
+// street composes "Street 12" from typed address lines, in line order.
+func (s afirSite) street() string {
+	var street, nr string
+	for _, l := range s.EntLines {
+		switch strings.ToLower(l.Type) {
+		case "street":
+			street = l.Text
+		case "housenumber":
+			nr = l.Text
+		}
+	}
+	if street != "" && nr != "" {
+		return street + " " + nr
+	}
+	return street
+}
+
+// operator falls back to the brand (EnergyVision publishes no operator element)
+// so cards still get a recognisable name.
+func (s afirSite) operator() string {
+	if s.Operator != "" {
+		return s.Operator
+	}
+	return s.Brand
 }
 
 type afirStation struct {
@@ -281,19 +353,23 @@ func buildStaticConnectors(pub afirStaticPub, cpoID string) ([]model.Connector, 
 	for _, s := range pub.allSites() {
 		for _, st := range s.Stations {
 			for _, rp := range st.RefillPoints {
+				addr := s.street()
+				if addr == "" {
+					addr = address(site{PostalCode: s.postcode(), City: s.city()})
+				}
 				conn := model.Connector{
 					CPOID:       cpoID,
 					EVSEUID:     rp.ID,
 					ConnectorID: "1",
-					Lat:         s.Latitude,
-					Lon:         s.Longitude,
+					Lat:         s.lat(),
+					Lon:         s.lon(),
 					PowerKW:     round1(rp.MaxPowerW / 1000),
 					PlugType:    mapPlug(rp.ConnectorType),
 					CurrentType: afirCurrentType(rp.ConnectorType, rp.ChargingMode),
-					Name:        name(site{Name: s.Name, Operator: s.Operator}),
-					Address:     address(site{PostalCode: s.PostalCode, City: s.City}),
-					PostalCode:  s.PostalCode,
-					City:        s.City,
+					Name:        name(site{Name: s.Name, Operator: s.operator()}),
+					Address:     addr,
+					PostalCode:  s.postcode(),
+					City:        s.city(),
 				}
 
 				// Pricing may sit on the refillPoint, its station, or its site.

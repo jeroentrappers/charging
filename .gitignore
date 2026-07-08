@@ -18,6 +18,9 @@ coverage.*
 .idea/
 .vscode/
 
+# Cached official DATEX II schemas (scripts/validate-datex.sh downloads them)
+.datex-xsd/
+
 # Generated bulk dataset dumps
 /export/
 

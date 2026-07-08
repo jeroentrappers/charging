@@ -53,11 +53,10 @@ func Seeds() []store.CPO {
 			// 🇧🇪 EnergyVision DATEX II (AFIR v3.7, docs 2026-06-30): a static table
 			// (24h cache) plus a 60s status feed with live availability AND
 			// station-level ad-hoc price updates — parsed by the shared AFIR reader.
+			// ~1,240 sites / ~3,765 charging points with coordinates + street
+			// addresses (published on aegi:entrance since their 2026-07-08 fix).
 			// Bearer API key from myevplatform@energyvision.be; keys EXPIRE EVERY
-			// 6 MONTHS and must be re-requested by email. Caveat: the v1 table
-			// carries no coordinates/names/addresses yet (reported 2026-07), so the
-			// feed drops all rows until that's fixed; once coordinates appear the
-			// ~1,238 sites / 3,757 charging points ingest without a code change.
+			// 6 MONTHS and must be re-requested by email.
 			ID:          "energyvision",
 			Name:        "EnergyVision",
 			OCPIBaseURL: "https://datex.cpo.energyvision.be/datex/energy-infrastructure-table|https://datex.cpo.energyvision.be/datex/energy-infrastructure-status",
