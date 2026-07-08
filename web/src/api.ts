@@ -164,6 +164,8 @@ export interface SourceHealth {
   available: number
   newest_status: string | null
   newest_price: string | null
+  last_run_at: string | null
+  last_run_error: string
 }
 
 export interface StatusResponse {

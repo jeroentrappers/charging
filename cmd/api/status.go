@@ -35,6 +35,8 @@ func (s *server) statusJSON(w http.ResponseWriter, r *http.Request) {
 			Available:    h.Available,
 			NewestStatus: h.NewestStatus,
 			NewestPrice:  h.NewestPrice,
+			LastRunAt:    h.LastRunAt,
+			LastRunError: h.LastRunError,
 		})
 		out.Totals.Sources++
 		out.Totals.Chargers += h.Chargers
@@ -59,6 +61,10 @@ type statusSource struct {
 	Available    int        `json:"available"`
 	NewestStatus *time.Time `json:"newest_status"`
 	NewestPrice  *time.Time `json:"newest_price"`
+	// Last finished ingest pass from the run log — non-null with an empty error
+	// means the pipeline is healthy even when the source yields zero chargers.
+	LastRunAt    *time.Time `json:"last_run_at"`
+	LastRunError string     `json:"last_run_error"`
 }
 
 type statusResponse struct {

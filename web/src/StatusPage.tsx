@@ -28,6 +28,12 @@ function ago(now: number, iso: string | null, expectedEmpty: boolean, neverLabel
   return { text, cls }
 }
 
+// pollHealthy: the last ingest pass finished recently (within 2 days — the
+// slowest cadence apart from the monthly registers) and without an error.
+function pollHealthy(now: number, s: SourceHealth): boolean {
+  return !!s.last_run_at && s.last_run_error === '' && now - new Date(s.last_run_at).getTime() < 2 * 864e5
+}
+
 export function StatusPage() {
   const { t } = useTranslation()
   const [data, setData] = useState<StatusResponse | null>(null)
@@ -73,6 +79,7 @@ export function StatusPage() {
                 <th>{t('status.colSource')}</th>
                 <th>{t('status.colType')}</th>
                 <th>{t('status.colMode')}</th>
+                <th>{t('status.colPoll')}</th>
                 <th>{t('status.colCountry')}</th>
                 <th className="num">{t('status.colChargers')}</th>
                 <th className="num">{t('status.colPriced')}</th>
@@ -85,14 +92,25 @@ export function StatusPage() {
               {data.sources.map((s) => {
                 const m = mode(s)
                 const locOnly = LOCATION_ONLY.has(s.type)
-                const st = ago(now, s.newest_status, locOnly, t('status.never'), t('status.justNow'))
-                const pr = ago(now, s.newest_price, locOnly || s.priced === 0, t('status.never'), t('status.justNow'))
+                // A source whose polls succeed but which yields zero chargers
+                // (e.g. a feed still missing coordinates) is empty by upstream
+                // content, not broken — render its freshness neutral.
+                const emptyFeed = s.chargers === 0 && pollHealthy(now, s)
+                const st = ago(now, s.newest_status, locOnly || emptyFeed, t('status.never'), t('status.justNow'))
+                const pr = ago(now, s.newest_price, locOnly || emptyFeed || s.priced === 0, t('status.never'), t('status.justNow'))
+                // Push sources have no scheduled pulls; their run log is empty
+                // by design, so the poll column reads neutral.
+                const run = ago(now, s.last_run_at, m === 'push' || !s.enabled, t('status.never'), t('status.justNow'))
+                if (s.last_run_error !== '') run.cls = 'old'
                 const pct = s.chargers > 0 ? `${Math.round((100 * s.priced) / s.chargers)}%` : ''
                 return (
                   <tr key={s.id}>
                     <td>{s.name || s.id}<br /><span className="muted">{s.id}</span></td>
                     <td>{s.type}</td>
                     <td><span className={`pill pill-${m}`}>{t(`status.mode_${m}`)}</span></td>
+                    <td className={`fresh-${run.cls}`} title={s.last_run_error ? `${t('status.pollFailed')}: ${s.last_run_error}` : undefined}>
+                      {run.text}{s.last_run_error !== '' && ' ⚠'}
+                    </td>
                     <td>{s.country}</td>
                     <td className="num">{s.chargers.toLocaleString()}</td>
                     <td className="num">{s.priced.toLocaleString()}{pct && <span className="muted"> ({pct})</span>}</td>

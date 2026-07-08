@@ -16,6 +16,7 @@
     "colSource": "Source",
     "colType": "Type",
     "colMode": "Mode",
+    "colPoll": "Poll",
     "colCountry": "CC",
     "colChargers": "Chargers",
     "colPriced": "Priced",
@@ -28,7 +29,8 @@
     "never": "never",
     "justNow": "just now",
     "loading": "Loading source health…",
-    "error": "Could not load source health."
+    "error": "Could not load source health.",
+    "pollFailed": "last poll failed"
   },
   "geo": {
     "locate": "Locate me",

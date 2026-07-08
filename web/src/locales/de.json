@@ -16,6 +16,7 @@
     "colSource": "Quelle",
     "colType": "Typ",
     "colMode": "Modus",
+    "colPoll": "Poll",
     "colCountry": "Land",
     "colChargers": "Ladepunkte",
     "colPriced": "Mit Preis",
@@ -28,7 +29,8 @@
     "never": "nie",
     "justNow": "gerade eben",
     "loading": "Quellen-Status wird geladen…",
-    "error": "Quellen-Status konnte nicht geladen werden."
+    "error": "Quellen-Status konnte nicht geladen werden.",
+    "pollFailed": "letzter Abruf fehlgeschlagen"
   },
   "geo": {
     "locate": "Standort",

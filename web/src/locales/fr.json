@@ -16,6 +16,7 @@
     "colSource": "Source",
     "colType": "Type",
     "colMode": "Mode",
+    "colPoll": "Poll",
     "colCountry": "Pays",
     "colChargers": "Bornes",
     "colPriced": "Avec prix",
@@ -28,7 +29,8 @@
     "never": "jamais",
     "justNow": "à l'instant",
     "loading": "Chargement de l'état des sources…",
-    "error": "Impossible de charger l'état des sources."
+    "error": "Impossible de charger l'état des sources.",
+    "pollFailed": "dernier poll en échec"
   },
   "geo": {
     "locate": "Me localiser",

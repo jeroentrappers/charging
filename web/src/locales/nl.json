@@ -16,6 +16,7 @@
     "colSource": "Bron",
     "colType": "Type",
     "colMode": "Modus",
+    "colPoll": "Poll",
     "colCountry": "Land",
     "colChargers": "Laadpunten",
     "colPriced": "Met prijs",
@@ -28,7 +29,8 @@
     "never": "nooit",
     "justNow": "zojuist",
     "loading": "Bronstatus laden…",
-    "error": "Kon de bronstatus niet laden."
+    "error": "Kon de bronstatus niet laden.",
+    "pollFailed": "laatste poll mislukt"
   },
   "geo": {
     "locate": "Mijn locatie",
