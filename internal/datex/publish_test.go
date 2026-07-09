@@ -61,6 +61,9 @@ func TestWriteAFIRTableRoundTrip(t *testing.T) {
 	// Dump for the XSD-validation step (scripts/validate-datex.sh) when asked.
 	if out := os.Getenv("DATEX_DUMP_DIR"); out != "" {
 		_ = os.WriteFile(out+"/table.xml", buf.Bytes(), 0o644)
+		var jb bytes.Buffer
+		_ = WriteAFIRTableJSON(&jb, sampleSites(), creator, now)
+		_ = os.WriteFile(out+"/table.json", jb.Bytes(), 0o644)
 	}
 
 	conns, tariffs, err := ParseAFIRStatic("cpo-x", buf.Bytes())

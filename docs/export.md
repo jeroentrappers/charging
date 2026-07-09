@@ -59,10 +59,16 @@ Energy Infrastructure" 01-00-00, the one German Mobilithek providers push).
   `EnergyInfrastructureStatusPublication`: live refill-point status. Consumers
   join `refillPointStatus > reference/@id` (or `reference.idG` in JSON) back to
   the table's `refillPoint` id.
-- **Compliance**: the XML validates against the official DATEX II **v3.7** schema
-  set — `scripts/validate-datex.sh export/datex/*.xml` (or `make
-  validate-datex-export`) is the reference check. `publicationCreator` is set
-  from `DATEX_CREATOR_COUNTRY` / `DATEX_CREATOR_ID`.
+- **Compliance**:
+  - *XML* validates against the official DATEX II **v3.7** schema set —
+    `scripts/validate-datex.sh export/datex/*.xml` (or `make
+    validate-datex-export`) is the reference check.
+  - *JSON* has no official XSD, so its reference check (mirroring the XML gate)
+    is that our canonical consumer — the same parser that reads the live German
+    Mobilithek JSON feeds — decodes it into a valid publication: `make
+    validate-datex-json` (`cmd/datexjsoncheck`).
+
+  `publicationCreator` is set from `DATEX_CREATOR_COUNTRY` / `DATEX_CREATOR_ID`.
 
 ### Push delivery
 

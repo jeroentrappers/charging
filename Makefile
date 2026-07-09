@@ -6,7 +6,7 @@ DATABASE_URL ?= postgres://charging:charging@localhost:5433/charging?sslmode=dis
 GOOSE_DRIVER ?= postgres
 MIGRATIONS_DIR := db/migrations
 
-.PHONY: help db-up db-down db-wait migrate migrate-down sqlc tidy build test run-ingest run-ingest-once run-api fmt vet validate-datex validate-datex-export
+.PHONY: help db-up db-down db-wait migrate migrate-down sqlc tidy build test run-ingest run-ingest-once run-api fmt vet validate-datex validate-datex-export validate-datex-json
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n", $$1, $$2}'
@@ -43,6 +43,9 @@ validate-datex: ## Validate DATEX II feeds against official v3.7 XSDs (FEEDS=fil
 
 validate-datex-export: ## Validate the DATEX II XML we publish (EXPORT_DIR, default ./export) against the official v3.7 XSDs
 	@scripts/validate-datex.sh $(or $(EXPORT_DIR),./export)/datex/*.xml
+
+validate-datex-json: ## Validate DATEX II AFIR JSON files via the canonical consumer (FILES=…; default: EXPORT_DIR/datex/*.json)
+	@go run ./cmd/datexjsoncheck $(or $(FILES),$(or $(EXPORT_DIR),./export)/datex/*.json)
 
 build: ## Build all binaries (api, ingest, migrate, chargingctl)
 	go build -o bin/ingest ./cmd/ingest
