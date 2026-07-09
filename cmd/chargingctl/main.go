@@ -63,6 +63,7 @@ func usage() {
 
 Read:
   chargers cheapest --lat L --lon L [--radius m --session key --available --min-power kW --plug P --limit N] [--json]
+  chargers list     [--q TEXT --source ID --plug P --current AC|DC --min-power kW --max-power kW --available --has-price --include-private --sort id|name|city|power|plug|current|price|available|source|updated --desc --limit N --offset N] [--json]
   sessions [--json]
   stats overview|sessions|regions|price-trend [--by city|postal] [--months N] [--json]
 
@@ -124,9 +125,19 @@ func (c *client) do(method, path string, query url.Values, body any, admin bool)
 // ---- commands ----
 
 func cmdChargers(c *client, args []string) error {
-	if len(args) == 0 || args[0] != "cheapest" {
-		return fmt.Errorf("usage: chargers cheapest --lat L --lon L [...]")
+	if len(args) == 0 {
+		return fmt.Errorf("usage: chargers cheapest|list ...")
 	}
+	switch args[0] {
+	case "cheapest":
+		return chargersCheapest(c, args[1:])
+	case "list":
+		return chargersList(c, args[1:])
+	}
+	return fmt.Errorf("usage: chargers cheapest|list ...")
+}
+
+func chargersCheapest(c *client, args []string) error {
 	fs := newFlags("chargers cheapest")
 	lat := fs.String("lat", "", "latitude (required)")
 	lon := fs.String("lon", "", "longitude (required)")
@@ -137,7 +148,7 @@ func cmdChargers(c *client, args []string) error {
 	avail := fs.Bool("available", false, "only available")
 	limit := fs.String("limit", "", "max results")
 	jsonOut := fs.Bool("json", false, "raw JSON")
-	fs.Parse(args[1:])
+	fs.Parse(args)
 	if *lat == "" || *lon == "" {
 		return fmt.Errorf("--lat and --lon are required")
 	}
@@ -182,6 +193,99 @@ func cmdChargers(c *client, args []string) error {
 		}
 		fmt.Fprintf(tw, "%s\t%dm\t%.0f\t%s\t%s\t%s\n",
 			eur(p), int(r.DistanceM), r.PowerKW, shorten(r.PlugType, 16), avComment(r.Available, r.Stale), r.Name)
+	}
+	return tw.Flush()
+}
+
+// chargersList calls the explorer endpoint and prints one page as a tab-aligned
+// table. Designed for scripting ("what's the most expensive Belgian DC
+// charger?") as well as ad-hoc browsing; --json gives the full payload for
+// jq-style filtering.
+func chargersList(c *client, args []string) error {
+	fs := newFlags("chargers list")
+	q := fs.String("q", "", "free-text search: name, address, city, postal, EVSE id, source")
+	source := fs.String("source", "", "filter to one source (CPO id)")
+	plug := fs.String("plug", "", "filter to one OCPI plug type")
+	current := fs.String("current", "", "AC or DC")
+	minPower := fs.String("min-power", "", "min rated power kW")
+	maxPower := fs.String("max-power", "", "max rated power kW")
+	avail := fs.Bool("available", false, "only chargers currently free")
+	hasPrice := fs.Bool("has-price", false, "only chargers with a current tariff")
+	includePrivate := fs.Bool("include-private", false, "include home/p2p chargers")
+	sortKey := fs.String("sort", "id", "id|name|city|power|plug|current|price|available|source|updated")
+	desc := fs.Bool("desc", false, "sort descending")
+	limit := fs.String("limit", "50", "page size (1-500)")
+	offset := fs.String("offset", "0", "rows to skip")
+	jsonOut := fs.Bool("json", false, "raw JSON")
+	fs.Parse(args)
+
+	params := url.Values{}
+	setIf(params, "q", *q)
+	setIf(params, "source", *source)
+	setIf(params, "plug", *plug)
+	setIf(params, "current", *current)
+	setIf(params, "min_power", *minPower)
+	setIf(params, "max_power", *maxPower)
+	setIf(params, "limit", *limit)
+	setIf(params, "offset", *offset)
+	setIf(params, "sort", *sortKey)
+	if *desc {
+		params.Set("desc", "true")
+	}
+	if *avail {
+		params.Set("available", "true")
+	}
+	if *hasPrice {
+		params.Set("has_price", "true")
+	}
+	if *includePrivate {
+		params.Set("include_private", "true")
+	}
+
+	data, err := c.do("GET", "/chargers", params, nil, false)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printRaw(data)
+	}
+	var res struct {
+		Total   int `json:"total"`
+		Limit   int `json:"limit"`
+		Offset  int `json:"offset"`
+		Results []struct {
+			ID          int64    `json:"id"`
+			Source      string   `json:"source"`
+			Country     string   `json:"country"`
+			CurrentType string   `json:"current_type"`
+			PlugType    string   `json:"plug_type"`
+			PowerKW     float64  `json:"power_kw"`
+			PriceEUR    *float64 `json:"comparable_price_eur"`
+			Available   *int     `json:"available_count"`
+			Name        string   `json:"name"`
+			City        string   `json:"city"`
+			Private     bool     `json:"private"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(data, &res); err != nil {
+		return err
+	}
+	fmt.Printf("Showing %d-%d of %d (offset %d, limit %d)\n",
+		res.Offset+1, res.Offset+len(res.Results), res.Total, res.Offset, res.Limit)
+	tw := tab()
+	fmt.Fprintln(tw, "ID\tkW\tPRICE\tFREE\tPLUG\tAC/DC\tNAME\tCITY\tSOURCE")
+	for _, r := range res.Results {
+		avail := "—"
+		if r.Available != nil {
+			avail = strconv.Itoa(*r.Available)
+		}
+		name := r.Name
+		if r.Private {
+			name += " (private)"
+		}
+		fmt.Fprintf(tw, "%d\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.ID, r.PowerKW, eur(r.PriceEUR), avail, shorten(r.PlugType, 14),
+			dash(r.CurrentType), shorten(name, 36), dash(r.City), r.Source)
 	}
 	return tw.Flush()
 }

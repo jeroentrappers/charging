@@ -13,6 +13,7 @@ const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
 // Insights pulls in the charting library; load it only when that tab is opened.
 const InsightsPage = lazy(() => import('./InsightsPage').then((m) => ({ default: m.InsightsPage })))
 const StatusPage = lazy(() => import('./StatusPage').then((m) => ({ default: m.StatusPage })))
+const ChargersPage = lazy(() => import('./ChargersPage').then((m) => ({ default: m.ChargersPage })))
 
 // Default to Ghent until geolocation resolves (or is denied).
 const DEFAULT_CENTER: [number, number] = [51.0543, 3.725]
@@ -45,7 +46,7 @@ export default function App() {
     }
     setRoute(next)
   }
-  const setTab = (next: 'find' | 'insights' | 'status') =>
+  const setTab = (next: 'find' | 'insights' | 'status' | 'chargers') =>
     navigate({ tab: next, center: route.center }, true) // keep the map centre; drop any open charger
   const onCenter = (center: { lat: number; lon: number; zoom: number }) => navigate({ tab: 'find', center }, false)
   const onOpenCharger = (c: Charger) =>
@@ -164,6 +165,7 @@ export default function App() {
             <div className="nav-backdrop" onClick={() => setMenuOpen(false)} />
             <div className="navmenu" role="menu">
               <button role="menuitem" className={tab === 'find' ? 'active' : ''} onClick={() => { setTab('find'); setMenuOpen(false) }}>{t('nav.find')}</button>
+              <button role="menuitem" className={tab === 'chargers' ? 'active' : ''} onClick={() => { setTab('chargers'); setMenuOpen(false) }}>{t('nav.chargers')}</button>
               <button role="menuitem" className={tab === 'insights' ? 'active' : ''} onClick={() => { setTab('insights'); setMenuOpen(false) }}>{t('nav.insights')}</button>
               <button role="menuitem" className={tab === 'status' ? 'active' : ''} onClick={() => { setTab('status'); setMenuOpen(false) }}>{t('nav.status')}</button>
               <button role="menuitem" onClick={() => { setShowSettings(true); setMenuOpen(false) }}>{t('settings.title')}</button>
@@ -245,6 +247,10 @@ export default function App() {
       ) : tab === 'insights' ? (
         <Suspense fallback={<div className="insights"><div className="state"><div className="spinner" />{t('insights.loading')}</div></div>}>
           <InsightsPage />
+        </Suspense>
+      ) : tab === 'chargers' ? (
+        <Suspense fallback={<div className="chargers-page"><div className="state"><div className="spinner" />{t('chargers.loading')}</div></div>}>
+          <ChargersPage />
         </Suspense>
       ) : (
         <Suspense fallback={<div className="status-page"><div className="state"><div className="spinner" />{t('status.loading')}</div></div>}>

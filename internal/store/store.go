@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -717,6 +718,268 @@ type PricePoint struct {
 	ObservedFrom      time.Time          `json:"observed_from"`
 	ObservedTo        *time.Time         `json:"observed_to"`
 	SourceLastUpdated *time.Time         `json:"source_last_updated"`
+}
+
+// ---- ChargerList: paginated explorer view (table) ----
+
+// ChargerListColumn is the set of sortable columns for the explorer table.
+// The empty string sorts by charger id (insertion order, the most recent
+// ingests at the bottom). Other columns are aliased to a real expression in
+// chargerListSortExpr.
+type ChargerListColumn string
+
+const (
+	ChargerListColID        ChargerListColumn = "id"
+	ChargerListColName      ChargerListColumn = "name"
+	ChargerListColCity      ChargerListColumn = "city"
+	ChargerListColPower     ChargerListColumn = "power"
+	ChargerListColPlug      ChargerListColumn = "plug"
+	ChargerListColCurrent   ChargerListColumn = "current"
+	ChargerListColPrice     ChargerListColumn = "price"
+	ChargerListColAvailable ChargerListColumn = "available"
+	ChargerListColSource    ChargerListColumn = "source"
+	ChargerListColUpdated   ChargerListColumn = "updated"
+)
+
+// ChargerListQuery is the explorer view's filter / sort / paginate input.
+// All filter fields are AND-ed; a zero/empty value disables that filter.
+type ChargerListQuery struct {
+	Q              string             // free-text needle: name, address, city, postal, CPO id/name
+	Source         string             // exact cpo id ("" = any)
+	Country        string             // exact 2-letter country on the CPO ("" = any)
+	PlugType       string             // OCPI connector standard ("" = any)
+	CurrentType    string             // "AC" or "DC" ("" = any)
+	MinPowerKW     float64            // 0 = no lower bound
+	MaxPowerKW     float64            // 0 = no upper bound
+	OnlyAvail      bool               // only chargers reporting >0 available connectors
+	HasPrice       bool               // only chargers with an open tariff_version
+	IncludePrivate bool               // include private (home/p2p) chargers
+	Sort           ChargerListColumn  // column to sort by ("" = id)
+	Desc           bool               // sort descending
+	Limit          int                // page size; 0 -> 50
+	Offset         int                // rows to skip; for page N, Offset = (N-1)*Limit
+}
+
+// ChargerListResult is one page plus the unpaginated total under the same filter
+// (for "Page X of Y" + a "loaded N of M" footer). The total is a single COUNT
+// over the same WHERE clause, so the explorer never paginates into emptiness.
+type ChargerListResult struct {
+	Total   int               `json:"total"`
+	Limit   int               `json:"limit"`
+	Offset  int               `json:"offset"`
+	Results []ChargerListRow  `json:"results"`
+}
+
+// ChargerListRow is the explorer-view projection of a charger: the fields the
+// table actually shows, in a flat shape that doesn't leak the geo/tariff
+// internals (status, current tariff, location) of the NearbyCharger read model.
+type ChargerListRow struct {
+	ID          int64      `json:"id"`
+	CPOID       string     `json:"cpo_id"`
+	Source      string     `json:"source"`         // cpo.name
+	SourceType  string     `json:"source_type"`    // ocpi | road | monta | …
+	Country     string     `json:"country"`        // cpo.country
+	EVSEUID     string     `json:"evse_uid"`
+	ConnectorID string     `json:"connector_id"`
+	Name        string     `json:"name"`
+	Address     string     `json:"address"`
+	PostalCode  string     `json:"postal_code"`
+	City        string     `json:"city"`
+	Lat         float64    `json:"lat"`
+	Lon         float64    `json:"lon"`
+	PowerKW     float64    `json:"power_kw"`
+	PlugType    string     `json:"plug_type"`
+	CurrentType string     `json:"current_type"`
+	Private     bool       `json:"private"`
+	Available   *int       `json:"available_count"` // nil when no status has ever been recorded
+	StatusAt    *time.Time `json:"status_updated_at"`
+	PriceEUR    *float64   `json:"comparable_price_eur"`
+	PriceAt     *time.Time `json:"price_updated_at"`
+}
+
+// chargerListSortExpr maps the public column key to a SQL expression. Any
+// unknown key falls back to id (server order). All expressions must be
+// NOT-NULL-safe for ORDER BY (NULLS LAST applied in the query).
+func chargerListSortExpr(col ChargerListColumn) string {
+	switch col {
+	case ChargerListColName:
+		return "lower(COALESCE(c.name,''))"
+	case ChargerListColCity:
+		return "lower(COALESCE(c.city,''))"
+	case ChargerListColPower:
+		return "COALESCE(c.power_kw,0)::float8"
+	case ChargerListColPlug:
+		return "lower(COALESCE(c.plug_type,''))"
+	case ChargerListColCurrent:
+		return "COALESCE(c.current_type,'')"
+	case ChargerListColPrice:
+		return "tv.comparable_price_eur::float8"
+	case ChargerListColAvailable:
+		return "COALESCE(st.available_count,0)"
+	case ChargerListColSource:
+		return "lower(COALESCE(p.name, p.id))"
+	case ChargerListColUpdated:
+		return "tv.last_confirmed_at"
+	case ChargerListColID:
+		return "c.id::text"
+	}
+	return "c.id"
+}
+
+// ChargerList runs a single page of the explorer query plus the unpaginated
+// total. The total is a second query (no LIMIT/OFFSET/ORDER) so the footer can
+// say "Page 3 of 47" without a separate count endpoint.
+func (s *Store) ChargerList(ctx context.Context, q ChargerListQuery) (ChargerListResult, error) {
+	if q.Limit <= 0 {
+		q.Limit = 50
+	}
+	if q.Limit > 500 {
+		q.Limit = 500
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+
+	// Search: a normalised (lower-cased) substring match across the textual
+	// fields users actually look at. With ~30k rows this is fast enough; the
+	// OR over unindexed text columns would need a trigram index at scale, but
+	// the per-source status page uses the same approach and works fine.
+	var searchClause string
+	searchArgs := []any{}
+	if n := strings.TrimSpace(q.Q); n != "" {
+		pat := "%" + strings.ToLower(n) + "%"
+		searchClause = ` AND (
+			lower(COALESCE(c.name,''))    LIKE $1 OR
+			lower(COALESCE(c.address,'')) LIKE $1 OR
+			lower(COALESCE(c.city,''))    LIKE $1 OR
+			lower(COALESCE(c.postal_code,'')) LIKE $1 OR
+			lower(COALESCE(c.evse_uid,'')) LIKE $1 OR
+			lower(COALESCE(p.id,''))      LIKE $1 OR
+			lower(COALESCE(p.name,''))    LIKE $1
+		)`
+		searchArgs = append(searchArgs, pat)
+	}
+
+	// Field filters: positional placeholders continue from where search left
+	// off, so the same args slice is reused for both the count and the page
+	// query — no chance of a count/page WHERE drift.
+	args := append([]any{}, searchArgs...)
+	idx := len(args) + 1
+	add := func(v any) string {
+		args = append(args, v)
+		p := fmt.Sprintf("$%d", idx)
+		idx++
+		return p
+	}
+
+	var clauses string
+	if q.Source != "" {
+		clauses += " AND c.cpo_id = " + add(q.Source)
+	}
+	if q.Country != "" {
+		clauses += " AND COALESCE(p.country,'') = " + add(strings.ToUpper(q.Country))
+	}
+	if q.PlugType != "" {
+		clauses += " AND upper(replace(COALESCE(c.plug_type,''),'_','')) = upper(replace(" + add(q.PlugType) + ",'_',''))"
+	}
+	if q.CurrentType != "" {
+		clauses += " AND COALESCE(c.current_type,'') = " + add(strings.ToUpper(q.CurrentType))
+	}
+	if q.MinPowerKW > 0 {
+		clauses += " AND COALESCE(c.power_kw,0)::float8 >= " + add(q.MinPowerKW)
+	}
+	if q.MaxPowerKW > 0 {
+		clauses += " AND COALESCE(c.power_kw,0)::float8 <= " + add(q.MaxPowerKW)
+	}
+	if q.OnlyAvail {
+		clauses += " AND COALESCE(st.available_count,0) > 0"
+	}
+	if q.HasPrice {
+		clauses += " AND tv.comparable_price_eur IS NOT NULL"
+	}
+	if !q.IncludePrivate {
+		clauses += " AND NOT c.private"
+	}
+
+	where := "WHERE TRUE" + searchClause + clauses
+	filterArgCount := len(args) // freeze the args needed by the filter (page adds limit/offset on top)
+
+	// Same shape for the page + the total; only the trailing tail differs.
+	const selectCols = `
+		c.id, c.cpo_id, COALESCE(p.name,''), COALESCE(p.source_type,''), COALESCE(p.country,''),
+		COALESCE(c.evse_uid,''), COALESCE(c.connector_id,''),
+		COALESCE(c.name,''), COALESCE(c.address,''), COALESCE(c.postal_code,''), COALESCE(c.city,''),
+		ST_Y(c.geom::geometry), ST_X(c.geom::geometry),
+		COALESCE(c.power_kw,0)::float8, COALESCE(c.plug_type,''), COALESCE(c.current_type,''),
+		c.private,
+		st.available_count, st.updated_at,
+		tv.comparable_price_eur::float8,
+		COALESCE(tv.last_confirmed_at, tv.observed_from)`
+
+	pageQ := fmt.Sprintf(`
+		SELECT %s
+		FROM charger c
+		LEFT JOIN charger_status st ON st.charger_id = c.id
+		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
+		LEFT JOIN cpo p           ON p.id = c.cpo_id
+		%s
+		ORDER BY %s %s, c.id %s
+		LIMIT %s OFFSET %s`,
+		selectCols, where,
+		chargerListSortExpr(q.Sort), orderDir(q.Desc), orderDir(q.Desc),
+		add(q.Limit), add(q.Offset),
+	)
+
+	rows, err := s.Pool.Query(ctx, pageQ, args...)
+	if err != nil {
+		return ChargerListResult{}, err
+	}
+	defer rows.Close()
+	out := make([]ChargerListRow, 0, q.Limit)
+	for rows.Next() {
+		var r ChargerListRow
+		if err := rows.Scan(
+			&r.ID, &r.CPOID, &r.Source, &r.SourceType, &r.Country,
+			&r.EVSEUID, &r.ConnectorID,
+			&r.Name, &r.Address, &r.PostalCode, &r.City,
+			&r.Lat, &r.Lon,
+			&r.PowerKW, &r.PlugType, &r.CurrentType,
+			&r.Private,
+			&r.Available, &r.StatusAt,
+			&r.PriceEUR,
+			&r.PriceAt,
+		); err != nil {
+			return ChargerListResult{}, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return ChargerListResult{}, err
+	}
+
+	// Total under the same filter (no LIMIT/OFFSET/ORDER). The WHERE clause
+	// can reference st (charger_status) and tv (tariff_version) when the
+	// caller filters by available/has_price, so the count joins the same
+	// tables to keep its scope identical. Otherwise a count/page drift would
+	// give "Page 3 of 47" footer while the last page is empty.
+	totalQ := `SELECT count(*) FROM charger c
+		LEFT JOIN cpo p ON p.id = c.cpo_id
+		LEFT JOIN charger_status st ON st.charger_id = c.id
+		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
+		` + where
+	var total int
+	if err := s.Pool.QueryRow(ctx, totalQ, args[:filterArgCount]...).Scan(&total); err != nil {
+		return ChargerListResult{}, err
+	}
+
+	return ChargerListResult{Total: total, Limit: q.Limit, Offset: q.Offset, Results: out}, nil
+}
+
+func orderDir(desc bool) string {
+	if desc {
+		return "DESC"
+	}
+	return "ASC"
 }
 
 // PriceHistory returns every recorded tariff version for a charger, newest first.

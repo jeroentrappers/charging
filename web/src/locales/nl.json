@@ -3,6 +3,7 @@
     "find": "Zoeken",
     "insights": "Inzichten",
     "status": "Status",
+    "chargers": "Laadpunten",
     "apiDocs": "API-docs"
   },
   "status": {
@@ -266,5 +267,38 @@
     "distance": "{{km}} km · {{min}} min",
     "range": "bereik ~{{km}} km",
     "clear": "Bestemming wissen"
+  },
+  "chargers": {
+    "title": "Alle laadpunten",
+    "summary": "{{count}} laadpunten",
+    "loading": "laden…",
+    "error": "Kon de laadpunten niet laden.",
+    "searchPlaceholder": "Zoek op naam, stad, adres, EVSE-id of bron…",
+    "filters": "Filters",
+    "clear": "Wissen",
+    "pageSize": "Per pagina",
+    "anySource": "Elke bron",
+    "anyCurrent": "AC/DC",
+    "minPower": "≥",
+    "maxPower": "≤",
+    "availableOnly": "Nu beschikbaar",
+    "hasPrice": "Met prijs",
+    "includePrivate": "Privé/thuis",
+    "private": "thuis / privé",
+    "colId": "ID",
+    "colName": "Naam",
+    "colCity": "Stad",
+    "colSource": "Bron",
+    "colCurrent": "AC/DC",
+    "colPlug": "Stekker",
+    "colPower": "Vermogen",
+    "colPrice": "Prijs",
+    "colAvailable": "Vrij",
+    "colUpdated": "Status",
+    "noMatches": "Geen laadpunten voldoen aan deze filters.",
+    "noResults": "Geen laadpunten om te tonen.",
+    "showingRange": "{{from}}–{{to}} van {{total}}",
+    "pageOf": "Pagina {{page}} van {{total}}",
+    "sourceHint": "Gefilterd op {{name}}"
   }
 }

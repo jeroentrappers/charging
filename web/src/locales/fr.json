@@ -3,6 +3,7 @@
     "find": "Rechercher",
     "insights": "Analyses",
     "status": "Statut",
+    "chargers": "Bornes",
     "apiDocs": "Doc API"
   },
   "status": {
@@ -266,5 +267,38 @@
     "distance": "{{km}} km · {{min}} min",
     "range": "autonomie ~{{km}} km",
     "clear": "Effacer la destination"
+  },
+  "chargers": {
+    "title": "Toutes les bornes",
+    "summary": "{{count}} bornes",
+    "loading": "chargement…",
+    "error": "Impossible de charger les bornes.",
+    "searchPlaceholder": "Rechercher par nom, ville, adresse, EVSE ou source…",
+    "filters": "Filtres",
+    "clear": "Effacer",
+    "pageSize": "Par page",
+    "anySource": "Toute source",
+    "anyCurrent": "AC/DC",
+    "minPower": "≥",
+    "maxPower": "≤",
+    "availableOnly": "Disponibles",
+    "hasPrice": "Avec prix",
+    "includePrivate": "Privées/domestiques",
+    "private": "domestique / privé",
+    "colId": "ID",
+    "colName": "Nom",
+    "colCity": "Ville",
+    "colSource": "Source",
+    "colCurrent": "AC/DC",
+    "colPlug": "Connecteur",
+    "colPower": "Puissance",
+    "colPrice": "Prix",
+    "colAvailable": "Libres",
+    "colUpdated": "Statut",
+    "noMatches": "Aucune borne ne correspond à ces filtres.",
+    "noResults": "Aucune borne à afficher.",
+    "showingRange": "{{from}}–{{to}} sur {{total}}",
+    "pageOf": "Page {{page}} sur {{total}}",
+    "sourceHint": "Filtré sur {{name}}"
   }
 }

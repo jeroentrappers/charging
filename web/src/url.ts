@@ -4,10 +4,11 @@
 //   /@51.05432,3.72500,13z     find, map centred here at zoom 13
 //   /charger/3019/markt-gent   find, charger 3019 detail open (slug is decorative)
 //   /insights                  insights tab
+//   /chargers                  explorer table of all chargers
 //   /status                    source-health status page
 
 export interface NavState {
-  tab: 'find' | 'insights' | 'status'
+  tab: 'find' | 'insights' | 'status' | 'chargers'
   center?: { lat: number; lon: number; zoom: number }
   chargerId?: number
   chargerSlug?: string
@@ -37,6 +38,7 @@ export function parseUrl(pathname: string): NavState {
   }
   if (p === '/insights') return { tab: 'insights' }
   if (p === '/status') return { tab: 'status' }
+  if (p === '/chargers') return { tab: 'chargers' }
 
   const cm = chargerRe.exec(p)
   if (cm) return { tab: 'find', chargerId: Number(cm[1]), chargerSlug: cm[2] || undefined }
@@ -51,6 +53,7 @@ export function parseUrl(pathname: string): NavState {
 export function buildPath(s: NavState): string {
   if (s.tab === 'insights') return '/insights'
   if (s.tab === 'status') return '/status'
+  if (s.tab === 'chargers') return '/chargers'
   if (s.chargerId != null) {
     const slug = s.chargerSlug ? slugify(s.chargerSlug) : ''
     return slug ? `/charger/${s.chargerId}/${slug}` : `/charger/${s.chargerId}`

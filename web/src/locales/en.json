@@ -3,6 +3,7 @@
     "find": "Find",
     "insights": "Insights",
     "status": "Status",
+    "chargers": "Chargers",
     "apiDocs": "API docs"
   },
   "status": {
@@ -266,5 +267,38 @@
     "distance": "{{km}} km · {{min}} min",
     "range": "range ~{{km}} km",
     "clear": "Clear destination"
+  },
+  "chargers": {
+    "title": "All chargers",
+    "summary": "{{count}} chargers",
+    "loading": "loading…",
+    "error": "Could not load chargers.",
+    "searchPlaceholder": "Search by name, city, address, EVSE id or source…",
+    "filters": "Filters",
+    "clear": "Clear",
+    "pageSize": "Page size",
+    "anySource": "Any source",
+    "anyCurrent": "AC/DC",
+    "minPower": "≥",
+    "maxPower": "≤",
+    "availableOnly": "Available now",
+    "hasPrice": "Has a price",
+    "includePrivate": "Include home/private",
+    "private": "home / private",
+    "colId": "ID",
+    "colName": "Name",
+    "colCity": "City",
+    "colSource": "Source",
+    "colCurrent": "AC/DC",
+    "colPlug": "Plug",
+    "colPower": "Power",
+    "colPrice": "Price",
+    "colAvailable": "Free",
+    "colUpdated": "Status",
+    "noMatches": "No chargers match these filters.",
+    "noResults": "No chargers to show.",
+    "showingRange": "Showing {{from}}–{{to}} of {{total}}",
+    "pageOf": "Page {{page}} of {{total}}",
+    "sourceHint": "Filtered to {{name}}"
   }
 }

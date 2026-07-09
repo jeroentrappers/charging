@@ -3,6 +3,7 @@
     "find": "Suchen",
     "insights": "Statistiken",
     "status": "Status",
+    "chargers": "Ladepunkte",
     "apiDocs": "API-Doku"
   },
   "status": {
@@ -266,5 +267,38 @@
     "distance": "{{km}} km · {{min}} Min",
     "range": "Reichweite ~{{km}} km",
     "clear": "Ziel löschen"
+  },
+  "chargers": {
+    "title": "Alle Ladepunkte",
+    "summary": "{{count}} Ladepunkte",
+    "loading": "lädt…",
+    "error": "Ladepunkte konnten nicht geladen werden.",
+    "searchPlaceholder": "Suche nach Name, Stadt, Adresse, EVSE-ID oder Quelle…",
+    "filters": "Filter",
+    "clear": "Zurücksetzen",
+    "pageSize": "Pro Seite",
+    "anySource": "Alle Quellen",
+    "anyCurrent": "AC/DC",
+    "minPower": "≥",
+    "maxPower": "≤",
+    "availableOnly": "Jetzt verfügbar",
+    "hasPrice": "Mit Preis",
+    "includePrivate": "Privat/Heim",
+    "private": "privat / Heim",
+    "colId": "ID",
+    "colName": "Name",
+    "colCity": "Stadt",
+    "colSource": "Quelle",
+    "colCurrent": "AC/DC",
+    "colPlug": "Stecker",
+    "colPower": "Leistung",
+    "colPrice": "Preis",
+    "colAvailable": "Frei",
+    "colUpdated": "Status",
+    "noMatches": "Keine Ladepunkte entsprechen diesen Filtern.",
+    "noResults": "Keine Ladepunkte vorhanden.",
+    "showingRange": "{{from}}–{{to}} von {{total}}",
+    "pageOf": "Seite {{page}} von {{total}}",
+    "sourceHint": "Gefiltert auf {{name}}"
   }
 }

@@ -28,6 +28,8 @@ func (s *server) registerPublic(api huma.API) {
 		summary("Find the cheapest chargers nearby (server-ranked)"))
 	huma.Get(api, "/chargers/nearby", s.opNearby, tag("Chargers"),
 		summary("Nearest chargers with structured tariffs (for client-side pricing/ranking)"))
+	huma.Get(api, "/chargers", s.opChargerList, tag("Chargers"),
+		summary("Paginated, sortable, filterable explorer view over all chargers"))
 	huma.Get(api, "/chargers/along-route", s.opAlongRoute, tag("Chargers"),
 		summary("Find chargers along a driving route (corridor search)"))
 	huma.Get(api, "/chargers/{id}", s.opGetCharger, tag("Chargers"),
@@ -256,6 +258,55 @@ func (s *server) opNearby(ctx context.Context, in *nearbyIn) (*nearbyOut, error)
 	out.Body.Count = len(res)
 	out.Body.Results = res
 	return out, nil
+}
+
+// ---- GET /chargers (paginated explorer) ----
+
+// chargerListIn is the explorer's input: free-text search, faceted filters,
+// sort, paging. Mirrors the SQL query in store.ChargerList one-to-one.
+type chargerListIn struct {
+	Q              string `query:"q" doc:"Free-text needle: matches name, address, city, postal code, EVSE id and source name/id"`
+	Source         string `query:"source" doc:"Restrict to one source (CPO id)"`
+	Country        string `query:"country" doc:"Restrict to a 2-letter country code (matches the source's country)"`
+	Plug           string `query:"plug" doc:"OCPI connector standard, e.g. IEC_62196_T2_COMBO"`
+	Current        string `query:"current" enum:"AC,DC" doc:"AC or DC"`
+	MinPower       float64 `query:"min_power" doc:"Lower bound on rated power (kW)"`
+	MaxPower       float64 `query:"max_power" doc:"Upper bound on rated power (kW)"`
+	Available      bool   `query:"available" doc:"Only chargers reporting >0 free connectors"`
+	HasPrice       bool   `query:"has_price" doc:"Only chargers with a current tariff"`
+	IncludePrivate bool   `query:"include_private" doc:"Include home / peer-to-peer chargers"`
+	Sort           string `query:"sort" default:"" enum:"id,name,city,power,plug,current,price,available,source,updated" doc:"Column to sort by (default: id, insertion order)"`
+	Desc           bool   `query:"desc" doc:"Sort descending (default: ascending)"`
+	Limit          int    `query:"limit" default:"50" minimum:"1" maximum:"500" doc:"Page size"`
+	Offset         int    `query:"offset" default:"0" minimum:"0" doc:"Rows to skip (Offset = (page-1)*Limit)"`
+}
+
+type chargerListOut struct {
+	Body store.ChargerListResult
+}
+
+func (s *server) opChargerList(ctx context.Context, in *chargerListIn) (*chargerListOut, error) {
+	res, err := s.st.ChargerList(ctx, store.ChargerListQuery{
+		Q:              in.Q,
+		Source:         in.Source,
+		Country:        in.Country,
+		PlugType:       in.Plug,
+		CurrentType:    in.Current,
+		MinPowerKW:     in.MinPower,
+		MaxPowerKW:     in.MaxPower,
+		OnlyAvail:      in.Available,
+		HasPrice:       in.HasPrice,
+		IncludePrivate: in.IncludePrivate,
+		Sort:           store.ChargerListColumn(in.Sort),
+		Desc:           in.Desc,
+		Limit:          in.Limit,
+		Offset:         in.Offset,
+	})
+	if err != nil {
+		s.log.Error("charger list query", "err", err)
+		return nil, huma.Error500InternalServerError("query failed")
+	}
+	return &chargerListOut{Body: res}, nil
 }
 
 // attachReports fills each candidate's active community reports + avoid flag.

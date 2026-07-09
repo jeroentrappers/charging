@@ -176,6 +176,40 @@ export interface StatusResponse {
   sources: SourceHealth[]
 }
 
+// One row in the paginated explorer view (/chargers). Flatter than Charger
+// because the table is a list, not a map; no distance, no cluster fields, no
+// structured tariff.
+export interface ChargerListRow {
+  id: number
+  cpo_id: string
+  source: string // cpo.name
+  source_type: string
+  country: string
+  evse_uid: string
+  connector_id: string
+  name: string
+  address: string
+  postal_code: string
+  city: string
+  lat: number
+  lon: number
+  power_kw: number
+  plug_type: string
+  current_type: string
+  private: boolean
+  available_count: number | null
+  status_updated_at: string | null
+  comparable_price_eur: number | null
+  price_updated_at: string | null
+}
+
+export interface ChargerListResponse {
+  total: number // unpaginated total under the same filter (for "Page X of Y")
+  limit: number
+  offset: number
+  results: ChargerListRow[]
+}
+
 async function get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
   const url = new URL(BASE + path)
   if (params) {
@@ -282,6 +316,23 @@ export interface RouteGeometry {
   duration_s: number
 }
 
+export interface ChargerListParams {
+  q?: string
+  source?: string
+  country?: string
+  plug?: string
+  current?: 'AC' | 'DC'
+  min_power?: number
+  max_power?: number
+  available?: boolean
+  has_price?: boolean
+  include_private?: boolean
+  sort?: 'id' | 'name' | 'city' | 'power' | 'plug' | 'current' | 'price' | 'available' | 'source' | 'updated'
+  desc?: boolean
+  limit?: number
+  offset?: number
+}
+
 export const api = {
   cheapest: (p: CheapestParams) =>
     get<{ results: Charger[]; count: number }>('/chargers/cheapest', { ...p }),
@@ -304,6 +355,8 @@ export const api = {
   sessionStats: () => get<{ sessions: SessionStat[] }>('/stats/sessions'),
   reports: (id: number) => get<ReportsResult>(`/chargers/${id}/reports`),
   status: () => get<StatusResponse>('/status'),
+  // Explorer: paginated/sortable/filterable/searchable list of every charger.
+  chargerList: (p: ChargerListParams) => get<ChargerListResponse>('/chargers', { ...p }),
   addReport: (id: number, type: string, value?: ReportValue) =>
     post<ReportsResult>(`/chargers/${id}/reports`, { type, value, client_id: clientId() }),
 }
