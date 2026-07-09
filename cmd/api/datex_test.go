@@ -8,6 +8,27 @@ import (
 	"time"
 )
 
+func TestIfNoneMatch(t *testing.T) {
+	etag := `W/"abc123"`
+	cases := []struct {
+		header string
+		match  bool
+	}{
+		{"", false},
+		{"*", true},
+		{`W/"abc123"`, true},
+		{`"abc123"`, true}, // weak comparison ignores W/
+		{`W/"nope"`, false},
+		{`W/"x", W/"abc123"`, true}, // list
+		{`W/"x", "y"`, false},
+	}
+	for _, c := range cases {
+		if got := ifNoneMatch(c.header, etag); got != c.match {
+			t.Errorf("ifNoneMatch(%q, %q) = %v, want %v", c.header, etag, got, c.match)
+		}
+	}
+}
+
 func TestValidateCallbackURL(t *testing.T) {
 	cases := []struct {
 		name, url string

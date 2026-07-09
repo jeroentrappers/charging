@@ -67,6 +67,20 @@ type Snapshotter struct {
 	manifest Manifest
 }
 
+// FileETag returns a weak ETag for a published file, derived from the content
+// hash we already record in the manifest. Weak (W/…) because the same resource
+// is served both gzipped and identity — a strong ETag must be byte-unique per
+// representation, which a content hash across encodings is not. Returns false
+// for files not in the current manifest.
+func (s *Snapshotter) FileETag(name string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if fi, ok := s.manifest.Files[name]; ok && fi.SHA256 != "" {
+		return `W/"` + fi.SHA256 + `"`, true
+	}
+	return "", false
+}
+
 // chunkTarget is the approximate NDJSON size at which a region file is rotated.
 func (s *Snapshotter) chunkTarget() int64 {
 	if s.ChunkBytes > 0 {

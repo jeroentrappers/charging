@@ -47,6 +47,7 @@ type server struct {
 	apiBasePath       string
 	engine            *ingest.Engine
 	live              *liveService
+	exportSnap        *export.Snapshotter // nil unless the bulk export is enabled
 	reportLimiter     *ipLimiter
 	datexLimiter      *ipLimiter   // per-IP throttle on DATEX subscription registration
 	datexVerifyClient *http.Client // used for the callback challenge-echo handshake
@@ -151,6 +152,7 @@ func main() {
 			Creator: datex.Creator{Country: cfg.DatexCreatorCountry, NationalIdentifier: cfg.DatexCreatorID},
 			Push:    pusher,
 		}
+		s.exportSnap = snap
 		go snap.Run(context.Background())
 	}
 
@@ -247,7 +249,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 			// large DATEX/NDJSON/GeoJSON dumps ship uncompressed.
 			er.Use(middleware.Compress(5, "text/html", "application/json",
 				"application/xml", "application/x-ndjson", "application/geo+json"))
-			er.Use(exportCacheControl)
+			er.Use(exportCacheControl(s.exportSnap))
 			er.Handle("/*", fs)
 			er.Handle("/", fs)
 		})
@@ -256,22 +258,56 @@ func (s *server) routes(corsOrigins string) http.Handler {
 }
 
 // exportCacheControl marks the static dumps publicly cacheable for a short
-// window (the availability delta rotates ~every minute) and sets accurate
-// content types for the .ndjson/.geojson extensions the file server doesn't
-// know (http.ServeContent only fills Content-Type when it's unset).
-func exportCacheControl(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=30")
-		switch {
-		case strings.HasSuffix(r.URL.Path, ".ndjson"):
-			w.Header().Set("Content-Type", "application/x-ndjson")
-		case strings.HasSuffix(r.URL.Path, ".geojson"):
-			w.Header().Set("Content-Type", "application/geo+json")
-		case strings.HasSuffix(r.URL.Path, ".xml"):
-			w.Header().Set("Content-Type", "application/xml")
+// window (the availability delta rotates ~every minute), sets accurate content
+// types for the .ndjson/.geojson/.xml extensions the file server doesn't know
+// (http.ServeContent only fills Content-Type when it's unset), and attaches a
+// weak ETag from the manifest's content hash — answering If-None-Match with a
+// 304 so a CDN/client can revalidate without re-transferring the (large) body.
+// snap may be nil (export disabled), in which case ETags are simply skipped.
+func exportCacheControl(snap *export.Snapshotter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "public, max-age=30")
+			switch {
+			case strings.HasSuffix(r.URL.Path, ".ndjson"):
+				w.Header().Set("Content-Type", "application/x-ndjson")
+			case strings.HasSuffix(r.URL.Path, ".geojson"):
+				w.Header().Set("Content-Type", "application/geo+json")
+			case strings.HasSuffix(r.URL.Path, ".xml"):
+				w.Header().Set("Content-Type", "application/xml")
+			}
+			if snap != nil {
+				if etag, ok := snap.FileETag(strings.TrimPrefix(r.URL.Path, "/")); ok {
+					w.Header().Set("ETag", etag)
+					if ifNoneMatch(r.Header.Get("If-None-Match"), etag) {
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ifNoneMatch reports whether the If-None-Match header matches etag, using the
+// weak comparison RFC 9110 mandates for If-None-Match ("*" matches anything;
+// the W/ prefix is ignored in the comparison).
+func ifNoneMatch(header, etag string) bool {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return false
+	}
+	if header == "*" {
+		return true
+	}
+	want := strings.TrimPrefix(etag, "W/")
+	for _, tok := range strings.Split(header, ",") {
+		if strings.TrimPrefix(strings.TrimSpace(tok), "W/") == want {
+			return true
 		}
-		next.ServeHTTP(w, r)
-	})
+	}
+	return false
 }
 
 // parseDatexTargets parses DATEX_PUSH_TARGETS into push targets. Entries are
