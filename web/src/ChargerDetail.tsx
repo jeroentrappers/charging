@@ -82,6 +82,19 @@ function applicableAt(elements: TariffElement[], h: number): number {
 function compPrice(el: TariffElement, type: string): number {
   return el.price_components.find((c) => c.type === type)?.price ?? 0
 }
+// uniqueComponents drops exact-duplicate (type, price) lines. Some sources
+// (EnergyVision) repeat the same price under several priceGroupIndex values, so
+// a tariff can carry the same line more than once; the ingest parser dedupes new
+// data, this guards the display for any legacy/edge rows.
+function uniqueComponents<T extends { type: string; price: number }>(comps: T[]): T[] {
+  const seen = new Set<string>()
+  return comps.filter((c) => {
+    const k = c.type + '|' + c.price
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
 function hasTimeWindows(elements: TariffElement[]): boolean {
   return elements.some((e) => elemWindow(e) != null)
 }
@@ -350,7 +363,7 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
                 <div className="muted tariff-when">{whenLabel(el, hasTimeWindows(elements), t)}</div>
                 <table className="matrix">
                   <tbody>
-                    {el.price_components.map((c, j) => (
+                    {uniqueComponents(el.price_components).map((c, j) => (
                       <tr key={j} className={isIdle(c.type) && c.price > 0 ? 'warn' : ''}>
                         <td>{t(`comp.${c.type}`, c.type)}</td>
                         <td className="num">{valueText(c, t)}</td>
