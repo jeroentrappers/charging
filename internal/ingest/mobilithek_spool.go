@@ -100,79 +100,84 @@ func firstNonSpace(b []byte) byte {
 	return 0
 }
 
-// spoolPerWorker is the backlog (incoming files) per worker before scaling up.
-const spoolPerWorker = 80
+// spoolBatch is how many oldest files one scanner pass claims per directory
+// read. The scan (ReadDir + sort) is O(n) in the backlog, so doing it once per
+// batch — not once per file, as the old per-worker claimOldest did — keeps drain
+// throughput flat as the backlog grows (previously it collapsed at depth).
+const spoolBatch = 500
 
-// RunSpoolWorkers starts an autoscaling drainer: between minW and maxW workers,
-// sized every 2s to the backlog so we keep up under bursts but never exceed maxW
-// concurrent ingests (the cap that protects the DB). Per-CPO locking (mobLocks)
-// lets the workers run different operators in parallel.
+// RunSpoolWorkers starts the drainer: a single scanner batch-claims the oldest
+// incoming files into processing/ and hands them to a fixed pool of maxW workers
+// over a channel. Idle workers just block on the channel (cheap), so there's no
+// autoscaling to do. Per-CPO locking (mobLocks) still lets different operators
+// ingest in parallel. minW is accepted for signature compatibility and ignored.
 func (e *Engine) RunSpoolWorkers(ctx context.Context, dir string, minW, maxW int) {
-	if minW < 1 {
-		minW = 1
+	if maxW < 1 {
+		maxW = 1
 	}
-	if maxW < minW {
-		maxW = minW
-	}
+	_ = minW
 	for _, sub := range []string{"incoming", "processing", "failed"} {
 		if err := os.MkdirAll(spoolSub(dir, sub), 0o755); err != nil {
 			e.Log.Error("mobilithek spool: mkdir", "dir", sub, "err", err)
 		}
 	}
 	e.recoverProcessing(dir) // re-queue anything a previous crash left mid-flight
-	go e.spoolController(ctx, dir, minW, maxW)
-	e.Log.Info("mobilithek spool autoscaler started", "min", minW, "max", maxW, "dir", dir)
+
+	work := make(chan string, 2*maxW)
+	go e.spoolScanner(ctx, dir, work)
+	for i := 0; i < maxW; i++ {
+		go e.spoolWorker(ctx, dir, work)
+	}
+	if e.OnSpoolStats != nil {
+		go e.spoolStats(ctx, dir, maxW)
+	}
+	e.Log.Info("mobilithek spool drainer started", "workers", maxW, "dir", dir)
 }
 
-// spoolController owns the worker set and resizes it to the backlog. Only this
-// goroutine mutates the worker list, so it needs no locking.
-func (e *Engine) spoolController(ctx context.Context, dir string, minW, maxW int) {
-	var stops []chan struct{}
-	add := func() {
-		s := make(chan struct{})
-		stops = append(stops, s)
-		go e.spoolWorker(ctx, dir, s)
-	}
-	remove := func() {
-		if len(stops) == 0 {
+// spoolScanner claims batches of the oldest incoming files (rename into
+// processing/) and feeds their names to workers. Feeding blocks when the channel
+// is full, so it never over-claims — natural backpressure that also bounds how
+// many files sit in processing/. It re-scans only after a batch is fed (or after
+// a short wait when idle), amortizing the O(n) directory scan.
+func (e *Engine) spoolScanner(ctx context.Context, dir string, work chan<- string) {
+	inc, proc := spoolSub(dir, "incoming"), spoolSub(dir, "processing")
+	for {
+		if ctx.Err() != nil {
 			return
 		}
-		close(stops[len(stops)-1]) // worker exits after its current item
-		stops = stops[:len(stops)-1]
+		claimed := 0
+		for _, n := range listOldest(inc, spoolBatch) {
+			if os.Rename(filepath.Join(inc, n), filepath.Join(proc, n)) != nil {
+				continue // gone / lost a race
+			}
+			select {
+			case work <- n:
+				claimed++
+			case <-ctx.Done():
+				_ = os.Rename(filepath.Join(proc, n), filepath.Join(inc, n)) // don't strand it
+				return
+			}
+		}
+		if claimed == 0 { // backlog empty — wait before re-scanning
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
 	}
-	for i := 0; i < minW; i++ {
-		add()
-	}
+}
 
+// spoolStats reports the backlog / worker / failed gauges on a ticker.
+func (e *Engine) spoolStats(ctx context.Context, dir string, workers int) {
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
-	last := minW
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			depth := dirCount(spoolSub(dir, "incoming"))
-			want := depth/spoolPerWorker + 1
-			if want < minW {
-				want = minW
-			}
-			if want > maxW {
-				want = maxW
-			}
-			for len(stops) < want {
-				add()
-			}
-			for len(stops) > want {
-				remove()
-			}
-			if want != last {
-				e.Log.Info("mobilithek spool autoscaled", "workers", want, "backlog", depth)
-				last = want
-			}
-			if e.OnSpoolStats != nil {
-				e.OnSpoolStats(depth, len(stops), dirCount(spoolSub(dir, "failed")))
-			}
+			e.OnSpoolStats(dirCount(spoolSub(dir, "incoming")), workers, dirCount(spoolSub(dir, "failed")))
 		}
 	}
 }
@@ -205,26 +210,20 @@ func (e *Engine) recoverProcessing(dir string) {
 	}
 }
 
-func (e *Engine) spoolWorker(ctx context.Context, dir string, stop <-chan struct{}) {
-	inc, proc, failed := spoolSub(dir, "incoming"), spoolSub(dir, "processing"), spoolSub(dir, "failed")
+// spoolWorker processes claimed files (already moved to processing/) delivered
+// by the scanner over work.
+func (e *Engine) spoolWorker(ctx context.Context, dir string, work <-chan string) {
+	proc, failed := spoolSub(dir, "processing"), spoolSub(dir, "failed")
 	for {
+		var name string
 		select {
 		case <-ctx.Done():
 			return
-		case <-stop: // scaled down
-			return
-		default:
-		}
-		name, ok := claimOldest(inc, proc)
-		if !ok {
-			select {
-			case <-ctx.Done():
+		case n, ok := <-work:
+			if !ok {
 				return
-			case <-stop:
-				return
-			case <-time.After(time.Second):
 			}
-			continue
+			name = n
 		}
 		path := filepath.Join(proc, name)
 		body, err := os.ReadFile(path)
@@ -247,29 +246,27 @@ func (e *Engine) spoolWorker(ctx context.Context, dir string, stop <-chan struct
 	}
 }
 
-// claimOldest atomically moves the oldest incoming file to processing/ and
-// returns its name. The rename is the lock: with multiple workers, the loser
-// gets ENOENT and tries the next.
-func claimOldest(inc, proc string) (string, bool) {
+// listOldest returns up to n oldest incoming file names (FIFO by the unixnano
+// prefix), skipping temp/hidden files. One ReadDir + sort per call — the scanner
+// calls it once per batch, not once per file.
+func listOldest(inc string, n int) []string {
 	ents, err := os.ReadDir(inc)
 	if err != nil {
-		return "", false
+		return nil
 	}
 	names := make([]string, 0, len(ents))
 	for _, ent := range ents {
-		n := ent.Name()
-		if ent.IsDir() || strings.HasPrefix(n, ".") {
+		name := ent.Name()
+		if ent.IsDir() || strings.HasPrefix(name, ".") {
 			continue // skip temp files
 		}
-		names = append(names, n)
+		names = append(names, name)
 	}
 	sort.Strings(names) // unixnano prefix → FIFO
-	for _, n := range names {
-		if os.Rename(filepath.Join(inc, n), filepath.Join(proc, n)) == nil {
-			return n, true
-		}
+	if len(names) > n {
+		names = names[:n]
 	}
-	return "", false
+	return names
 }
 
 // archiveTable saves a copy of a table push (latest per content hash) for

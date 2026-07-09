@@ -34,23 +34,29 @@ func TestSpool_EnqueueClaimFIFO(t *testing.T) {
 		t.Errorf("xml files=%d want 1", xml)
 	}
 
-	// claimOldest is FIFO and atomic (file moves out of incoming).
+	// listOldest returns oldest-first (FIFO by unixnano prefix), capped.
+	all := listOldest(inc, spoolBatch)
+	if len(all) != 3 {
+		t.Fatalf("listOldest=%d want 3", len(all))
+	}
+	if !(all[0] < all[1] && all[1] < all[2]) {
+		t.Errorf("not FIFO: %v", all)
+	}
+	// The batch cap is honoured.
+	if got := listOldest(inc, 2); len(got) != 2 || got[0] != all[0] || got[1] != all[1] {
+		t.Errorf("capped listOldest=%v want first two of %v", got, all)
+	}
+
+	// Claiming (rename into processing/) removes it from incoming — the atomic
+	// hand-off the scanner relies on.
 	proc := filepath.Join(dir, "processing")
 	if err := os.MkdirAll(proc, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	n1, ok := claimOldest(inc, proc)
-	if !ok {
-		t.Fatal("claim 1 failed")
+	if err := os.Rename(filepath.Join(inc, all[0]), filepath.Join(proc, all[0])); err != nil {
+		t.Fatalf("claim rename: %v", err)
 	}
-	n2, ok := claimOldest(inc, proc)
-	if !ok {
-		t.Fatal("claim 2 failed")
-	}
-	if !(n1 < n2) {
-		t.Errorf("not FIFO: claimed %q before %q", n1, n2)
-	}
-	if _, err := os.Stat(filepath.Join(inc, n1)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(inc, all[0])); !os.IsNotExist(err) {
 		t.Errorf("claimed file still in incoming")
 	}
 }
