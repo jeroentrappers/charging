@@ -35,3 +35,19 @@ auto-retires stations a full-snapshot source stops publishing.
 **Score: 7 fixed (#1,2,3,4,5,6,9), 1 much-improved (#8), 2 open (#7 key expiry,
 #10 entrance location).** Both open items are minor; #7 is operational, #10 is an
 interop nicety. All 10 were sent 2026-07-08 (items 1–8 morning, 9–10 follow-up).
+
+## New finding (2026-07-09) — implausible `pricePerMinute` values
+
+| # | Finding | Status |
+|---|---------|--------|
+| 11 | **Implausible time-based prices.** The status feed's `energyRateUpdate` carries `priceType=pricePerMinute` with values that are impossible as genuine per-minute charging rates: observed **1.04 (×306), 3.60 (×2), 19.80 (×48)** €/min. Per DATEX AFIR these are €/minute, i.e. €62.40 / €216 / **€1188 per hour** — the €19.80 value alone drives charger `41360802` (Blankenbergse Steenweg 10) to a comparable session price of ~€512. The magnitudes look like **hourly time-fees mislabelled as per-minute** (€19.80/h, €3.60/h, €1.04/h are all plausible idle/time fees), but this needs confirmation from EnergyVision. | 🔴 **Open — to send.** Ask EnergyVision to confirm the unit/intended values for `pricePerMinute`. |
+
+Evidence: `testdata/energyvision/status-2026-07-08T064201Z.xml.gz` (distinct priceType/value
+counts) and the live `/api/chargers/41360802` (`TIME` component = 1188 €/h).
+
+Our side: because our comparable-session price multiplies the TIME component by the
+session duration, one bad per-minute value dominates the headline price and pollutes
+ranking/insights. Decision (2026-07-09): treat this as a source-data issue and wait
+for EnergyVision to confirm/correct, rather than adding a plausibility clamp in
+`internal/datex/afir.go` (`priceComponents`, `pricePerMinute` → `TIME`, ×60). Revisit
+a defensive guard if they don't resolve it or if other feeds show the same pattern.
