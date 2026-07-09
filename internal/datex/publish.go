@@ -448,8 +448,10 @@ func encodeXML(w io.Writer, p *xmlPayload) error {
 	if _, err := io.WriteString(w, xmlHeader); err != nil {
 		return err
 	}
+	// Compact (no indentation): these are bulk machine feeds (tens of MB), so we
+	// don't pay for pretty-printing — consistent with the NDJSON/GeoJSON/OCPI
+	// dumps, which are also compact.
 	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
 	if err := enc.Encode(p); err != nil {
 		return err
 	}

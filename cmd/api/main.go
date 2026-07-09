@@ -241,7 +241,12 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	if s.exportDir != "" {
 		fs := http.StripPrefix("/export", http.FileServer(http.Dir(s.exportDir)))
 		r.Route("/export", func(er chi.Router) {
-			er.Use(middleware.Compress(5))
+			// Compress explicitly lists the content types we serve: chi's default
+			// set covers application/json but NOT application/xml,
+			// application/x-ndjson or application/geo+json, so without this the
+			// large DATEX/NDJSON/GeoJSON dumps ship uncompressed.
+			er.Use(middleware.Compress(5, "text/html", "application/json",
+				"application/xml", "application/x-ndjson", "application/geo+json"))
 			er.Use(exportCacheControl)
 			er.Handle("/*", fs)
 			er.Handle("/", fs)

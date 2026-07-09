@@ -180,7 +180,7 @@ func WriteAFIRTableJSON(w io.Writer, sites []PublishSite, creator Creator, now t
 		PublicationCreator: joutCreator{Country: creator.Country, NationalIdentifier: creator.NationalIdentifier},
 		Table:              []joutTable{tbl},
 	}}}
-	return writeJSONIndent(w, env)
+	return writeJSONCompact(w, env)
 }
 
 // WriteAFIRStatusJSON writes the status publication in the AFIR JSON encoding.
@@ -206,7 +206,7 @@ func WriteAFIRStatusJSON(w io.Writer, statuses []PublishStatus, creator Creator,
 			}},
 		}},
 	}}}
-	return writeJSONIndent(w, env)
+	return writeJSONCompact(w, env)
 }
 
 func buildJSONSite(s PublishSite) joutSite {
@@ -271,8 +271,8 @@ func buildJSONRate(rpID string, r PublishRate) (joutEnergyRate, bool) {
 	}, true
 }
 
-func writeJSONIndent(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+// writeJSONCompact emits compact JSON (no indentation) — these are bulk machine
+// feeds, matching the other export formats.
+func writeJSONCompact(w io.Writer, v any) error {
+	return json.NewEncoder(w).Encode(v)
 }
