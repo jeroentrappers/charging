@@ -70,6 +70,16 @@ Energy Infrastructure" 01-00-00, the one German Mobilithek providers push).
 
   `publicationCreator` is set from `DATEX_CREATOR_COUNTRY` / `DATEX_CREATOR_ID`.
 
+- **Price precision.** The XML `EnergyPrice/value` type is `AmountOfMoney`
+  (`xs:decimal`, `fractionDigits=2`), so **XML prices are capped at 2 decimals**
+  (cent granularity) — a known AFIR-profile limitation, not ours. The **JSON**
+  encoding keeps full precision (e.g. `0.368 €/kWh`), which is standard-consistent:
+  DATEX's own JSON mapping cannot express `fractionDigits`
+  ([DatexII #541](https://github.com/DATEX-II-EU/DatexII/issues/541)). JSON values
+  are snapped to 6 decimals to strip float64 noise. The NDJSON/OCPI exports also
+  keep full precision, so precision-sensitive consumers should prefer JSON or
+  those.
+
 ### Push delivery
 
 Besides hosting the files for pull, we **push** each publication to subscriber
