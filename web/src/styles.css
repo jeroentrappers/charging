@@ -500,4 +500,14 @@ table.matrix tr.warn td { color: var(--amber); font-weight: 700; }
 .admin-table h3 { font-size: 14px; margin: 0 0 6px; }
 .admin-table table { width: 100%; }
 .admin-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.admin-traffic { width: 100%; height: 80vh; border: 1px solid var(--border, #e2e8f0); border-radius: 12px; background: #fff; }
+/* Full-bleed so GoAccess's own responsive grid has the whole viewport width to
+   reflow into (inside the 960px admin column it was cramped). */
+.admin-traffic {
+  display: block;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  height: calc(100vh - 130px);
+  border: 0;
+  border-top: 1px solid var(--border, #e2e8f0);
+  background: #fff;
+}
