@@ -97,6 +97,35 @@ type model_ConnLite struct {
 	tariffID      string
 }
 
+// TestPriceRoundedToTwoDigits guards the DATEX AmountOfMoney fractionDigits=2
+// facet: a real-world price like 0.368 €/kWh must be emitted as 0.37, else the
+// XML fails XSD validation (found in production).
+func TestPriceRoundedToTwoDigits(t *testing.T) {
+	enum, v, ok := priceTypeEnum("ENERGY", 0.368)
+	if !ok || enum != "pricePerKWh" || v != 0.37 {
+		t.Fatalf("ENERGY 0.368 -> (%q,%v,%v), want (pricePerKWh,0.37,true)", enum, v, ok)
+	}
+
+	sites := []PublishSite{{
+		ID: "1", Lat: 50.85, Lon: 4.35,
+		Stations: []PublishStation{{ID: "1", RefillPoints: []PublishRefillPoint{{
+			ID: "1", CurrentType: "AC", ConnectorType: "IEC_62196_T2", PowerKW: 22,
+			Rate: &PublishRate{Currency: "EUR", Prices: []PublishPrice{{Type: "ENERGY", Value: 0.368}}},
+		}}}},
+	}}
+	var buf bytes.Buffer
+	if err := WriteAFIRTable(&buf, sites, Creator{Country: "BE", NationalIdentifier: "APM"},
+		time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("0.368")) {
+		t.Errorf("emitted an over-precise price; XSD allows only 2 fraction digits\n%s", buf.String())
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("<aegi:value>0.37</aegi:value>")) {
+		t.Errorf("expected rounded 0.37 value\n%s", buf.String())
+	}
+}
+
 // TestWriteAFIRTableJSONRoundTrip emits the JSON encoding and parses it back
 // with the JSON consumer (ParseAFIRJSON) — the compliance check for the JSON
 // encoding, which has no XSD.

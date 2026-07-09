@@ -135,15 +135,18 @@ func statusEnum(s string) string {
 
 // priceTypeEnum maps a model price-component type to a PriceTypeEnum value, and
 // converts the value into DATEX units where they differ (TIME is €/hour in the
-// model but pricePerMinute in DATEX). Returns ok=false for types we don't emit.
+// model but pricePerMinute in DATEX). All values are rounded to 2 fraction
+// digits because the schema's AmountOfMoney type permits no more (real prices
+// like 0.368 €/kWh otherwise fail XSD validation). Returns ok=false for types
+// we don't emit.
 func priceTypeEnum(t string, v float64) (enum string, value float64, ok bool) {
 	switch strings.ToUpper(t) {
 	case "ENERGY":
-		return "pricePerKWh", v, true
+		return "pricePerKWh", round2(v), true
 	case "TIME":
 		return "pricePerMinute", round2(v / 60), true
 	case "FLAT":
-		return "flatRate", v, true
+		return "flatRate", round2(v), true
 	default:
 		return "", 0, false
 	}
