@@ -308,7 +308,29 @@ func priceComponents(prices []afirPrice) []model.PriceComponent {
 		default: // other -> skip
 		}
 	}
-	return comps
+	return dedupeComponents(comps)
+}
+
+// dedupeComponents drops exact-duplicate price components, preserving order.
+// Some publishers repeat the same price across several priceGroupIndex values
+// (EnergyVision emits pricePerKWh three times, pricePerMinute twice, each under
+// a distinct index), which would otherwise flatten into a tariff that lists the
+// same line several times. Identical (type, price, step) entries are redundant,
+// so collapsing them is safe and yields one line per distinct price.
+func dedupeComponents(comps []model.PriceComponent) []model.PriceComponent {
+	if len(comps) < 2 {
+		return comps
+	}
+	seen := make(map[model.PriceComponent]bool, len(comps))
+	out := comps[:0]
+	for _, c := range comps {
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	return out
 }
 
 // pickRate selects the preferred EnergyRate from a refillPoint (or its station

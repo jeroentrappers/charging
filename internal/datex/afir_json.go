@@ -489,7 +489,7 @@ func jafirPriceComponents(prices []jafirEnergyPrice) []model.PriceComponent {
 			// unknown price type → skip
 		}
 	}
-	return out
+	return dedupeComponents(out)
 }
 
 func jafirMapStatus(v string) string {

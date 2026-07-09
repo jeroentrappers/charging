@@ -222,3 +222,51 @@ func TestParseAFIRStatus(t *testing.T) {
 		t.Errorf("live component = %+v, want ENERGY/0.55", pc)
 	}
 }
+
+// TestPriceGroupDedup covers EnergyVision-style rates that repeat the same price
+// under several priceGroupIndex values: the resulting tariff must list each
+// distinct component once, not once per group.
+func TestPriceGroupDedup(t *testing.T) {
+	const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<messageContainer xmlns="http://datex2.eu/schema/3/messageContainer"
+                  xmlns:egi="http://datex2.eu/schema/3/energyInfrastructure"
+                  xmlns:com="http://datex2.eu/schema/3/common">
+  <payload xsi:type="egi:EnergyInfrastructureTablePublication"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <egi:energyInfrastructureTable id="T1">
+      <egi:energyInfrastructureSite id="S1">
+        <egi:energyInfrastructureStation id="ST1">
+          <egi:refillPoint id="RP1">
+            <egi:connector><egi:connectorType>iec62196T2</egi:connectorType>
+              <egi:maxPowerAtSocket>22000</egi:maxPowerAtSocket></egi:connector>
+            <egi:energyRate ratePolicy="adHoc">
+              <egi:applicableCurrency>EUR</egi:applicableCurrency>
+              <egi:energyPrice><egi:priceGroupIndex>1</egi:priceGroupIndex><egi:priceType>pricePerKWh</egi:priceType><egi:value>0.35</egi:value></egi:energyPrice>
+              <egi:energyPrice><egi:priceGroupIndex>2</egi:priceGroupIndex><egi:priceType>basePrice</egi:priceType><egi:value>2.04</egi:value></egi:energyPrice>
+              <egi:energyPrice><egi:priceGroupIndex>3</egi:priceGroupIndex><egi:priceType>pricePerKWh</egi:priceType><egi:value>0.35</egi:value></egi:energyPrice>
+              <egi:energyPrice><egi:priceGroupIndex>4</egi:priceGroupIndex><egi:priceType>pricePerMinute</egi:priceType><egi:value>1.04</egi:value></egi:energyPrice>
+              <egi:energyPrice><egi:priceGroupIndex>5</egi:priceGroupIndex><egi:priceType>pricePerMinute</egi:priceType><egi:value>1.04</egi:value></egi:energyPrice>
+              <egi:energyPrice><egi:priceGroupIndex>6</egi:priceGroupIndex><egi:priceType>pricePerKWh</egi:priceType><egi:value>0.35</egi:value></egi:energyPrice>
+            </egi:energyRate>
+          </egi:refillPoint>
+        </egi:energyInfrastructureStation>
+      </egi:energyInfrastructureSite>
+    </egi:energyInfrastructureTable>
+  </payload>
+</messageContainer>`
+	_, tariffs, err := ParseAFIRStatic("ev", []byte(xml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	comps := tariffs["RP1"].Elements[0].PriceComponents
+	if len(comps) != 3 {
+		t.Fatalf("got %d components, want 3 (deduped): %+v", len(comps), comps)
+	}
+	byType := map[string]float64{}
+	for _, c := range comps {
+		byType[c.Type] = c.Price
+	}
+	if byType["ENERGY"] != 0.35 || byType["FLAT"] != 2.04 || byType["TIME"] != 62.4 {
+		t.Errorf("deduped components = %+v", comps)
+	}
+}
