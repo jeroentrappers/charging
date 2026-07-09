@@ -106,11 +106,31 @@ func currentType(powerType string) string {
 // connectorPowerKW prefers the explicit max_electric_power (OCPI 2.2.1, watts);
 // otherwise it estimates from voltage/amperage/phases (OCPI 2.1.1 carries no
 // explicit max-power field).
+//
+// Some feeds report max_electric_power 1000x too large: NL DOT-NL / Eneco send
+// voltage*amperage*1000 instead of watts, so a 22 kW three-phase AC post
+// (230 V * 33 A * 3 = 22.8 kW) arrives as max_electric_power=7590000 → 7590 kW.
+// A connector can never deliver more than voltage*amperage*phases (its physical
+// ceiling), so when the explicit value clearly exceeds that estimate we discard
+// it and use the estimate instead. The 4x margin tolerates a mislabelled phase
+// count (up to 3x) while still catching the real corruption (observed 5x-1000x).
 func connectorPowerKW(c ocpi.Connector) float64 {
+	est := estimatedPowerKW(c)
+
 	if c.MaxElectricPower > 0 {
-		return round1(float64(c.MaxElectricPower) / 1000)
+		p := round1(float64(c.MaxElectricPower) / 1000)
+		if est > 0 && p > est*4 {
+			return est
+		}
+		return p
 	}
-	// OCPI 2.1.1 uses voltage/amperage; 2.2.1 uses max_voltage/max_amperage.
+	return est
+}
+
+// estimatedPowerKW is the physical power ceiling derived from voltage, amperage
+// and phase count. Returns 0 when voltage or amperage is unavailable.
+// OCPI 2.1.1 uses voltage/amperage; 2.2.1 uses max_voltage/max_amperage.
+func estimatedPowerKW(c ocpi.Connector) float64 {
 	v, a := c.Voltage, c.Amperage
 	if v <= 0 {
 		v = c.MaxVoltage
