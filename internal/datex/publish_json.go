@@ -258,10 +258,7 @@ func buildJSONRate(rpID string, r PublishRate) (joutEnergyRate, bool) {
 	if len(prices) == 0 {
 		return joutEnergyRate{}, false
 	}
-	cur := r.Currency
-	if cur == "" {
-		cur = "EUR"
-	}
+	cur := normalizeCurrency(r.Currency)
 	return joutEnergyRate{
 		IDG:                "rate-" + rpID,
 		RatePolicy:         joutValued{Value: "adHoc"},

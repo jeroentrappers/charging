@@ -110,7 +110,9 @@ func TestPriceRoundedToTwoDigits(t *testing.T) {
 		ID: "1", Lat: 50.85, Lon: 4.35,
 		Stations: []PublishStation{{ID: "1", RefillPoints: []PublishRefillPoint{{
 			ID: "1", CurrentType: "AC", ConnectorType: "IEC_62196_T2", PowerKW: 22,
-			Rate: &PublishRate{Currency: "EUR", Prices: []PublishPrice{{Type: "ENERGY", Value: 0.368}}},
+			// lowercase currency (as seen in real data) must be uppercased to
+			// satisfy the CurrencyCode [A-Z]{3} pattern.
+			Rate: &PublishRate{Currency: "eur", Prices: []PublishPrice{{Type: "ENERGY", Value: 0.368}}},
 		}}}},
 	}}
 	var buf bytes.Buffer
@@ -123,6 +125,9 @@ func TestPriceRoundedToTwoDigits(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("<aegi:value>0.37</aegi:value>")) {
 		t.Errorf("expected rounded 0.37 value\n%s", buf.String())
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("<aegi:applicableCurrency>EUR</aegi:applicableCurrency>")) {
+		t.Errorf("currency not uppercased to EUR\n%s", buf.String())
 	}
 }
 

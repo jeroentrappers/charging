@@ -154,6 +154,16 @@ func priceTypeEnum(t string, v float64) (enum string, value float64, ok bool) {
 
 func round2(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
 
+// normalizeCurrency returns an ISO 4217 code matching the schema's CurrencyCode
+// pattern ([A-Z]{3}). Real data carries lowercase ("eur"); default to EUR.
+func normalizeCurrency(c string) string {
+	c = strings.ToUpper(strings.TrimSpace(c))
+	if c == "" {
+		return "EUR"
+	}
+	return c
+}
+
 // ---- XML marshaling structs (prefixes emitted literally; xmlns declared on
 // the root). encoding/xml does not rewrite prefixes, so we control them here to
 // match exactly the shapes validated against the official v3.7 XSDs. ----
@@ -401,10 +411,7 @@ func buildXMLRate(rpID string, r PublishRate) (xmlEnergyRate, bool) {
 	if len(prices) == 0 {
 		return xmlEnergyRate{}, false
 	}
-	cur := r.Currency
-	if cur == "" {
-		cur = "EUR"
-	}
+	cur := normalizeCurrency(r.Currency)
 	upd := r.LastUpdated
 	if upd.IsZero() {
 		upd = time.Now().UTC()
