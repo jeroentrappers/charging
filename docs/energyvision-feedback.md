@@ -6,25 +6,32 @@ Consumer findings on `https://datex.cpo.energyvision.be/datex/*` (docs v1,
 
 ## Status of findings
 
-Re-verified 2026-07-09 against a fresh fetch of both feeds. The table is
-**byte-for-byte identical** to the 2026-07-08 rev2 snapshot (same SHA-256:
-`113a4e41…`) — no new table has been generated since, consistent with its
-24h server cache and `/metadata` still reporting `generatedAt` 2026-07-08T09:14Z.
-The status feed is a fresh generation (different content, same shape) with no
-structural changes. Nothing below has moved since yesterday.
+**Re-verified 2026-07-09 (PM)** against a fresh fetch of both live feeds, after
+EnergyVision emailed that they'd "handled most" comments (GZIP "still in
+progress"). They shipped a **major revision**: a newly generated table
+(`/metadata generatedAt` now `2026-07-09T12:06Z`, was stuck at 07-08T09:14Z),
+**7 of 10 findings resolved**, and — as flagged in the email — **non-operational
+stations removed**: the table dropped from **3,765 → 3,073 refill points**.
+Contrary to the "in progress" note, **GZIP is already being served** on both
+feeds. Evidence counts below are from the 12:06Z table + concurrent status feed.
 
-| # | Finding | Sent | Status |
-|---|---|---|---|
-| 1 | Table missing coordinates/names/addresses | 2026-07-08 am | ✅ **Fixed same day** (rev2 table 09:07Z: coordinates + street addresses on `aegi:entrance`). Names still missing → folded into #2. |
-| 2 | No eMI3 EVSE identifiers (`externalIdentifier` absent) | 2026-07-08 am | Open — re-verified 2026-07-09, still 0 occurrences |
-| 3 | Dangling `energyRateReference` ids; no `applicableCurrency` in updates; prices only at station level | 2026-07-08 am | Open — re-verified 2026-07-09: 1,151 rate references, 0 resolve against the table; 0 currency elements across 2,302 price entries |
-| 4 | Cache headers contradict docs (`max-age=0, private`, no ETag/Last-Modified) | 2026-07-08 am | Open — re-verified 2026-07-09, headers unchanged |
-| 5 | No gzip support | 2026-07-08 am | Open — re-verified 2026-07-09, `Accept-Encoding: gzip` still ignored |
-| 6 | `PHPSESSID` cookie + web-app CSP headers on API responses | 2026-07-08 am | Open — re-verified 2026-07-09, still present |
-| 7 | Key expiry not observable (6-month manual rotation) | 2026-07-08 am | Open — `/metadata` still carries no expiry field |
-| 8 | ~23% of points report `unknown` status | 2026-07-08 am | Open — 924/3,765 (24.5%) on 2026-07-09's status feed, essentially unchanged |
-| 9 | Namespace declarations repeated on every element (43% of payload) | 2026-07-08 follow-up | Open — re-verified 2026-07-09, still 43% (88,560 declarations, 5.3 MB) |
-| 10 | Location on `aegi:entrance` instead of `locationReference` (interop note) | 2026-07-08 follow-up | Open — table unchanged since rev2 |
+On our side, we reloaded EnergyVision (full ingest) and **soft-retired the 692
+de-listed chargers**, so they no longer appear in our feeds or app; ingest now
+auto-retires stations a full-snapshot source stops publishing.
 
-All 10 findings have been sent (items 1–8 in the 2026-07-08 morning email,
-items 9–10 in the same-day follow-up). Only item 1 has been acted on so far.
+| # | Finding | Status (2026-07-09 PM) |
+|---|---|---|
+| 1 | Table missing coordinates/names/addresses | ✅ **Fixed** (coordinates + street addresses present). Names still absent — sites carry `brand` (1,075) but no `name` element. |
+| 2 | No eMI3 EVSE identifiers (`externalIdentifier` absent) | ✅ **Fixed** — `externalIdentifier` now present (6,146 across 3,073 refill points; was 0). |
+| 3 | Dangling `energyRateReference` ids; no `applicableCurrency`; station-level prices | ✅ **Largely fixed** — references now resolve: **1,072/1,073** status refs match a table `energyRate` id (was 0/1,151), and the table carries `applicableCurrency` (2,144). Residual: status *updates* still omit `applicableCurrency` (0), but it's now resolvable via the valid reference. |
+| 4 | Cache headers contradict docs (`max-age=0, private`, no ETag) | ✅ **Fixed** — `Cache-Control: public, max-age=86400` (table) / `max-age=60` (status) + weak `ETag` on both. (`Last-Modified` still absent; ETag suffices.) |
+| 5 | No gzip support | ✅ **Fixed** — `Content-Encoding: gzip` served on both feeds (table body 8.0 MB raw / ~2 MB gzipped). Email said "in progress"; observed working. |
+| 6 | `PHPSESSID` cookie + web-app CSP headers on API responses | ✅ **Fixed** — no `Set-Cookie`, no CSP header on the DATEX responses. |
+| 7 | Key expiry not observable (6-month manual rotation) | ⏳ **Open** — `/metadata` still carries no expiry field (only `updateFrequencySeconds` + contact). |
+| 8 | ~23% of points report `unknown` status | 🔸 **Much improved** — **231/3,073 (7.5%)** unknown, down from 924/3,765 (24.5%). Not zero. |
+| 9 | Namespace declarations repeated on every element (43% of payload) | ✅ **Fixed** — namespaces declared once at the root (7 decls table / 5 status; was 88,560). Payload ~26 MB → 8.0 MB. |
+| 10 | Location on `aegi:entrance` instead of `locationReference` (interop note) | ⏳ **Open** — still on `aegi:entrance` (2,150; `locationReference` 0). Low priority. |
+
+**Score: 7 fixed (#1,2,3,4,5,6,9), 1 much-improved (#8), 2 open (#7 key expiry,
+#10 entrance location).** Both open items are minor; #7 is operational, #10 is an
+interop nicety. All 10 were sent 2026-07-08 (items 1–8 morning, 9–10 follow-up).
