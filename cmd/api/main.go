@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/appmire/charging/internal/analytics"
 	"github.com/appmire/charging/internal/config"
 	"github.com/appmire/charging/internal/datex"
 	"github.com/appmire/charging/internal/export"
@@ -49,8 +50,11 @@ type server struct {
 	live              *liveService
 	exportSnap        *export.Snapshotter // nil unless the bulk export is enabled
 	reportLimiter     *ipLimiter
-	datexLimiter      *ipLimiter   // per-IP throttle on DATEX subscription registration
-	datexVerifyClient *http.Client // used for the callback challenge-echo handshake
+	datexLimiter      *ipLimiter          // per-IP throttle on DATEX subscription registration
+	datexVerifyClient *http.Client        // used for the callback challenge-echo handshake
+	analytics         *analytics.Recorder // non-blocking first-party event recorder; nil disables
+	analyticsLimiter  *ipLimiter          // per-IP throttle on POST /events
+	analyticsSalt     string              // secret salt for daily-rotated visitor hashing
 	publicURL         string
 	ocpiParty         ocpi.Party
 	router            routing.Router // optional; nil disables route/corridor search
@@ -135,6 +139,18 @@ func main() {
 	s.datexLimiter = newIPLimiter(10*time.Second, 3)
 	s.datexVerifyClient = &http.Client{Timeout: 15 * time.Second}
 
+	// First-party analytics: non-blocking recorder + per-IP throttle on client
+	// events. The salt (daily-rotated with the date) makes visitor hashes
+	// unguessable; ANALYTICS_SALT keeps them stable across restarts, else a
+	// per-process random secret is used.
+	s.analyticsSalt = os.Getenv("ANALYTICS_SALT")
+	if s.analyticsSalt == "" {
+		s.analyticsSalt = randHex(16)
+	}
+	s.analyticsLimiter = newIPLimiter(time.Second, 20)
+	s.analytics = analytics.New(st, log, 8192)
+	go s.analytics.Run(context.Background())
+
 	// Bulk dataset export: regenerate the open static dumps on a schedule and
 	// serve them from exportDir (see routes()).
 	if cfg.ExportDir != "" {
@@ -179,6 +195,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Use(corsMiddleware(corsOrigins))
+	r.Use(s.recordAPI) // first-party product analytics (records after routing; never blocks)
 
 	// When the API is reverse-proxied under a path prefix (e.g. nginx maps
 	// /api/ -> this server with the prefix stripped), the served paths stay at
@@ -218,6 +235,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	s.registerReports(api)
 	s.registerReportsAdmin(api, s.adminGuard(api))
 	s.registerDatex(api)
+	s.registerAnalytics(api)
 	s.registerAdmin(api)
 
 	r.Get("/docs", scalarDocs(basePath))
@@ -243,6 +261,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	if s.exportDir != "" {
 		fs := http.StripPrefix("/export", http.FileServer(http.Dir(s.exportDir)))
 		r.Route("/export", func(er chi.Router) {
+			er.Use(s.recordFeed) // consumer/integrator analytics for feed pulls
 			// Compress explicitly lists the content types we serve: chi's default
 			// set covers application/json but NOT application/xml,
 			// application/x-ndjson or application/geo+json, so without this the
