@@ -5,6 +5,12 @@ charging_repo: "git@github.com:jeroentrappers/charging.git"
 charging_branch: master
 charging_dir: /opt/charging
 
+# Mobilithek push spool drainers (autoscales 1..this). Raised from the default 8
+# after the 64m body-limit fix let large (~20 MB) pushes through: 8 workers
+# couldn't drain the backlog fast enough and the spool kept hitting its 20k cap
+# (503s). 24 gives ~3x drain headroom on this many-core box.
+mobilithek_workers: 24
+
 # Public hostname this box answers on. Cut over to production 2026-06-12.
 charging_domain: charging.appmire.be
 certbot_email: jeroen.trappers@secutec.com
