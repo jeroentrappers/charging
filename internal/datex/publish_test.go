@@ -141,6 +141,20 @@ func TestPriceRoundedToTwoDigits(t *testing.T) {
 	if !bytes.Contains(jb.Bytes(), []byte("0.368")) {
 		t.Errorf("JSON should keep full price precision (0.368)\n%s", jb.String())
 	}
+
+	// A €/hour TIME component converts to €/min (÷60); the JSON must not leak
+	// float64 noise like 0.0299999999.
+	timeSites := []PublishSite{{ID: "1", Lat: 50.85, Lon: 4.35, Stations: []PublishStation{{ID: "1",
+		RefillPoints: []PublishRefillPoint{{ID: "1", CurrentType: "AC", ConnectorType: "IEC_62196_T2", PowerKW: 22,
+			Rate: &PublishRate{Currency: "EUR", Prices: []PublishPrice{{Type: "TIME", Value: 1.8}}}}}}}}}
+	var tb bytes.Buffer
+	if err := WriteAFIRTableJSON(&tb, timeSites, Creator{Country: "BE", NationalIdentifier: "APM"},
+		time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(tb.Bytes(), []byte("0.03")) || bytes.Contains(tb.Bytes(), []byte("0.0299")) {
+		t.Errorf("TIME €/min should be a clean 0.03, no float noise\n%s", tb.String())
+	}
 }
 
 // TestWriteAFIRTableJSONRoundTrip emits the JSON encoding and parses it back

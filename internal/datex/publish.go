@@ -161,6 +161,16 @@ func priceTypeEnum(t string, v float64) (enum string, value float64, ok bool) {
 // 0.37000000000000005.
 func moneyStr(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 
+// jsonPrice is the price for the JSON encoding: full precision, but snapped to 6
+// decimals to strip float64 representation noise (e.g. a €/hour→€/min ÷60 giving
+// 0.029999999999999995 instead of 0.03). Six digits is lossless for real
+// tariffs (our stored prices are ≤4 decimals) yet far finer than the XML's
+// 2-digit AmountOfMoney cap.
+func jsonPrice(v float64) float64 {
+	f, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'f', 6, 64), 64)
+	return f
+}
+
 // normalizeCurrency returns an ISO 4217 code matching the schema's CurrencyCode
 // pattern ([A-Z]{3}). Real data carries lowercase ("eur"); default to EUR.
 func normalizeCurrency(c string) string {
