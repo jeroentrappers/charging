@@ -25,7 +25,7 @@ auto-retires stations a full-snapshot source stops publishing.
 | 2 | No eMI3 EVSE identifiers (`externalIdentifier` absent) | ✅ **Fixed** — `externalIdentifier` now present (6,146 across 3,073 refill points; was 0). |
 | 3 | Dangling `energyRateReference` ids; no `applicableCurrency`; station-level prices | ✅ **Largely fixed** — references now resolve: **1,072/1,073** status refs match a table `energyRate` id (was 0/1,151), and the table carries `applicableCurrency` (2,144). Residual: status *updates* still omit `applicableCurrency` (0), but it's now resolvable via the valid reference. |
 | 4 | Cache headers contradict docs (`max-age=0, private`, no ETag) | ✅ **Fixed** — `Cache-Control: public, max-age=86400` (table) / `max-age=60` (status) + weak `ETag` on both. (`Last-Modified` still absent; ETag suffices.) |
-| 5 | No gzip support | ✅ **Fixed** — `Content-Encoding: gzip` served on both feeds (table body 8.0 MB raw / ~2 MB gzipped). Email said "in progress"; observed working. |
+| 5 | No gzip support | ✅ **Fixed** — `Content-Encoding: gzip` served on both feeds (table 8.0 MB raw → **448 KB** gzipped; status 2.42 MB → **177 KB**). Email said "in progress"; observed working. |
 | 6 | `PHPSESSID` cookie + web-app CSP headers on API responses | ✅ **Fixed** — no `Set-Cookie`, no CSP header on the DATEX responses. |
 | 7 | Key expiry not observable (6-month manual rotation) | ⏳ **Open** — `/metadata` still carries no expiry field (only `updateFrequencySeconds` + contact). |
 | 8 | ~23% of points report `unknown` status | 🔸 **Much improved** — **231/3,073 (7.5%)** unknown, down from 924/3,765 (24.5%). Not zero. |
