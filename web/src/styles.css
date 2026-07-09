@@ -479,3 +479,24 @@ table.matrix tr.warn td { color: var(--amber); font-weight: 700; }
   .chargers-table th, .chargers-table td { padding: 6px 8px; font-size: 12px; }
   .chargers-table .chargers-sub { display: none; }
 }
+
+/* ---- Admin analytics dashboard (/admin) ---- */
+.admin-page { max-width: 960px; margin: 0 auto; padding: 16px; }
+.admin-page h1 { font-size: 20px; margin: 4px 0 12px; }
+.admin-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.admin-controls { display: flex; gap: 6px; align-items: center; }
+.admin-controls button { padding: 4px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: transparent; cursor: pointer; }
+.admin-controls button.active { background: #15803d; color: #fff; border-color: #15803d; }
+.admin-controls button.link { border: none; color: #64748b; text-decoration: underline; }
+.admin-login { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.admin-login input { padding: 6px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; min-width: 220px; }
+.admin-login button, .admin-page form button { padding: 6px 14px; border-radius: 8px; border: 1px solid #15803d; background: #15803d; color: #fff; cursor: pointer; }
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 14px 0; }
+.stat-tile { background: var(--panel, #f6f7f9); border-radius: 12px; padding: 14px 16px; }
+.stat-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-label { color: #64748b; font-size: 13px; margin-top: 2px; }
+.admin-chart { margin: 8px 0 18px; }
+.admin-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.admin-table h3 { font-size: 14px; margin: 0 0 6px; }
+.admin-table table { width: 100%; }
+.admin-table td.num { text-align: right; font-variant-numeric: tabular-nums; }

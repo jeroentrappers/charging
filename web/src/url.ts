@@ -8,7 +8,7 @@
 //   /status                    source-health status page
 
 export interface NavState {
-  tab: 'find' | 'insights' | 'status' | 'chargers'
+  tab: 'find' | 'insights' | 'status' | 'chargers' | 'admin'
   center?: { lat: number; lon: number; zoom: number }
   chargerId?: number
   chargerSlug?: string
@@ -39,6 +39,7 @@ export function parseUrl(pathname: string): NavState {
   if (p === '/insights') return { tab: 'insights' }
   if (p === '/status') return { tab: 'status' }
   if (p === '/chargers') return { tab: 'chargers' }
+  if (p === '/admin') return { tab: 'admin' }
 
   const cm = chargerRe.exec(p)
   if (cm) return { tab: 'find', chargerId: Number(cm[1]), chargerSlug: cm[2] || undefined }
@@ -54,6 +55,7 @@ export function buildPath(s: NavState): string {
   if (s.tab === 'insights') return '/insights'
   if (s.tab === 'status') return '/status'
   if (s.tab === 'chargers') return '/chargers'
+  if (s.tab === 'admin') return '/admin'
   if (s.chargerId != null) {
     const slug = s.chargerSlug ? slugify(s.chargerSlug) : ''
     return slug ? `/charger/${s.chargerId}/${slug}` : `/charger/${s.chargerId}`

@@ -247,6 +247,45 @@ function clientId(): string {
   }
 }
 
+// track records a first-party client analytics event. Fire-and-forget and
+// wrapped in try/catch so analytics can never break or slow the app; uses
+// sendBeacon when available (survives page unload) and never awaits.
+export function track(event: string, props?: Record<string, unknown>): void {
+  try {
+    const body = JSON.stringify({ event, client_id: clientId(), props })
+    const url = BASE + '/events'
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))
+    } else {
+      void fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {})
+    }
+  } catch {
+    /* analytics must never throw into the UI */
+  }
+}
+
+// AnalyticsSummary mirrors the /admin/analytics rollup.
+export interface AnalyticsSummary {
+  since: string
+  events: number
+  unique_visitors: number
+  feed_consumers: number
+  top_events: { key: string; count: number }[]
+  top_endpoints: { key: string; count: number }[]
+  downloads_by_format: { key: string; count: number }[]
+  events_per_day: { day: string; count: number }[]
+}
+
+// fetchAnalytics calls the admin rollup with a bearer token. Throws on 401 so
+// the dashboard can prompt for a valid token.
+export async function fetchAnalytics(token: string, days: number): Promise<AnalyticsSummary> {
+  const res = await fetch(`${BASE}/admin/analytics?days=${days}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return res.json() as Promise<AnalyticsSummary>
+}
+
 export interface ReportsResult {
   charger_id: number
   reports: ReportAgg[]

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FindPage } from './FindPage'
-import { API_BASE, type Charger } from './api'
+import { API_BASE, track, type Charger } from './api'
 import { buildPath, parseUrl, type NavState } from './url'
 import { useSettings } from './settings'
 import { useTheme } from './theme'
@@ -14,6 +14,7 @@ const GITHUB_URL = 'https://github.com/jeroentrappers/charging'
 const InsightsPage = lazy(() => import('./InsightsPage').then((m) => ({ default: m.InsightsPage })))
 const StatusPage = lazy(() => import('./StatusPage').then((m) => ({ default: m.StatusPage })))
 const ChargersPage = lazy(() => import('./ChargersPage').then((m) => ({ default: m.ChargersPage })))
+const AdminAnalyticsPage = lazy(() => import('./AdminAnalyticsPage').then((m) => ({ default: m.AdminAnalyticsPage })))
 
 // Default to Ghent until geolocation resolves (or is denied).
 const DEFAULT_CENTER: [number, number] = [51.0543, 3.725]
@@ -36,6 +37,14 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
+  // First-party analytics: app open (once per load) + PWA install.
+  useEffect(() => {
+    track('app_open', { launch: window.matchMedia('(display-mode: standalone)').matches ? 'pwa' : 'browser' })
+    const onInstalled = () => track('pwa_install')
+    window.addEventListener('appinstalled', onInstalled)
+    return () => window.removeEventListener('appinstalled', onInstalled)
+  }, [])
+
   // navigate updates the address bar + route mirror for a user action (no
   // routeNonce bump). push=false coalesces rapid updates (map panning).
   function navigate(next: NavState, push: boolean) {
@@ -54,6 +63,20 @@ export default function App() {
   const onCloseCharger = () => navigate({ tab: 'find', center: route.center }, true)
 
   const [settings, patchSettings] = useSettings()
+  // Debounced session-profile change event (the price slider): one event per
+  // settled adjustment, and never on first render.
+  const chargeInit = useRef(true)
+  useEffect(() => {
+    if (chargeInit.current) {
+      chargeInit.current = false
+      return
+    }
+    const id = window.setTimeout(
+      () => track('session_change', { kwh: settings.charge.kWh, power: settings.charge.powerKW }),
+      1000,
+    )
+    return () => window.clearTimeout(id)
+  }, [settings.charge.kWh, settings.charge.powerKW])
   const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false) // mobile fly-out nav under the brand
@@ -251,6 +274,10 @@ export default function App() {
       ) : tab === 'chargers' ? (
         <Suspense fallback={<div className="chargers-page"><div className="state"><div className="spinner" />{t('chargers.loading')}</div></div>}>
           <ChargersPage />
+        </Suspense>
+      ) : tab === 'admin' ? (
+        <Suspense fallback={<div className="admin-page"><div className="state"><div className="spinner" />…</div></div>}>
+          <AdminAnalyticsPage />
         </Suspense>
       ) : (
         <Suspense fallback={<div className="status-page"><div className="state"><div className="spinner" />{t('status.loading')}</div></div>}>

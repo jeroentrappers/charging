@@ -150,6 +150,8 @@ func main() {
 	s.analyticsLimiter = newIPLimiter(time.Second, 20)
 	s.analytics = analytics.New(st, log, 8192)
 	go s.analytics.Run(context.Background())
+	// Daily rollup archive + prune of raw events past the retention window.
+	go (&analytics.Retention{Store: st, Log: log, RetentionDays: cfg.AnalyticsRetentionDays}).Run(context.Background())
 
 	// Bulk dataset export: regenerate the open static dumps on a schedule and
 	// serve them from exportDir (see routes()).

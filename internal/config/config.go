@@ -44,6 +44,10 @@ type Config struct {
 	ExportFullEvery  time.Duration
 	ExportAvailEvery time.Duration
 
+	// Analytics: raw events older than this are pruned (the daily rollup keeps
+	// the aggregates). 0 keeps the 90-day default.
+	AnalyticsRetentionDays int
+
 	// DATEX II publication identity (publicationCreator) for the outbound feed.
 	DatexCreatorCountry string
 	DatexCreatorID      string
@@ -101,6 +105,7 @@ func Load() Config {
 		ExportDir:              env("EXPORT_DIR", "./export"),
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
+		AnalyticsRetentionDays: envInt("ANALYTICS_RETENTION_DAYS", 90),
 		DatexCreatorCountry:    env("DATEX_CREATOR_COUNTRY", "BE"),
 		DatexCreatorID:         env("DATEX_CREATOR_ID", "APM"),
 		DatexPushTargets:       env("DATEX_PUSH_TARGETS", ""),

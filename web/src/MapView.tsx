@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Circle, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import type { Charger } from './api'
+import { track, type Charger } from './api'
 import { priceColor, priceOf } from './ui'
 import { hasVectorTiles, styleUrl } from './tiles'
 
@@ -122,7 +122,15 @@ function FocusOn({ to, nonce }: { to: [number, number] | null; nonce: number }) 
 // Reports viewport center + radius (m) + zoom after the map settles, plus once
 // on load.
 function Viewport({ onChange }: { onChange: (lat: number, lon: number, radiusM: number, zoom: number) => void }) {
-  const map = useMapEvents({ moveend: () => emit() })
+  const trackTimer = useRef<number | undefined>(undefined)
+  const map = useMapEvents({
+    moveend: () => {
+      emit()
+      // Debounce so a pan/zoom gesture records one map_move, not a burst.
+      window.clearTimeout(trackTimer.current)
+      trackTimer.current = window.setTimeout(() => track('map_move', { zoom: map.getZoom() }), 1200)
+    },
+  })
   function emit() {
     const c = map.getCenter()
     const r = c.distanceTo(map.getBounds().getNorthEast())

@@ -117,6 +117,34 @@ func (s *Store) Analytics(ctx context.Context, window time.Duration) (AnalyticsS
 	return out, rows.Err()
 }
 
+// RollupAnalyticsDay upserts the daily aggregate rows for one UTC calendar day
+// from the raw events, so the totals survive the raw-event prune. Idempotent.
+func (s *Store) RollupAnalyticsDay(ctx context.Context, day time.Time) error {
+	day = day.UTC().Truncate(24 * time.Hour)
+	start, end := day, day.Add(24*time.Hour)
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO analytics_daily (day, metric, count)
+		SELECT $3::date, metric, cnt FROM (
+			SELECT event AS metric, count(*) AS cnt FROM analytics_event
+			  WHERE ts >= $1 AND ts < $2 GROUP BY event
+			UNION ALL SELECT '_events', count(*) FROM analytics_event WHERE ts >= $1 AND ts < $2
+			UNION ALL SELECT '_visitors', count(DISTINCT client_hash) FROM analytics_event
+			  WHERE ts >= $1 AND ts < $2 AND ua_class='browser' AND client_hash <> ''
+			UNION ALL SELECT '_feed_consumers', count(DISTINCT ip_hash) FROM analytics_event
+			  WHERE ts >= $1 AND ts < $2 AND kind='feed' AND ip_hash <> ''
+		) s
+		ON CONFLICT (day, metric) DO UPDATE SET count = EXCLUDED.count`,
+		start, end, day)
+	return err
+}
+
+// PruneAnalyticsEvents deletes raw events older than `before`. The daily rollup
+// keeps their aggregates. Returns how many rows were removed.
+func (s *Store) PruneAnalyticsEvents(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM analytics_event WHERE ts < $1`, before)
+	return tag.RowsAffected(), err
+}
+
 func (s *Store) analyticsCounts(ctx context.Context, since time.Time, q string) ([]AnalyticsCount, error) {
 	rows, err := s.Pool.Query(ctx, q, since)
 	if err != nil {
