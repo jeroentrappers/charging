@@ -1,0 +1,16 @@
+# Managed by Ansible (nginx role). Per-client-IP rate limit for the charging
+# API, defined in the http context so `limit_req` can reference it from the
+# vhost's `location /api/`. 10 r/s sustained, burst 20 — comfortably above a
+# PWA's multi-call interactions, well below scraping/abuse of the OSRM-backed
+# route endpoints.
+#
+# The authenticated Mobilithek consumer-push feed is a machine broker that
+# legitimately bursts far above 10 r/s. Rate-limiting it caused 429s and
+# dropped deliveries, so it is exempted: the map yields an EMPTY key for that
+# path, and nginx does not account requests with an empty key.
+map $request_uri $charging_limit_key {
+    default                  $binary_remote_addr;
+    "~^/api/mobilithek/push" "";
+}
+
+limit_req_zone $charging_limit_key zone=charging_api:10m rate=10r/s;

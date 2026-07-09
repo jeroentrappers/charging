@@ -5,7 +5,22 @@
 server {
     server_name {{ charging_domain }};
 
+    # DATEX II / Mobilithek push payloads (and any future large POST) exceed
+    # nginx's 1m default. The app itself accepts up to 256m (see mobilithek.go);
+    # 64m matches the other vhosts on this box and is ample for gzipped feeds.
+    client_max_body_size 64m;
+
+    # /metrics is internal-only (served on the api's separate :9090 listener,
+    # never proxied). Block the public path defensively in case it is ever
+    # re-mounted on the API port.
+    location = /api/metrics { return 404; }
+
     location /api/ {
+        # Per-IP rate limit (zone defined in conf.d/10-charging-ratelimit.conf).
+        # The authenticated Mobilithek push feed is exempted there via an empty
+        # key, so bursty broker deliveries are never throttled.
+        limit_req zone=charging_api burst=20 nodelay;
+        limit_req_status 429;
         proxy_pass http://127.0.0.1:{{ api_loopback_port }}/;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
@@ -47,7 +62,14 @@ server {
     listen 80;
     listen [::]:80;
 
+    # See the TLS server block above for why 64m.
+    client_max_body_size 64m;
+
+    location = /api/metrics { return 404; }
+
     location /api/ {
+        limit_req zone=charging_api burst=20 nodelay;
+        limit_req_status 429;
         proxy_pass http://127.0.0.1:{{ api_loopback_port }}/;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;

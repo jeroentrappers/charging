@@ -17,6 +17,13 @@
     enabled: true
     state: started
 
+- name: Render charging API rate-limit zone (http context)
+  ansible.builtin.template:
+    src: charging-ratelimit.conf.j2
+    dest: /etc/nginx/conf.d/10-charging-ratelimit.conf
+    mode: "0644"
+  notify: reload nginx
+
 - name: Does a TLS cert already exist?
   ansible.builtin.stat:
     path: "/etc/letsencrypt/live/{{ charging_domain }}/fullchain.pem"
