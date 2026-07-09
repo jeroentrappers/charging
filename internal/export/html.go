@@ -34,12 +34,15 @@ func RenderIndexHTML(w io.Writer, m Manifest) error {
 	}
 	b.WriteString(`<br><span class="muted">License: ` + html.EscapeString(m.License) + " — " + html.EscapeString(m.Attribution) + `</span></div>`)
 
-	b.WriteString(`<p>Files are split into ~10 MB chunks — each a contiguous postal range of one country — in four formats. ` +
+	b.WriteString(`<p>Files are split into ~10 MB chunks — each a contiguous postal range of one country — in several formats. ` +
 		`Machine-readable manifest: <a href="index.json">index.json</a>` +
 		fileLink(m, "availability.json", ` · live availability delta: <a href="availability.json">availability.json</a>`) +
+		fileLink(m, "datex/status.xml", ` · DATEX II status: <a href="datex/status.xml">status.xml</a>`) +
+		fileLink(m, "datex/status.json", ` · <a href="datex/status.json">status.json</a>`) +
 		`</p>`)
 	b.WriteString(`<p class="muted">Formats: <b>.ndjson</b> one normalized record per line · ` +
-		`<b>.geojson</b> a point layer for maps · <b>OCPI</b> Locations + Tariffs (roaming-shaped).</p>`)
+		`<b>.geojson</b> a point layer for maps · <b>OCPI</b> Locations + Tariffs (roaming-shaped) · ` +
+		`<b>DATEX II</b> v3 AFIR table (XML + JSON), the mandatory NAP profile.</p>`)
 
 	// Group regions by country (prefix before the first '-').
 	byCountry := map[string][]string{}
@@ -60,13 +63,15 @@ func RenderIndexHTML(w io.Writer, m Manifest) error {
 		regions := byCountry[c]
 		sort.Strings(regions)
 		fmt.Fprintf(&b, `<h2>%s <span class="muted">(%d regions)</span></h2>`, html.EscapeString(countryName(c)), len(regions))
-		b.WriteString(`<table><thead><tr><th>Region</th><th>NDJSON</th><th>GeoJSON</th><th>OCPI Locations</th><th>OCPI Tariffs</th></tr></thead><tbody>`)
+		b.WriteString(`<table><thead><tr><th>Region</th><th>NDJSON</th><th>GeoJSON</th><th>OCPI Locations</th><th>OCPI Tariffs</th><th>DATEX XML</th><th>DATEX JSON</th></tr></thead><tbody>`)
 		for _, r := range regions {
 			fmt.Fprintf(&b, `<tr><td><code>%s</code></td>`, html.EscapeString(r))
 			cell(&b, m, "ndjson/"+r+".ndjson")
 			cell(&b, m, "geojson/"+r+".geojson")
 			cell(&b, m, "ocpi/"+r+"-locations.json")
 			cell(&b, m, "ocpi/"+r+"-tariffs.json")
+			cell(&b, m, "datex/"+r+"-table.xml")
+			cell(&b, m, "datex/"+r+"-table.json")
 			b.WriteString(`</tr>`)
 		}
 		b.WriteString(`</tbody></table>`)
