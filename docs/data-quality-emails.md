@@ -6,6 +6,18 @@ consumer of their public/AFIR feed, reporting issues to help — not complaining
 
 Sender: Jeroen Trappers, Software engineer at Appmire <jeroen@appmire.be> · 0497053310.
 
+**All drafts below sent 2026-07-09.** Reply / re-verification tracker:
+
+| # | Source | Sent | Reply | Fixed? (re-verified) |
+|---|--------|------|-------|----------------------|
+| 1 | EnergyVision | 2026-07-09 | — | ❌ status feed still has `pricePerMinute` 19.80 (checked 2026-07-09 PM) |
+| 2 | NDW / DOT-NL | 2026-07-09 | — | — (workaround shipped our side) |
+| 3 | Eco-Movement | 2026-07-09 | — | — |
+| 4 | eRoundup | 2026-07-09 | — | — |
+| 5 | EnBW | 2026-07-09 | — | — |
+| 6 | EW Pricing GmbH | 2026-07-09 | — | — |
+| 7 | Monta | 2026-07-09 | — | — |
+
 Only sources with findings are listed. **No issues found** (nothing to send):
 tesla, road, indigo, mob-chargecloudgmbh (minor), and the smaller Mobilithek
 feeds. **Government open-data registries** (irve / data.gouv.fr, bnetza) have
