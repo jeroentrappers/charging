@@ -15,6 +15,10 @@ All files live under **`/export`** and are regenerated on a schedule:
 | `/export/chargers.geojson` | GeoJSON (`application/geo+json`) | full (~5 min) | `FeatureCollection` of charger points for mapping |
 | `/export/ocpi/locations.json` | OCPI 2.1.1 Locations | full (~5 min) | EVSEs/connectors grouped per location, each connector referencing `tariff_ids` |
 | `/export/ocpi/tariffs.json` | OCPI 2.1.1 Tariffs | full (~5 min) | de-duplicated tariffs referenced by the locations dump |
+| `/export/datex/<REGION>-table.xml` | DATEX II v3 AFIR (XML) | full (~5 min) | `EnergyInfrastructureTablePublication`: locations, connectors, power, plug, ad-hoc `EnergyRate` pricing |
+| `/export/datex/<REGION>-table.json` | DATEX II v3 AFIR (JSON) | full (~5 min) | same table publication in the AFIR JSON encoding (profile 01-00-00) |
+| `/export/datex/status.xml` | DATEX II v3 AFIR (XML) | delta (~1 min) | `EnergyInfrastructureStatusPublication`: live refill-point status, keyed by charger id |
+| `/export/datex/status.json` | DATEX II v3 AFIR (JSON) | delta (~1 min) | same status publication in the AFIR JSON encoding |
 | `/export/availability.json` | JSON | delta (~1 min) | live status + `available_count` per charger id — small and frequently rotated |
 
 Prices change rarely, so the full dump rotates every few minutes; availability
@@ -39,6 +43,75 @@ The dump is small. With Road alone (~7.7k connectors) the full NDJSON is a few
 MB (~1–2 MB gzipped); with every source enabled (~40–50k connectors) expect
 ~60–90 MB raw / ~6–10 MB gzipped — still a single static file.
 
+## DATEX II feed (AFIR profile)
+
+From 2026-04-14 DATEX II v3 (EnergyInfrastructure / AFIR Recharging profile) is
+the mandatory NAP format. We publish the same dataset in that profile too, in
+**both** encodings — the XML encoding and the AFIR JSON encoding (profile "AFIR
+Energy Infrastructure" 01-00-00, the one German Mobilithek providers push).
+
+- **Table** (`datex/<REGION>-table.{xml,json}`) is an
+  `EnergyInfrastructureTablePublication`: one site + station per location, one
+  `refillPoint` per connector, with ad-hoc pricing under
+  `refillPoint > energyProduct > energyRate`. Each `refillPoint` id is the
+  charger id.
+- **Status** (`datex/status.{xml,json}`) is an
+  `EnergyInfrastructureStatusPublication`: live refill-point status. Consumers
+  join `refillPointStatus > reference/@id` (or `reference.idG` in JSON) back to
+  the table's `refillPoint` id.
+- **Compliance**: the XML validates against the official DATEX II **v3.7** schema
+  set — `scripts/validate-datex.sh export/datex/*.xml` (or `make
+  validate-datex-export`) is the reference check. `publicationCreator` is set
+  from `DATEX_CREATOR_COUNTRY` / `DATEX_CREATOR_ID`.
+
+### Push delivery
+
+Besides hosting the files for pull, we **push** each publication to subscriber
+callbacks — the outbound mirror of the German Mobilithek push we consume (see
+`docs/mobilithek.md`). After each snapshot we POST the freshly written
+publications (gzip, `Content-Type: application/xml` or `application/json`,
+optional `Authorization: Bearer …`) to every active subscriber. Each POST is a
+full, self-superseding publication; a table subscriber receives one POST per
+region, a status subscriber one POST per rotation. Pushes run in the background
+with bounded retries, so a slow subscriber never blocks snapshot generation.
+
+Subscribers come from two places, merged on every push:
+
+- **Self-service registration** (below) — the primary path.
+- **Static config** — `DATEX_PUSH_TARGETS` for targets we wire up ourselves.
+
+### Self-service subscription
+
+External consumers register their own callback over the API. Registration is
+open but a callback is only activated once it **proves ownership** by echoing a
+challenge (webhook-style verification), so the endpoint can't be abused as a
+blind push amplifier; callback URLs that resolve to loopback/private/link-local
+addresses are rejected.
+
+```
+POST /datex/subscriptions
+{ "callback_url": "https://you.example/datex", "encoding": "xml", "push_token": "optional" }
+```
+
+On registration we POST a verification challenge to `callback_url`
+(`X-Datex-Hook-Challenge: <nonce>`, body `{"type":"verification","challenge":"<nonce>"}`);
+the endpoint must reply `2xx` echoing the nonce as the plain body **or** as
+`{"challenge":"<nonce>"}`. On success we return
+
+```
+201 { "id": 42, "status": "active", "encoding": "xml", "manage_secret": "…" }
+```
+
+Keep the `manage_secret` — it's required to remove the subscription:
+
+```
+DELETE /datex/subscriptions/42        Authorization: Bearer <manage_secret>
+```
+
+`push_token`, if given, is sent as `Authorization: Bearer …` on both the
+verification request and every subsequent push, so consumers can authenticate
+our calls. Registration is rate-limited per IP.
+
 ## Licence & attribution
 
 The dataset is derived from open EV charging data published via the Belgian
@@ -51,8 +124,14 @@ are carried in `index.json` (`license`, `attribution`).
 | Env var | Default | Meaning |
 |---------|---------|---------|
 | `EXPORT_DIR` | `./export` | Directory the API writes/serves dumps from. **Empty disables the export entirely.** |
-| `EXPORT_FULL_EVERY` | `5m` | Full snapshot (NDJSON/GeoJSON/OCPI) cadence |
-| `EXPORT_AVAIL_EVERY` | `1m` | Availability-delta cadence |
+| `EXPORT_FULL_EVERY` | `5m` | Full snapshot (NDJSON/GeoJSON/OCPI/DATEX table) cadence |
+| `EXPORT_AVAIL_EVERY` | `1m` | Availability-delta (+ DATEX status) cadence |
+| `DATEX_CREATOR_COUNTRY` | `BE` | `publicationCreator` country of the DATEX II feed |
+| `DATEX_CREATOR_ID` | `APM` | `publicationCreator` national identifier |
+| `DATEX_PUSH_TARGETS` | _(empty)_ | Extra static subscriber callbacks (on top of self-service registrations); entries separated by newlines/commas, each `url[\|token][\|xml\|json]`. Push also runs for any registered subscriber whenever the export is on. |
+| `DATEX_PUSH_TOKEN` | _(empty)_ | Default bearer token for targets without their own |
+| `DATEX_PUSH_CERT_FILE` / `_KEY_FILE` / `_CA_FILE` | _(empty)_ | Mutual-TLS client cert for push (same PEM convention as Mobilithek) |
+| `DATEX_PUSH_TIMEOUT` | `120s` | Per-request push timeout |
 
 The snapshotter runs inside the `api` process (it already holds the DB pool and
 serves HTTP). In production, point `EXPORT_DIR` at a mounted volume if you want

@@ -146,6 +146,18 @@ type afirRefillPoint struct {
 	ChargingMode  string     `xml:"connector>chargingMode"`
 	MaxPowerW     float64    `xml:"connector>maxPowerAtSocket"`
 	Rates         []afirRate `xml:"energyRate"`
+	// The AFIR schema nests the rate under energyProduct; some publishers put it
+	// directly on the refillPoint. Accept both (our own publisher uses the former).
+	ProductRates []afirRate `xml:"energyProduct>energyRate"`
+}
+
+// rates returns the refill point's rates from either placement (direct or nested
+// under energyProduct).
+func (rp afirRefillPoint) rates() []afirRate {
+	if len(rp.Rates) > 0 {
+		return rp.Rates
+	}
+	return rp.ProductRates
 }
 
 // afirRate is an EnergyRate: a currency + a policy (ad-hoc vs contract) + a set
@@ -372,8 +384,9 @@ func buildStaticConnectors(pub afirStaticPub, cpoID string) ([]model.Connector, 
 					City:        s.city(),
 				}
 
-				// Pricing may sit on the refillPoint, its station, or its site.
-				rates := rp.Rates
+				// Pricing may sit on the refillPoint (directly or under
+				// energyProduct), its station, or its site.
+				rates := rp.rates()
 				if len(rates) == 0 {
 					rates = st.Rates
 				}

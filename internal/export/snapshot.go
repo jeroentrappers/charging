@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/appmire/charging/internal/datex"
 	"github.com/appmire/charging/internal/store"
 )
 
@@ -58,6 +59,8 @@ type Snapshotter struct {
 	FullEvery  time.Duration
 	AvailEvery time.Duration
 	ChunkBytes int64            // target NDJSON bytes per region file; 0 → 10 MiB
+	Creator    datex.Creator    // publicationCreator for the DATEX II feed
+	Push       *DatexPusher     // outbound DATEX II push; nil disables it
 	Now        func() time.Time // injectable for tests
 
 	mu       sync.Mutex
@@ -158,11 +161,17 @@ func (s *Snapshotter) GenerateFull(ctx context.Context) error {
 	s.manifest.Chargers = total
 	s.manifest.PricedChargers = priced
 	s.manifest.Regions = regions
-	return s.writeManifestLocked()
+	if err := s.writeManifestLocked(); err != nil {
+		return err
+	}
+	if s.Push != nil {
+		s.Push.PushTable(ctx, s.Dir, regions)
+	}
+	return nil
 }
 
 // regionSubdirs are the subdirectories holding the per-region export files.
-var regionSubdirs = []string{"ndjson", "geojson", "ocpi"}
+var regionSubdirs = []string{"ndjson", "geojson", "ocpi", "datex"}
 
 // writeRegions consumes a stream of rows (ordered by country then postal) and
 // writes them into size-bounded region files (~chunkTarget NDJSON bytes each),
@@ -251,11 +260,14 @@ func (s *Snapshotter) writeRegionFiles(region string, rows []store.ExportCharger
 		kind  string
 		write func(io.Writer) error
 	}
+	afirSites := BuildAFIRTable(rows)
 	entries := []entry{
 		{"ndjson/" + region + ".ndjson", "normalized-ndjson", func(w io.Writer) error { return WriteNDJSON(w, rows) }},
 		{"geojson/" + region + ".geojson", "geojson", func(w io.Writer) error { return WriteGeoJSON(w, rows) }},
 		{"ocpi/" + region + "-locations.json", "ocpi-locations", func(w io.Writer) error { return WriteOCPILocations(w, locs, now) }},
 		{"ocpi/" + region + "-tariffs.json", "ocpi-tariffs", func(w io.Writer) error { return WriteOCPITariffs(w, tariffs, now) }},
+		{"datex/" + region + "-table.xml", "datex-afir-table", func(w io.Writer) error { return datex.WriteAFIRTable(w, afirSites, s.Creator, now) }},
+		{"datex/" + region + "-table.json", "datex-afir-table-json", func(w io.Writer) error { return datex.WriteAFIRTableJSON(w, afirSites, s.Creator, now) }},
 	}
 	for _, e := range entries {
 		info, err := s.writeAtomic(e.name, e.write, now)
@@ -286,7 +298,7 @@ func (s *Snapshotter) pruneRegions(keep map[string]FileInfo) error {
 			}
 			name := ent.Name()
 			ext := filepath.Ext(name)
-			if ext != ".ndjson" && ext != ".geojson" && ext != ".json" {
+			if ext != ".ndjson" && ext != ".geojson" && ext != ".json" && ext != ".xml" {
 				continue
 			}
 			rel := sub + "/" + name
@@ -329,9 +341,35 @@ func (s *Snapshotter) GenerateAvailability(ctx context.Context) error {
 	}
 	info.Kind = "availability-delta"
 	s.manifest.Files["availability.json"] = info
+
+	// DATEX II status publications (XML + JSON), keyed by charger id — the same
+	// join key the DATEX table files carry on each refillPoint.
+	afirStatus := BuildAFIRStatus(avail)
+	statusFiles := []struct {
+		name, kind string
+		write      func(io.Writer) error
+	}{
+		{"datex/status.xml", "datex-afir-status", func(w io.Writer) error { return datex.WriteAFIRStatus(w, afirStatus, s.Creator, now) }},
+		{"datex/status.json", "datex-afir-status-json", func(w io.Writer) error { return datex.WriteAFIRStatusJSON(w, afirStatus, s.Creator, now) }},
+	}
+	for _, f := range statusFiles {
+		fi, err := s.writeAtomic(f.name, f.write, now)
+		if err != nil {
+			return err
+		}
+		fi.Kind = f.kind
+		s.manifest.Files[f.name] = fi
+	}
+
 	s.manifest.AvailGeneratedAt = now
 	s.manifest.NextAvailRefresh = now.Add(s.AvailEvery)
-	return s.writeManifestLocked()
+	if err := s.writeManifestLocked(); err != nil {
+		return err
+	}
+	if s.Push != nil {
+		s.Push.PushStatus(ctx, s.Dir)
+	}
+	return nil
 }
 
 func (s *Snapshotter) ensureDir() error {

@@ -44,6 +44,21 @@ type Config struct {
 	ExportFullEvery  time.Duration
 	ExportAvailEvery time.Duration
 
+	// DATEX II publication identity (publicationCreator) for the outbound feed.
+	DatexCreatorCountry string
+	DatexCreatorID      string
+
+	// Outbound DATEX II push. Empty DatexPushTargets disables it (pull-only).
+	// Each target is "url[|token][|xml|json]"; entries are separated by newlines
+	// or commas. DatexPushToken is the default bearer for targets without their
+	// own. Cert/Key/Ca enable mutual-TLS (same PEM convention as Mobilithek).
+	DatexPushTargets  string
+	DatexPushToken    string
+	DatexPushCertFile string
+	DatexPushKeyFile  string
+	DatexPushCaFile   string
+	DatexPushTimeout  time.Duration
+
 	// OSRMURL is the base URL of a self-hosted osrm-routed server (e.g.
 	// http://osrm:5000). Empty disables route/corridor search.
 	OSRMURL string
@@ -86,6 +101,14 @@ func Load() Config {
 		ExportDir:              env("EXPORT_DIR", "./export"),
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
+		DatexCreatorCountry:    env("DATEX_CREATOR_COUNTRY", "BE"),
+		DatexCreatorID:         env("DATEX_CREATOR_ID", "APM"),
+		DatexPushTargets:       env("DATEX_PUSH_TARGETS", ""),
+		DatexPushToken:         os.Getenv("DATEX_PUSH_TOKEN"),
+		DatexPushCertFile:      env("DATEX_PUSH_CERT_FILE", ""),
+		DatexPushKeyFile:       env("DATEX_PUSH_KEY_FILE", ""),
+		DatexPushCaFile:        env("DATEX_PUSH_CA_FILE", ""),
+		DatexPushTimeout:       envDuration("DATEX_PUSH_TIMEOUT", 120*time.Second),
 		OSRMURL:                env("OSRM_URL", ""),
 		MobilithekPushToken:    os.Getenv("MOBILITHEK_PUSH_TOKEN"),
 		MobilithekCaptureDir:   env("MOBILITHEK_CAPTURE_DIR", ""),

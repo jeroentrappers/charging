@@ -49,7 +49,26 @@ var (
 		Name: "charging_mobilithek_spool_failed",
 		Help: "Quarantined Mobilithek pushes awaiting investigation.",
 	})
+
+	datexPushTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "charging_datex_push_total",
+		Help: "Outbound DATEX II publication pushes by target, kind and result.",
+	}, []string{"target", "kind", "result"})
+
+	datexPushLastSuccess = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "charging_datex_push_last_success_timestamp_seconds",
+		Help: "Unix time of the last successful DATEX II push per target and kind.",
+	}, []string{"target", "kind"})
 )
+
+// DatexPush records the outcome of one outbound DATEX II push. kind is
+// "table" or "status"; result is "ok" or "error".
+func DatexPush(now time.Time, target, kind, result string) {
+	datexPushTotal.WithLabelValues(target, kind, result).Inc()
+	if result == "ok" {
+		datexPushLastSuccess.WithLabelValues(target, kind).Set(float64(now.Unix()))
+	}
+}
 
 // SpoolStats records the current Mobilithek push-spool state. Wire it to
 // ingest.Engine.OnSpoolStats.

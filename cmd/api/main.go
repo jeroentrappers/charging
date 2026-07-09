@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/appmire/charging/internal/config"
+	"github.com/appmire/charging/internal/datex"
 	"github.com/appmire/charging/internal/export"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
@@ -35,21 +36,23 @@ import (
 const apiVersion = "1.0.0"
 
 type server struct {
-	st              *store.Store
-	log             *slog.Logger
-	stats           *statsCache // memoizes the /stats/* analytics queries
-	vehicle         pricing.Vehicle
-	staleAfter      time.Duration
-	priceStaleAfter time.Duration
-	adminToken      string
-	exportDir       string
-	apiBasePath     string
-	engine          *ingest.Engine
-	live            *liveService
-	reportLimiter   *ipLimiter
-	publicURL       string
-	ocpiParty       ocpi.Party
-	router          routing.Router // optional; nil disables route/corridor search
+	st                *store.Store
+	log               *slog.Logger
+	stats             *statsCache // memoizes the /stats/* analytics queries
+	vehicle           pricing.Vehicle
+	staleAfter        time.Duration
+	priceStaleAfter   time.Duration
+	adminToken        string
+	exportDir         string
+	apiBasePath       string
+	engine            *ingest.Engine
+	live              *liveService
+	reportLimiter     *ipLimiter
+	datexLimiter      *ipLimiter   // per-IP throttle on DATEX subscription registration
+	datexVerifyClient *http.Client // used for the callback challenge-echo handshake
+	publicURL         string
+	ocpiParty         ocpi.Party
+	router            routing.Router // optional; nil disables route/corridor search
 
 	mobilithekToken      string // shared token for the inbound Mobilithek webhook
 	mobilithekCaptureDir string // where to save pushed payloads (optional)
@@ -126,13 +129,27 @@ func main() {
 	s.live = newLiveService(montaClient, s.vehicle, log, s.engine)
 	// Public report submissions: per-IP token bucket (burst then ~1 / 3s).
 	s.reportLimiter = newIPLimiter(3*time.Second, 8)
+	// DATEX subscription registration is heavier (it makes an outbound
+	// verification call), so throttle it harder: burst 3 then ~1 / 10s.
+	s.datexLimiter = newIPLimiter(10*time.Second, 3)
+	s.datexVerifyClient = &http.Client{Timeout: 15 * time.Second}
 
 	// Bulk dataset export: regenerate the open static dumps on a schedule and
 	// serve them from exportDir (see routes()).
 	if cfg.ExportDir != "" {
+		pusher, err := export.NewDatexPusher(
+			parseDatexTargets(cfg.DatexPushTargets, cfg.DatexPushToken),
+			st, log, cfg.DatexPushTimeout,
+			cfg.DatexPushCertFile, cfg.DatexPushKeyFile, cfg.DatexPushCaFile,
+		)
+		if err != nil {
+			log.Error("datex push disabled: bad config", "err", err)
+		}
 		snap := &export.Snapshotter{
 			Store: st, Dir: cfg.ExportDir, Log: log,
 			FullEvery: cfg.ExportFullEvery, AvailEvery: cfg.ExportAvailEvery,
+			Creator: datex.Creator{Country: cfg.DatexCreatorCountry, NationalIdentifier: cfg.DatexCreatorID},
+			Push:    pusher,
 		}
 		go snap.Run(context.Background())
 	}
@@ -179,7 +196,8 @@ func (s *server) routes(corsOrigins string) http.Handler {
 		"user-defined sessions), read a charger's versioned price history, and browse " +
 		"market statistics. Built on open AFIR/transportdata.be data.\n\n" +
 		"The full dataset is also published as open, periodically-rotated static " +
-		"dumps (NDJSON, GeoJSON, OCPI Locations+Tariffs), split by region — " +
+		"dumps (NDJSON, GeoJSON, OCPI Locations+Tariffs, and DATEX II v3 AFIR " +
+		"table+status in XML and JSON), split by region — " +
 		"[**browse the files**](" + basePath + "/export/) (human-readable) or see " +
 		"[index.json](" + basePath + "/export/index.json) for the manifest, sizes, checksums and licence."
 	cfg.DocsPath = "" // served below with Scalar instead of the bundled renderer
@@ -197,6 +215,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	s.registerPublic(api)
 	s.registerReports(api)
 	s.registerReportsAdmin(api, s.adminGuard(api))
+	s.registerDatex(api)
 	s.registerAdmin(api)
 
 	r.Get("/docs", scalarDocs(basePath))
@@ -243,9 +262,39 @@ func exportCacheControl(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 		case strings.HasSuffix(r.URL.Path, ".geojson"):
 			w.Header().Set("Content-Type", "application/geo+json")
+		case strings.HasSuffix(r.URL.Path, ".xml"):
+			w.Header().Set("Content-Type", "application/xml")
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// parseDatexTargets parses DATEX_PUSH_TARGETS into push targets. Entries are
+// separated by newlines or commas; each is "url[|token][|xml|json]". A target
+// without its own token inherits defaultToken; encoding defaults to "xml".
+func parseDatexTargets(raw, defaultToken string) []export.PushTarget {
+	fields := strings.FieldsFunc(raw, func(r rune) bool { return r == '\n' || r == ',' })
+	var out []export.PushTarget
+	for _, f := range fields {
+		parts := strings.Split(strings.TrimSpace(f), "|")
+		url := strings.TrimSpace(parts[0])
+		if url == "" {
+			continue
+		}
+		t := export.PushTarget{URL: url, Token: defaultToken, Encoding: "xml"}
+		for _, p := range parts[1:] {
+			p = strings.TrimSpace(p)
+			switch p {
+			case "xml", "json":
+				t.Encoding = p
+			case "":
+			default:
+				t.Token = p // a token overrides the default
+			}
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
