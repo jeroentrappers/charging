@@ -135,6 +135,10 @@ func (c *CPO) defaults() {
 	if c.SourceType == "" {
 		c.SourceType = "ocpi"
 	}
+	// Country is ISO 3166-1 alpha-2, stored uppercase. Sources derived from a
+	// DATEX publicationCreator arrive lowercase (e.g. "de"); normalize so a
+	// country maps to exactly one export region bucket.
+	c.Country = strings.ToUpper(strings.TrimSpace(c.Country))
 }
 
 func (s *Store) ListEnabledCPOs(ctx context.Context) ([]CPO, error) {
@@ -744,30 +748,30 @@ const (
 // ChargerListQuery is the explorer view's filter / sort / paginate input.
 // All filter fields are AND-ed; a zero/empty value disables that filter.
 type ChargerListQuery struct {
-	Q              string             // free-text needle: name, address, city, postal, CPO id/name
-	Source         string             // exact cpo id ("" = any)
-	Country        string             // exact 2-letter country on the CPO ("" = any)
-	PlugType       string             // OCPI connector standard ("" = any)
-	CurrentType    string             // "AC" or "DC" ("" = any)
-	MinPowerKW     float64            // 0 = no lower bound
-	MaxPowerKW     float64            // 0 = no upper bound
-	OnlyAvail      bool               // only chargers reporting >0 available connectors
-	HasPrice       bool               // only chargers with an open tariff_version
-	IncludePrivate bool               // include private (home/p2p) chargers
-	Sort           ChargerListColumn  // column to sort by ("" = id)
-	Desc           bool               // sort descending
-	Limit          int                // page size; 0 -> 50
-	Offset         int                // rows to skip; for page N, Offset = (N-1)*Limit
+	Q              string            // free-text needle: name, address, city, postal, CPO id/name
+	Source         string            // exact cpo id ("" = any)
+	Country        string            // exact 2-letter country on the CPO ("" = any)
+	PlugType       string            // OCPI connector standard ("" = any)
+	CurrentType    string            // "AC" or "DC" ("" = any)
+	MinPowerKW     float64           // 0 = no lower bound
+	MaxPowerKW     float64           // 0 = no upper bound
+	OnlyAvail      bool              // only chargers reporting >0 available connectors
+	HasPrice       bool              // only chargers with an open tariff_version
+	IncludePrivate bool              // include private (home/p2p) chargers
+	Sort           ChargerListColumn // column to sort by ("" = id)
+	Desc           bool              // sort descending
+	Limit          int               // page size; 0 -> 50
+	Offset         int               // rows to skip; for page N, Offset = (N-1)*Limit
 }
 
 // ChargerListResult is one page plus the unpaginated total under the same filter
 // (for "Page X of Y" + a "loaded N of M" footer). The total is a single COUNT
 // over the same WHERE clause, so the explorer never paginates into emptiness.
 type ChargerListResult struct {
-	Total   int               `json:"total"`
-	Limit   int               `json:"limit"`
-	Offset  int               `json:"offset"`
-	Results []ChargerListRow  `json:"results"`
+	Total   int              `json:"total"`
+	Limit   int              `json:"limit"`
+	Offset  int              `json:"offset"`
+	Results []ChargerListRow `json:"results"`
 }
 
 // ChargerListRow is the explorer-view projection of a charger: the fields the
@@ -776,9 +780,9 @@ type ChargerListResult struct {
 type ChargerListRow struct {
 	ID          int64      `json:"id"`
 	CPOID       string     `json:"cpo_id"`
-	Source      string     `json:"source"`         // cpo.name
-	SourceType  string     `json:"source_type"`    // ocpi | road | monta | …
-	Country     string     `json:"country"`        // cpo.country
+	Source      string     `json:"source"`      // cpo.name
+	SourceType  string     `json:"source_type"` // ocpi | road | monta | …
+	Country     string     `json:"country"`     // cpo.country
 	EVSEUID     string     `json:"evse_uid"`
 	ConnectorID string     `json:"connector_id"`
 	Name        string     `json:"name"`
