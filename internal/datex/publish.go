@@ -15,6 +15,7 @@ package datex
 import (
 	"encoding/xml"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,26 +134,32 @@ func statusEnum(s string) string {
 	}
 }
 
-// priceTypeEnum maps a model price-component type to a PriceTypeEnum value, and
-// converts the value into DATEX units where they differ (TIME is €/hour in the
-// model but pricePerMinute in DATEX). All values are rounded to 2 fraction
-// digits because the schema's AmountOfMoney type permits no more (real prices
-// like 0.368 €/kWh otherwise fail XSD validation). Returns ok=false for types
-// we don't emit.
+// priceTypeEnum maps a model price-component type to a PriceTypeEnum value and
+// converts it into DATEX units where they differ (TIME is €/hour in the model
+// but pricePerMinute in DATEX). The returned value is unrounded; callers format
+// it as money (2 fraction digits) at emit time. Returns ok=false for types we
+// don't emit.
 func priceTypeEnum(t string, v float64) (enum string, value float64, ok bool) {
 	switch strings.ToUpper(t) {
 	case "ENERGY":
-		return "pricePerKWh", round2(v), true
+		return "pricePerKWh", v, true
 	case "TIME":
-		return "pricePerMinute", round2(v / 60), true
+		return "pricePerMinute", v / 60, true
 	case "FLAT":
-		return "flatRate", round2(v), true
+		return "flatRate", v, true
 	default:
 		return "", 0, false
 	}
 }
 
-func round2(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
+// moneyStr formats a monetary amount as the XML schema's AmountOfMoney type
+// demands: a decimal with exactly 2 fraction digits (totalDigits 8,
+// fractionDigits 2). This XSD facet caps XML prices at cent precision — a known
+// AFIR-profile limitation. The JSON encoding keeps full precision (it has no
+// such facet), and the NDJSON/OCPI exports keep it too. Formatting (not float
+// arithmetic) does the rounding, so output is always exactly two places — never
+// 0.37000000000000005.
+func moneyStr(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 
 // normalizeCurrency returns an ISO 4217 code matching the schema's CurrencyCode
 // pattern ([A-Z]{3}). Real data carries lowercase ("eur"); default to EUR.
@@ -258,9 +265,11 @@ type xmlEnergyRate struct {
 }
 
 type xmlEnergyPrice struct {
-	PriceGroupIndex int     `xml:"aegi:priceGroupIndex"`
-	PriceType       string  `xml:"aegi:priceType"`
-	Value           float64 `xml:"aegi:value"`
+	PriceGroupIndex int    `xml:"aegi:priceGroupIndex"`
+	PriceType       string `xml:"aegi:priceType"`
+	// String, formatted to exactly 2 fraction digits (AmountOfMoney), rather
+	// than a float64 whose shortest representation could exceed 2 places.
+	Value string `xml:"aegi:value"`
 }
 
 type xmlConnector struct {
@@ -405,7 +414,7 @@ func buildXMLRate(rpID string, r PublishRate) (xmlEnergyRate, bool) {
 		prices = append(prices, xmlEnergyPrice{
 			PriceGroupIndex: len(prices) + 1,
 			PriceType:       enum,
-			Value:           v,
+			Value:           moneyStr(v),
 		})
 	}
 	if len(prices) == 0 {

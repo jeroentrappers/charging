@@ -253,6 +253,9 @@ func buildJSONRate(rpID string, r PublishRate) (joutEnergyRate, bool) {
 		if !ok {
 			continue
 		}
+		// The JSON encoding has no fractionDigits facet, so we keep full price
+		// precision here (e.g. 0.368 €/kWh). Only the XSD-bound XML rounds to the
+		// AmountOfMoney 2-digit limit. See the note in publish.go.
 		prices = append(prices, joutEnergyPrice{PriceType: joutValued{Value: enum}, Value: v})
 	}
 	if len(prices) == 0 {

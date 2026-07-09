@@ -101,9 +101,11 @@ type model_ConnLite struct {
 // facet: a real-world price like 0.368 €/kWh must be emitted as 0.37, else the
 // XML fails XSD validation (found in production).
 func TestPriceRoundedToTwoDigits(t *testing.T) {
-	enum, v, ok := priceTypeEnum("ENERGY", 0.368)
-	if !ok || enum != "pricePerKWh" || v != 0.37 {
-		t.Fatalf("ENERGY 0.368 -> (%q,%v,%v), want (pricePerKWh,0.37,true)", enum, v, ok)
+	if got := moneyStr(0.368); got != "0.37" {
+		t.Fatalf("moneyStr(0.368) = %q, want 0.37 (AmountOfMoney = 2 fraction digits)", got)
+	}
+	if got := moneyStr(0.5); got != "0.50" {
+		t.Fatalf("moneyStr(0.5) = %q, want 0.50 (exactly 2 places)", got)
 	}
 
 	sites := []PublishSite{{
@@ -128,6 +130,16 @@ func TestPriceRoundedToTwoDigits(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("<aegi:applicableCurrency>EUR</aegi:applicableCurrency>")) {
 		t.Errorf("currency not uppercased to EUR\n%s", buf.String())
+	}
+
+	// The JSON encoding has no fractionDigits facet, so it keeps full precision.
+	var jb bytes.Buffer
+	if err := WriteAFIRTableJSON(&jb, sites, Creator{Country: "BE", NationalIdentifier: "APM"},
+		time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(jb.Bytes(), []byte("0.368")) {
+		t.Errorf("JSON should keep full price precision (0.368)\n%s", jb.String())
 	}
 }
 
