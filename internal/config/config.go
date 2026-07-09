@@ -47,6 +47,9 @@ type Config struct {
 	// Analytics: raw events older than this are pruned (the daily rollup keeps
 	// the aggregates). 0 keeps the 90-day default.
 	AnalyticsRetentionDays int
+	// Path (inside the container) of the GoAccess HTML traffic report, served
+	// admin-gated at /admin/nginx-report. Empty disables the endpoint.
+	NginxReportFile string
 
 	// DATEX II publication identity (publicationCreator) for the outbound feed.
 	DatexCreatorCountry string
@@ -106,6 +109,7 @@ func Load() Config {
 		ExportFullEvery:        envDuration("EXPORT_FULL_EVERY", 5*time.Minute),
 		ExportAvailEvery:       envDuration("EXPORT_AVAIL_EVERY", time.Minute),
 		AnalyticsRetentionDays: envInt("ANALYTICS_RETENTION_DAYS", 90),
+		NginxReportFile:        env("NGINX_REPORT_FILE", "/traffic/report.html"),
 		DatexCreatorCountry:    env("DATEX_CREATOR_COUNTRY", "BE"),
 		DatexCreatorID:         env("DATEX_CREATOR_ID", "APM"),
 		DatexPushTargets:       env("DATEX_PUSH_TARGETS", ""),

@@ -13,6 +13,9 @@ services:
       - ./spool:/spool
       # Mobilithek mutual-TLS client cert (read-only).
       - ./secrets:/secrets:ro
+      # GoAccess traffic report (written by the host timer; served, admin-gated,
+      # at /admin/nginx-report for the dashboard's Traffic tab).
+      - /var/lib/charging-traffic:/traffic:ro
 {% if mobilithek_capture | default(false) %}
       # Debug: per-request metadata + (optional) payload capture.
       - ./capture:/capture

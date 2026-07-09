@@ -55,6 +55,7 @@ type server struct {
 	analytics         *analytics.Recorder // non-blocking first-party event recorder; nil disables
 	analyticsLimiter  *ipLimiter          // per-IP throttle on POST /events
 	analyticsSalt     string              // secret salt for daily-rotated visitor hashing
+	nginxReportFile   string              // path to the GoAccess HTML report (served admin-gated)
 	publicURL         string
 	ocpiParty         ocpi.Party
 	router            routing.Router // optional; nil disables route/corridor search
@@ -102,6 +103,7 @@ func main() {
 		mobilithekCaptureDir: cfg.MobilithekCaptureDir,
 		mobilithekSpoolDir:   cfg.MobilithekSpoolDir,
 		mobilithekWorkers:    cfg.MobilithekWorkers,
+		nginxReportFile:      cfg.NginxReportFile,
 	}
 	if cfg.OSRMURL != "" {
 		s.router = routing.New(cfg.OSRMURL)
@@ -208,7 +210,8 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	// Operational endpoints — deliberately outside the API contract.
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
-	r.Get("/status", s.statusJSON) // per-source health/staleness/availability (JSON; rendered by the web /status page)
+	r.Get("/status", s.statusJSON)                   // per-source health/staleness/availability (JSON; rendered by the web /status page)
+	r.Get("/admin/nginx-report", s.serveNginxReport) // GoAccess HTML, admin-bearer gated (raw HTML → not a huma route)
 	r.Handle("/metrics", metrics.Handler())
 
 	cfg := huma.DefaultConfig("Charging API", apiVersion)

@@ -76,3 +76,47 @@
   vars:
     have_cert: true
   notify: reload nginx
+
+# ---- GoAccess traffic report (feeds the admin dashboard's Traffic tab) -------
+- name: Install GoAccess
+  ansible.builtin.apt:
+    name: goaccess
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Report dir (read by the api container, written by the timer)
+  ansible.builtin.file:
+    path: /var/lib/charging-traffic
+    state: directory
+    mode: "0755"
+
+- name: Render GoAccess report service
+  ansible.builtin.template:
+    src: goaccess-report.service.j2
+    dest: /etc/systemd/system/goaccess-report.service
+    mode: "0644"
+  register: ga_service
+
+- name: Render GoAccess report timer
+  ansible.builtin.template:
+    src: goaccess-report.timer.j2
+    dest: /etc/systemd/system/goaccess-report.timer
+    mode: "0644"
+  register: ga_timer
+
+- name: Reload systemd if the GoAccess units changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: ga_service is changed or ga_timer is changed
+
+- name: Enable + start the GoAccess timer
+  ansible.builtin.systemd:
+    name: goaccess-report.timer
+    enabled: true
+    state: started
+
+- name: Generate the first report now (ignore an empty-log failure)
+  ansible.builtin.command: systemctl start goaccess-report.service
+  changed_when: false
+  failed_when: false

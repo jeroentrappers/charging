@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { fetchAnalytics, type AnalyticsSummary } from './api'
+import { fetchAnalytics, fetchNginxReport, type AnalyticsSummary } from './api'
 
 const TOKEN_KEY = 'charging.admin'
 const WINDOWS = [1, 7, 30, 90]
@@ -11,28 +11,42 @@ const WINDOWS = [1, 7, 30, 90]
 export function AdminAnalyticsPage() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [input, setInput] = useState('')
+  const [view, setView] = useState<'overview' | 'traffic'>('overview')
   const [days, setDays] = useState(7)
   const [data, setData] = useState<AnalyticsSummary | null>(null)
+  const [report, setReport] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  function onAuthError(e: Error, what: string) {
+    if (String(e.message).includes('401')) {
+      localStorage.removeItem(TOKEN_KEY)
+      setToken('')
+      setErr('Invalid or expired admin token.')
+    } else {
+      setErr(`Could not load ${what}.`)
+    }
+  }
+
   useEffect(() => {
-    if (!token) return
+    if (!token || view !== 'overview') return
     setLoading(true)
     setErr(null)
     fetchAnalytics(token, days)
       .then((d) => setData(d))
-      .catch((e: Error) => {
-        if (String(e.message).includes('401')) {
-          localStorage.removeItem(TOKEN_KEY)
-          setToken('')
-          setErr('Invalid or expired admin token.')
-        } else {
-          setErr('Could not load analytics.')
-        }
-      })
+      .catch((e: Error) => onAuthError(e, 'analytics'))
       .finally(() => setLoading(false))
-  }, [token, days])
+  }, [token, days, view])
+
+  useEffect(() => {
+    if (!token || view !== 'traffic' || report !== null) return
+    setLoading(true)
+    setErr(null)
+    fetchNginxReport(token)
+      .then((html) => setReport(html))
+      .catch((e: Error) => onAuthError(e, 'traffic report'))
+      .finally(() => setLoading(false))
+  }, [token, view, report])
 
   function saveToken(e: React.FormEvent) {
     e.preventDefault()
@@ -62,11 +76,15 @@ export function AdminAnalyticsPage() {
   return (
     <div className="admin-page">
       <div className="admin-head">
-        <h1>Analytics</h1>
         <div className="admin-controls">
-          {WINDOWS.map((w) => (
-            <button key={w} className={w === days ? 'active' : ''} onClick={() => setDays(w)}>{w}d</button>
-          ))}
+          <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}>Overview</button>
+          <button className={view === 'traffic' ? 'active' : ''} onClick={() => setView('traffic')}>Traffic</button>
+        </div>
+        <div className="admin-controls">
+          {view === 'overview' &&
+            WINDOWS.map((w) => (
+              <button key={w} className={w === days ? 'active' : ''} onClick={() => setDays(w)}>{w}d</button>
+            ))}
           <button
             className="link"
             onClick={() => {
@@ -80,9 +98,15 @@ export function AdminAnalyticsPage() {
       </div>
 
       {err && <p className="warn-note">{err}</p>}
-      {loading && !data && <div className="state"><div className="spinner" />loading…</div>}
+      {loading && ((view === 'overview' && !data) || (view === 'traffic' && report === null)) && (
+        <div className="state"><div className="spinner" />loading…</div>
+      )}
 
-      {data && (
+      {view === 'traffic' && report !== null && (
+        <iframe title="nginx traffic" className="admin-traffic" srcDoc={report} sandbox="allow-scripts allow-same-origin" />
+      )}
+
+      {view === 'overview' && data && (
         <>
           <div className="stat-tiles">
             <Tile label="Events" value={data.events} />

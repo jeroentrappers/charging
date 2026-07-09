@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -205,6 +207,36 @@ func (s *server) opClientEvent(ctx context.Context, in *clientEventIn) (*clientE
 		Props:       in.Body.Props,
 	})
 	return &clientEventOut{}, nil
+}
+
+// serveNginxReport serves the GoAccess HTML traffic report, gated by the admin
+// bearer token (same as the rest of /admin). It's a plain handler (not huma) so
+// it can return raw HTML for the dashboard's <iframe srcDoc>. Empty/unset
+// report path or token disables it.
+func (s *server) serveNginxReport(w http.ResponseWriter, r *http.Request) {
+	if s.adminToken == "" {
+		http.Error(w, "admin disabled", http.StatusServiceUnavailable)
+		return
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.adminToken)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.nginxReportFile == "" {
+		http.Error(w, "traffic report disabled", http.StatusNotFound)
+		return
+	}
+	b, err := os.ReadFile(s.nginxReportFile)
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<!doctype html><body style="font:15px system-ui;padding:24px;color:#64748b">Traffic report not generated yet — the GoAccess timer runs every 10 minutes.</body>`))
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(b)
 }
 
 // ---- admin rollup ----

@@ -286,6 +286,14 @@ export async function fetchAnalytics(token: string, days: number): Promise<Analy
   return res.json() as Promise<AnalyticsSummary>
 }
 
+// fetchNginxReport returns the GoAccess traffic report HTML (admin-gated), for
+// rendering in an <iframe srcDoc>. Throws on 401 so the dashboard can re-prompt.
+export async function fetchNginxReport(token: string): Promise<string> {
+  const res = await fetch(`${BASE}/admin/nginx-report`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return res.text()
+}
+
 export interface ReportsResult {
   charger_id: number
   reports: ReportAgg[]

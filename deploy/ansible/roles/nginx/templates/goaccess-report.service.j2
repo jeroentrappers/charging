@@ -1,0 +1,9 @@
+# Managed by Ansible. One-shot: regenerate the charging traffic HTML report.
+[Unit]
+Description=GoAccess charging traffic report
+
+[Service]
+Type=oneshot
+# --anonymize-ip keeps the report privacy-preserving (matches the app's posture).
+# `|| true` so an empty/rotated log (nothing to parse) is not a hard failure.
+ExecStart=/bin/sh -c 'goaccess /var/log/nginx/charging.access.log --log-format=COMBINED --anonymize-ip --no-progress --html-report-title="charging.appmire.be traffic" -o /var/lib/charging-traffic/report.html || true'

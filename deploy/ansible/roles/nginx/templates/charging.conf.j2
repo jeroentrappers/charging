@@ -10,6 +10,11 @@ server {
     # 64m matches the other vhosts on this box and is ample for gzipped feeds.
     client_max_body_size 64m;
 
+    # Dedicated access log for this vhost (GoAccess processes it for the admin
+    # traffic dashboard); separate from the box-wide default so reports are
+    # charging-only.
+    access_log /var/log/nginx/charging.access.log combined;
+
     # /metrics is internal-only (served on the api's separate :9090 listener,
     # never proxied). Block the public path defensively in case it is ever
     # re-mounted on the API port.
@@ -64,6 +69,11 @@ server {
 
     # See the TLS server block above for why 64m.
     client_max_body_size 64m;
+
+    # Dedicated access log for this vhost (GoAccess processes it for the admin
+    # traffic dashboard); separate from the box-wide default so reports are
+    # charging-only.
+    access_log /var/log/nginx/charging.access.log combined;
 
     location = /api/metrics { return 404; }
 
