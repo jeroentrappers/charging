@@ -277,7 +277,10 @@ func exportCacheControl(snap *export.Snapshotter) func(http.Handler) http.Handle
 				w.Header().Set("Content-Type", "application/xml")
 			}
 			if snap != nil {
-				if etag, ok := snap.FileETag(strings.TrimPrefix(r.URL.Path, "/")); ok {
+				// This middleware runs before StripPrefix("/export"), so the path
+				// still carries the /export/ prefix; the manifest keys don't.
+				name := strings.TrimPrefix(r.URL.Path, "/export/")
+				if etag, ok := snap.FileETag(name); ok {
 					w.Header().Set("ETag", etag)
 					if ifNoneMatch(r.Header.Get("If-None-Match"), etag) {
 						w.WriteHeader(http.StatusNotModified)
