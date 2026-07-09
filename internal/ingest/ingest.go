@@ -241,8 +241,55 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 		if err := e.Store.ConfirmTariffsSeen(ctx, src.CPO.ID, pricedSeen); err != nil {
 			e.Log.Error("confirm tariffs", "cpo", src.CPO.ID, "err", err)
 		}
+		e.reconcileRetired(ctx, src, conns)
 		return len(conns), changes, nil
 	})
+}
+
+// fullSnapshotSource reports whether a source type delivers a COMPLETE list of
+// its chargers on every full pass — the precondition for pruning absent ones.
+// Push/delta (mobilithek) and crawl (monta) feeds do not, so they are excluded.
+func fullSnapshotSource(t string) bool {
+	switch t {
+	case "ocpi", "ocpi_file", "ocpi_file_gz", "datex", "datex_afir", "bnetza", "irve":
+		return true
+	default:
+		return false
+	}
+}
+
+// reconcileRetired soft-retires chargers a full-snapshot source stopped
+// publishing (and revives any that returned). It is a no-op for non-snapshot
+// sources, and is guarded so a truncated/empty feed can't wipe a source: if the
+// pass returned no rows, or fewer than half of what we currently hold, it skips
+// and logs instead of pruning.
+func (e *Engine) reconcileRetired(ctx context.Context, src source.Source, conns []model.Connector) {
+	if !fullSnapshotSource(src.CPO.SourceType) {
+		return
+	}
+	active, err := e.Store.CountActiveChargers(ctx, src.CPO.ID)
+	if err != nil {
+		e.Log.Error("retire: count active", "cpo", src.CPO.ID, "err", err)
+		return
+	}
+	if len(conns) == 0 || (active > 0 && len(conns)*2 < active) {
+		e.Log.Warn("retire: skipped, feed too small vs stored",
+			"cpo", src.CPO.ID, "feed", len(conns), "active", active)
+		return
+	}
+	seenE := make([]string, len(conns))
+	seenC := make([]string, len(conns))
+	for i, c := range conns {
+		seenE[i], seenC[i] = c.EVSEUID, c.ConnectorID
+	}
+	retired, revived, err := e.Store.RetireAbsentChargers(ctx, src.CPO.ID, seenE, seenC)
+	if err != nil {
+		e.Log.Error("retire: reconcile", "cpo", src.CPO.ID, "err", err)
+		return
+	}
+	if retired > 0 || revived > 0 {
+		e.Log.Info("retire: reconciled", "cpo", src.CPO.ID, "retired", retired, "revived", revived, "feed", len(conns))
+	}
 }
 
 // recordRun wraps a pass with run-log bookkeeping, logging, and the metrics hook.

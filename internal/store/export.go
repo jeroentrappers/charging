@@ -48,6 +48,7 @@ func (s *Store) ExportAll(ctx context.Context) ([]ExportCharger, error) {
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
+		WHERE NOT c.retired
 		ORDER BY c.id`)
 	if err != nil {
 		return nil, err
@@ -90,7 +91,7 @@ func (s *Store) ExportStream(ctx context.Context, fn func(ExportCharger) error) 
 		-- Cross-source dedup: drop register chargers that a richer source covers
 		-- (precomputed by RecomputeSuperseded, refreshed before each full export —
 		-- the per-row spatial subquery is too slow over the whole table).
-		WHERE NOT c.superseded
+		WHERE NOT c.superseded AND NOT c.retired
 		ORDER BY p.country, c.postal_code, c.cpo_id, c.evse_uid, c.connector_id`)
 	if err != nil {
 		return err
@@ -127,9 +128,11 @@ type AvailabilitySnapshot struct {
 // ordered by id — cheap to regenerate frequently.
 func (s *Store) ExportAvailability(ctx context.Context) ([]AvailabilitySnapshot, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT charger_id, status, COALESCE(available_count,0), updated_at
-		FROM charger_status
-		ORDER BY charger_id`)
+		SELECT cs.charger_id, cs.status, COALESCE(cs.available_count,0), cs.updated_at
+		FROM charger_status cs
+		JOIN charger c ON c.id = cs.charger_id
+		WHERE NOT c.retired
+		ORDER BY cs.charger_id`)
 	if err != nil {
 		return nil, err
 	}

@@ -31,7 +31,7 @@ func (s *Store) GetLiveRef(ctx context.Context, id int64) (LiveRef, bool, error)
 		       COALESCE(st.status,''), COALESCE(st.available_count,0), st.updated_at
 		FROM charger c
 		LEFT JOIN charger_status st ON st.charger_id = c.id
-		WHERE c.id = $1`, id).Scan(
+		WHERE c.id = $1 AND NOT c.retired`, id).Scan(
 		&r.ID, &r.CPOID, &r.EVSEUID, &r.PowerKW, &r.CurrentType,
 		&r.Status, &r.AvailableCount, &r.StatusAt)
 	if err != nil {

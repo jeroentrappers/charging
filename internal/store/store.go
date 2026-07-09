@@ -545,7 +545,8 @@ func (s *Store) CheapestNearby(ctx context.Context, q NearbyQuery) ([]NearbyChar
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		LEFT JOIN cpo p ON p.id = c.cpo_id
-		WHERE ST_DWithin(c.geom, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
+		WHERE NOT c.retired
+		  AND ST_DWithin(c.geom, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
 		  AND ($4 = 0 OR COALESCE(c.power_kw,0) >= $4)
 		  AND ($5 = '' OR upper(replace(c.plug_type,'_','')) = upper(replace($5,'_','')))
 		  AND (NOT $6 OR (COALESCE(st.available_count,0) > 0 AND %s))
@@ -603,7 +604,7 @@ func (s *Store) GetCharger(ctx context.Context, id int64, originLat, originLon f
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		LEFT JOIN cpo p ON p.id = c.cpo_id
-		WHERE c.id = $1`, freshExpr)
+		WHERE c.id = $1 AND NOT c.retired`, freshExpr)
 
 	var n NearbyCharger
 	var pricesJSON, componentsJSON []byte
@@ -656,7 +657,8 @@ func (s *Store) ChargersAlongRoute(ctx context.Context, lineWKT string, bufferM 
 		LEFT JOIN charger_status st ON st.charger_id = c.id
 		LEFT JOIN tariff_version tv ON tv.charger_id = c.id AND tv.observed_to IS NULL
 		LEFT JOIN cpo p ON p.id = c.cpo_id
-		WHERE ST_DWithin(c.geom, route.line, $2)
+		WHERE NOT c.retired
+		  AND ST_DWithin(c.geom, route.line, $2)
 		  AND ($3 = 0 OR COALESCE(c.power_kw,0) >= $3)
 		  AND ($4 = '' OR upper(replace(c.plug_type,'_','')) = upper(replace($4,'_','')))
 		  AND (NOT $5 OR (COALESCE(st.available_count,0) > 0 AND %s))
@@ -905,7 +907,7 @@ func (s *Store) ChargerList(ctx context.Context, q ChargerListQuery) (ChargerLis
 		clauses += " AND NOT c.private"
 	}
 
-	where := "WHERE TRUE" + searchClause + clauses
+	where := "WHERE NOT c.retired" + searchClause + clauses
 	filterArgCount := len(args) // freeze the args needed by the filter (page adds limit/offset on top)
 
 	// Same shape for the page + the total; only the trailing tail differs.
