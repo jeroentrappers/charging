@@ -40,19 +40,27 @@ done
 # pg_restore returns non-zero on benign --clean warnings, so success is judged by
 # the data actually landing (charger rows), with one retry for a transient blip.
 restore_once() { dc exec -T db pg_restore -U charging -d charging --clean --if-exists --no-owner --no-privileges < "$FILE" >/tmp/pgrestore.log 2>&1 || true; }
-count() { dc exec -T db psql -U charging -d charging -tAc 'SELECT count(*) FROM charger' 2>/dev/null | tr -d '[:space:]'; }
+# Must not fail under `set -e`/pipefail: during the init window psql exits
+# non-zero, and `n=$(count)` would otherwise abort the whole script. Swallow it —
+# an empty result just means "not ready yet", which the retry loop handles.
+count() { dc exec -T db psql -U charging -d charging -tAc 'SELECT count(*) FROM charger' 2>/dev/null | tr -d '[:space:]' || true; }
 
 echo "restoring $FILE ..."
-restore_once
-n=$(count)
-if [ -z "$n" ] || [ "$n" = "0" ]; then
-  echo "restore incomplete (charger=$n) — retrying once..."
-  sleep 3
+# A freshly-created container runs initdb + PostGIS setup and briefly restarts
+# postgres; a restore landing in that window fails silently. Retry (verifying by
+# rowcount) until it lands or we give up.
+n=""
+for attempt in 1 2 3 4 5 6; do
   restore_once
   n=$(count)
-fi
+  if [ -n "$n" ] && [ "$n" != "0" ]; then
+    break
+  fi
+  echo "  attempt $attempt didn't land (charger=$n); db may still be initialising, waiting 5s..."
+  sleep 5
+done
 if [ -z "$n" ] || [ "$n" = "0" ]; then
-  echo "restore failed:" >&2
+  echo "restore failed after retries:" >&2
   tail -20 /tmp/pgrestore.log >&2
   exit 1
 fi
@@ -63,5 +71,5 @@ if [ "$SANITIZE" = 1 ]; then
     "UPDATE cpo SET token = NULL, enabled = false;"
 fi
 
-echo "done. Chargers: $(dc exec -T db psql -U charging -d charging -tA -c 'SELECT count(*) FROM charger' 2>/dev/null | tr -d '[:space:]')"
+echo "done. Chargers: $(count)"
 echo "bring the full stack up with: make prod-up   (or: make local-replica)"

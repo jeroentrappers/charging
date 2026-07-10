@@ -29,20 +29,30 @@ make prod-up           # 3. build + start db + migrate + api + ingest + web
 
 - **`make local-restore`** (`scripts/restore-local-db.sh`) restores a dump into
   the local prod-compose DB (`--clean`, idempotent), waits for the DB to truly
-  accept queries first, verifies by row count, and retries once on a transient
-  blip. **Then it sanitizes:** `NULL cpo.token` + `enabled = false` on every
+  accept queries first, verifies by row count, and retries across a fresh
+  container's init window (initdb/PostGIS setup briefly restarts postgres).
+  **Then it sanitizes:** `NULL cpo.token` + `enabled = false` on every
   source, so the local ingest can never poll real operator APIs with production
   credentials. Pass `--keep-secrets` to skip (don't, unless you know why).
   `FILE=backups/prod-YYYYMMDD-HHMMSS.dump` restores a specific dump.
 
 ## Notes / gotchas
 
-- **Apple Silicon:** the `postgis/postgis:17-3.5` image may run as amd64 under
-  emulation (a `platform mismatch` warning). It works, but a fresh container can
-  drop a connection during the first heavy restore — the restore script already
-  waits for real readiness and retries once, so this is handled. For a
-  native/faster DB, `docker pull --platform linux/arm64 postgis/postgis:17-3.5`
-  and recreate.
+- **Apple Silicon (arm64):** the official `postgis/postgis:17-3.5` image is
+  **amd64-only** (no arm64 manifest), so it runs under slow QEMU emulation and a
+  fresh container drops connections during the first heavy restore. Point the
+  local DB at a multi-arch PostGIS 17/3.5 image instead — set `DB_IMAGE` (the
+  `db` service reads `${DB_IMAGE:-postgis/postgis:17-3.5}`, so prod is
+  unaffected). This repo's `.env` already sets:
+
+  ```
+  DB_IMAGE=imresamu/postgis:17-3.5   # multi-arch; runs native aarch64
+  ```
+
+  After changing the image, recreate the DB on a fresh volume so it's rebuilt
+  natively: `docker compose -p charging_prod -f docker-compose.prod.yml down -v`
+  then `make local-restore`. (The restore script retries across the fresh
+  container's initdb/PostGIS-setup window, which briefly restarts postgres.)
 - **Sources are disabled after restore.** To exercise live ingest locally,
   re-enable a source and set its token by hand (`chargingctl` or SQL) — but
   point it at a test credential, not prod's.

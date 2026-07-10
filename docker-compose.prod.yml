@@ -11,7 +11,11 @@ x-app: &app
 
 services:
   db:
-    image: postgis/postgis:17-3.5
+    # Default is the amd64-only official image (matches prod). Local machines
+    # (e.g. Apple Silicon) set DB_IMAGE to a multi-arch PostGIS 17/3.5 image —
+    # see docs/local-replica.md. On the deployed host the hetz1 override replaces
+    # this entirely, so prod is unaffected.
+    image: ${DB_IMAGE:-postgis/postgis:17-3.5}
     environment:
       POSTGRES_USER: charging
       POSTGRES_PASSWORD: charging
@@ -36,7 +40,7 @@ services:
   # Optional demo data (idempotent). Only runs with the "demo" profile:
   #   make prod-demo   (or: docker compose ... --profile demo up)
   demo-seed:
-    image: postgis/postgis:17-3.5
+    image: ${DB_IMAGE:-postgis/postgis:17-3.5}
     profiles: ["demo"]
     environment:
       PGPASSWORD: charging
