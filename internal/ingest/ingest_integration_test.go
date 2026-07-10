@@ -11,24 +11,23 @@ import (
 	"github.com/appmire/charging/internal/ocpi"
 	"github.com/appmire/charging/internal/source"
 	"github.com/appmire/charging/internal/store"
+	"github.com/appmire/charging/internal/testdb"
 )
 
-// dsn returns the test database URL, defaulting to the local docker-compose DB.
-func dsn() string {
-	if v := os.Getenv("DATABASE_URL"); v != "" {
-		return v
-	}
-	return "postgres://charging:charging@localhost:5433/charging?sslmode=disable"
+// TestMain gives this package its own isolated, migrated database so parallel
+// test packages don't TRUNCATE each other's data.
+func TestMain(m *testing.M) {
+	os.Exit(testdb.RunMain(m, "ingest"))
 }
 
-// setup connects to the DB (skipping the test if unreachable) and truncates the
-// working tables so the run starts from a known-empty state.
+// setup connects to the package's test DB (skipping if unreachable) and
+// truncates the working tables so the run starts from a known-empty state.
 func setup(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.New(ctx, dsn())
+	st, err := store.New(ctx, testdb.DSN(t))
 	if err != nil {
-		t.Skipf("no database available (%v); run `make db-up migrate`", err)
+		t.Skipf("no database available (%v); run `make db-up`", err)
 	}
 	_, err = st.Pool.Exec(ctx,
 		`TRUNCATE tariff_version, charger_status, charger, ingest_run, cpo RESTART IDENTITY CASCADE`)

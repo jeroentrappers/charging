@@ -13,18 +13,18 @@ import (
 
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/store"
+	"github.com/appmire/charging/internal/testdb"
 )
 
-func dsn() string {
-	if v := os.Getenv("DATABASE_URL"); v != "" {
-		return v
-	}
-	return "postgres://charging:charging@localhost:5433/charging?sslmode=disable"
+// TestMain gives this package its own isolated, migrated database so parallel
+// test packages don't TRUNCATE each other's data.
+func TestMain(m *testing.M) {
+	os.Exit(testdb.RunMain(m, "api"))
 }
 
 func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
-	st, err := store.New(context.Background(), dsn())
+	st, err := store.New(context.Background(), testdb.DSN(t))
 	if err != nil {
 		t.Skipf("no database (%v)", err)
 	}
@@ -132,7 +132,7 @@ func TestAdmin_AuthAndSourceLifecycle(t *testing.T) {
 }
 
 func TestAdmin_DisabledWithoutToken(t *testing.T) {
-	st, err := store.New(context.Background(), dsn())
+	st, err := store.New(context.Background(), testdb.DSN(t))
 	if err != nil {
 		t.Skipf("no database (%v)", err)
 	}
