@@ -40,3 +40,6 @@ secrets/
 # (ansible-vault). Never `ansible-vault decrypt` it in place.
 deploy/ansible/.vault-pass
 deploy/ansible/files/
+
+# Local DB dumps pulled from production (real data + secrets — never commit).
+backups/

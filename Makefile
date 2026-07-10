@@ -6,7 +6,7 @@ DATABASE_URL ?= postgres://charging:charging@localhost:5433/charging?sslmode=dis
 GOOSE_DRIVER ?= postgres
 MIGRATIONS_DIR := db/migrations
 
-.PHONY: help db-up db-down db-wait migrate migrate-down sqlc tidy build test run-ingest run-ingest-once run-api fmt vet validate-datex validate-datex-export validate-datex-json
+.PHONY: help db-up db-down db-wait migrate migrate-down sqlc tidy build test run-ingest run-ingest-once run-api fmt vet validate-datex validate-datex-export validate-datex-json prod-db-dump local-restore local-replica
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-18s %s\n", $$1, $$2}'
@@ -91,3 +91,16 @@ prod-backup: ## Dump the prod database to backups/ (timestamp passed in as TS=..
 	@mkdir -p backups
 	$(PROD) exec -T db pg_dump -U charging -d charging | gzip > "backups/charging-$(or $(TS),manual).sql.gz"
 	@echo "backup written to backups/charging-$(or $(TS),manual).sql.gz"
+
+# ---- Local replica of appmire-hetz1 (experiment against real data) ----
+prod-db-dump: ## Pull the LIVE appmire-hetz1 database into backups/prod-<ts>.dump
+	@scripts/pull-prod-db.sh
+
+local-restore: ## Restore a prod dump into the local stack DB (FILE=…; sanitizes tokens + disables sources)
+	@scripts/restore-local-db.sh $(or $(FILE),backups/prod-latest.dump)
+
+local-replica: ## Full local appmire-hetz1 replica: pull prod data, restore it, start the stack
+	@scripts/pull-prod-db.sh
+	@scripts/restore-local-db.sh backups/prod-latest.dump
+	$(PROD) up -d --build
+	@echo "replica up — API on :8080, web on :5173 (see docker-compose.prod.yml)"
