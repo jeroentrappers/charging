@@ -13,6 +13,8 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/appmire/charging/internal/model"
@@ -186,6 +188,9 @@ type afirPrice struct {
 	Value       float64 `xml:"value"`
 	TaxIncluded bool    `xml:"taxIncluded"`
 	TaxRate     float64 `xml:"taxRate"`
+	// AddInfo holds any additionalInformation text values — where German NAP
+	// ad-hoc tariffs state a per-minute grace threshold in prose (see graceMinutes).
+	AddInfo []string `xml:"additionalInformation>values>value"`
 }
 
 // ---- Status publication (EnergyInfrastructureStatusPublication) ----
@@ -291,6 +296,26 @@ func statusVocab(s string) string {
 	}
 }
 
+// graceRe matches a per-minute grace threshold stated in free text, e.g.
+// "erst nach 240 Minuten", "after 30 min", "à partir de 90 minutes". DATEX II
+// has no structured field for this (MobilithekDE AFIR-DATEX-II issue #8), so
+// German NAP ad-hoc tariffs put it in a price's additionalInformation.
+var graceRe = regexp.MustCompile(`(?i)(?:erst nach|nach|after|from|[àa] partir de|apr[eè]s|vanaf)\s+(\d+)\s*min`)
+
+// graceMinutes returns the threshold N (minutes) after which a per-minute price
+// starts to apply, parsed from additionalInformation text; 0 if none is stated
+// (the fee applies from the start, our prior behaviour).
+func graceMinutes(texts ...string) int {
+	for _, s := range texts {
+		if m := graceRe.FindStringSubmatch(s); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
 // priceComponents converts EnergyPrice elements into our PriceComponents.
 func priceComponents(prices []afirPrice) []model.PriceComponent {
 	var comps []model.PriceComponent
@@ -300,7 +325,7 @@ func priceComponents(prices []afirPrice) []model.PriceComponent {
 			comps = append(comps, model.PriceComponent{Type: "ENERGY", Price: p.Value})
 		case "priceperminute":
 			// DATEX is €/min; our TIME component is €/hour.
-			comps = append(comps, model.PriceComponent{Type: "TIME", Price: round1(p.Value * 60)})
+			comps = append(comps, model.PriceComponent{Type: "TIME", Price: round1(p.Value * 60), AfterMinutes: graceMinutes(p.AddInfo...)})
 		case "flatrate", "baseprice":
 			comps = append(comps, model.PriceComponent{Type: "FLAT", Price: p.Value})
 		case "free":

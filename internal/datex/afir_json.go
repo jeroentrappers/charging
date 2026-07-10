@@ -67,16 +67,29 @@ func (m jafirML) first() string {
 	return ""
 }
 
+// all returns every non-empty language value (used to scan for the free-text
+// per-minute grace note, which may be in any language).
+func (m jafirML) all() []string {
+	out := make([]string, 0, len(m.Values))
+	for _, v := range m.Values {
+		if v.Value != "" {
+			out = append(out, v.Value)
+		}
+	}
+	return out
+}
+
 type jafirCreatorWire struct {
 	Country            string `json:"country"`
 	NationalIdentifier string `json:"nationalIdentifier"`
 }
 
 type jafirEnergyPrice struct {
-	PriceType   jafirValued `json:"priceType"`
-	Value       float64     `json:"value"`
-	TaxIncluded bool        `json:"taxIncluded"`
-	TaxRate     float64     `json:"taxRate"`
+	PriceType             jafirValued `json:"priceType"`
+	Value                 float64     `json:"value"`
+	TaxIncluded           bool        `json:"taxIncluded"`
+	TaxRate               float64     `json:"taxRate"`
+	AdditionalInformation jafirML     `json:"additionalInformation"`
 }
 
 type jafirEnergyRate struct {
@@ -480,7 +493,7 @@ func jafirPriceComponents(prices []jafirEnergyPrice) []model.PriceComponent {
 			out = append(out, model.PriceComponent{Type: "ENERGY", Price: ep.Value})
 		case "pricePerMinute":
 			// Our TIME component is €/hour.
-			out = append(out, model.PriceComponent{Type: "TIME", Price: ep.Value * 60})
+			out = append(out, model.PriceComponent{Type: "TIME", Price: ep.Value * 60, AfterMinutes: graceMinutes(ep.AdditionalInformation.all()...)})
 		case "flatRate", "basePrice":
 			out = append(out, model.PriceComponent{Type: "FLAT", Price: ep.Value})
 		case "free":

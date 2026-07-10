@@ -61,9 +61,9 @@ func Comparable(t model.Tariff, powerKW float64) (cost float64, ok bool) {
 func Evaluate(t model.Tariff, s Session) (float64, bool) {
 	hours := s.duration()
 
-	energyPrice, energyOK := firstPrice(t, s, hours, "ENERGY")
-	flatPrice, flatOK := firstPrice(t, s, hours, "FLAT")
-	timePrice, timeOK := firstPrice(t, s, hours, "TIME")
+	energy, energyOK := firstComponent(t, s, hours, "ENERGY")
+	flat, flatOK := firstComponent(t, s, hours, "FLAT")
+	timeC, timeOK := firstComponent(t, s, hours, "TIME")
 
 	if !energyOK && !flatOK && !timeOK {
 		return 0, false
@@ -71,30 +71,40 @@ func Evaluate(t model.Tariff, s Session) (float64, bool) {
 
 	total := 0.0
 	if energyOK {
-		total += energyPrice * s.KWh
+		total += energy.Price * s.KWh
 	}
 	if flatOK {
-		total += flatPrice
+		total += flat.Price
 	}
 	if timeOK {
-		total += timePrice * hours
+		// A per-minute price with a grace threshold (German NAP "blocking fee")
+		// only applies to the part of the session beyond AfterMinutes, so a normal
+		// session shorter than the grace incurs nothing.
+		billable := hours
+		if timeC.AfterMinutes > 0 {
+			billable = hours - float64(timeC.AfterMinutes)/60
+			if billable < 0 {
+				billable = 0
+			}
+		}
+		total += timeC.Price * billable
 	}
 	return round4(total), true
 }
 
-// firstPrice finds the price of the first matching element carrying dimension.
-func firstPrice(t model.Tariff, s Session, hours float64, dimension string) (float64, bool) {
+// firstComponent finds the first matching element carrying dimension.
+func firstComponent(t model.Tariff, s Session, hours float64, dimension string) (model.PriceComponent, bool) {
 	for _, el := range t.Elements {
 		if !matches(el.Restrictions, s, hours) {
 			continue
 		}
 		for _, pc := range el.PriceComponents {
 			if pc.Type == dimension {
-				return pc.Price, true
+				return pc, true
 			}
 		}
 	}
-	return 0, false
+	return model.PriceComponent{}, false
 }
 
 func matches(r *model.Restrictions, s Session, hours float64) bool {

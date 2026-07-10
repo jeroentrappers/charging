@@ -45,6 +45,11 @@ type PriceComponent struct {
 	Type     string  `json:"type"` // ENERGY | FLAT | TIME | PARKING_TIME
 	Price    float64 `json:"price"`
 	StepSize int     `json:"step_size"`
+	// AfterMinutes is a grace threshold for a TIME component: the per-minute
+	// price is only charged once a session passes this many minutes (a German
+	// NAP ad-hoc "blocking fee" convention, stated as free text since DATEX II
+	// has no structured field for it). 0 = charged from the start.
+	AfterMinutes int `json:"after_minutes,omitempty"`
 }
 
 // Restrictions limits when/how a tariff element applies.
