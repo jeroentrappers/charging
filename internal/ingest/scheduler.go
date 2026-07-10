@@ -99,16 +99,16 @@ func (s *Scheduler) dueAtStartup(ctx context.Context, src source.Source) bool {
 	if err != nil || !found {
 		return true
 	}
-	interval := cronInterval(src.CPO.PollCron)
+	interval := CronInterval(src.CPO.PollCron)
 	if interval <= 0 {
 		return true
 	}
 	return time.Since(last) >= interval
 }
 
-// cronInterval estimates the gap between consecutive fires of a 5-field cron
+// CronInterval estimates the gap between consecutive fires of a 5-field cron
 // expression (e.g. daily → 24h, monthly → ~30d). Returns 0 if unparseable.
-func cronInterval(expr string) time.Duration {
+func CronInterval(expr string) time.Duration {
 	sched, err := cron.ParseStandard(expr)
 	if err != nil {
 		return 0

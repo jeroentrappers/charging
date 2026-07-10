@@ -388,12 +388,15 @@ func (s *server) ready(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	availWindow := 2 * s.staleAfter
 	sources := []map[string]any{}
 	ready := true
 	for _, c := range cpos {
-		a := s.freshness(ctx, c.ID, ingest.KindAvailability, availWindow)
-		p := s.freshness(ctx, c.ID, ingest.KindPrice, s.priceStaleAfter)
+		// A source's data is only "stale" relative to its OWN cadence: a weekly
+		// registry (bnetza/irve) legitimately has week-old data between runs. Use a
+		// window a bit over one poll interval, floored at the global thresholds so
+		// fast sources still get a tight check.
+		a := s.freshness(ctx, c.ID, ingest.KindAvailability, readyWindow(c.StatusCron, 2*s.staleAfter))
+		p := s.freshness(ctx, c.ID, ingest.KindPrice, readyWindow(c.PollCron, s.priceStaleAfter))
 		if !a.OK || !p.OK {
 			ready = false
 		}
@@ -409,6 +412,23 @@ func (s *server) ready(w http.ResponseWriter, r *http.Request) {
 		"enabled_source": len(cpos),
 		"sources":        sources,
 	})
+}
+
+// readyWindow is how stale a source's last successful run may be before it
+// counts as unhealthy: about one-and-a-half of its own poll interval (so a
+// source is allowed to be as old as its cadence, plus slack for a run to land
+// or a single miss), but never tighter than the global floor. Falls back to the
+// floor when the cron can't be parsed.
+func readyWindow(cronExpr string, floor time.Duration) time.Duration {
+	iv := ingest.CronInterval(cronExpr)
+	if iv <= 0 {
+		return floor
+	}
+	w := iv + iv/2
+	if w < floor {
+		return floor
+	}
+	return w
 }
 
 type freshness struct {
