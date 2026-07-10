@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/appmire/charging/internal/datex"
 )
 
 // keyedMutex provides per-key mutual exclusion (one lock per CPO id). lock(key)
@@ -123,7 +125,7 @@ func (e *Engine) RunSpoolWorkers(ctx context.Context, dir string, minW, maxW int
 	}
 	e.recoverProcessing(dir) // re-queue anything a previous crash left mid-flight
 
-	work := make(chan string, 2*maxW)
+	work := make(chan []string, 2*maxW)
 	go e.spoolScanner(ctx, dir, work)
 	for i := 0; i < maxW; i++ {
 		go e.spoolWorker(ctx, dir, work)
@@ -134,36 +136,38 @@ func (e *Engine) RunSpoolWorkers(ctx context.Context, dir string, minW, maxW int
 	e.Log.Info("mobilithek spool drainer started", "workers", maxW, "dir", dir)
 }
 
-// spoolScanner claims batches of the oldest incoming files (rename into
-// processing/) and feeds their names to workers. Feeding blocks when the channel
-// is full, so it never over-claims — natural backpressure that also bounds how
-// many files sit in processing/. It re-scans only after a batch is fed (or after
-// a short wait when idle), amortizing the O(n) directory scan.
-func (e *Engine) spoolScanner(ctx context.Context, dir string, work chan<- string) {
+// spoolScanner claims a batch of the oldest incoming files (rename into
+// processing/) and hands the whole batch to a worker, which ingests them
+// coalesced per CPO. Feeding blocks when the channel is full — natural
+// backpressure that bounds how many files sit in processing/. It re-scans only
+// after a batch is fed (or a short wait when idle), amortizing the O(n) scan.
+func (e *Engine) spoolScanner(ctx context.Context, dir string, work chan<- []string) {
 	inc, proc := spoolSub(dir, "incoming"), spoolSub(dir, "processing")
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		claimed := 0
+		var batch []string
 		for _, n := range listOldest(inc, spoolBatch) {
-			if os.Rename(filepath.Join(inc, n), filepath.Join(proc, n)) != nil {
-				continue // gone / lost a race
-			}
-			select {
-			case work <- n:
-				claimed++
-			case <-ctx.Done():
-				_ = os.Rename(filepath.Join(proc, n), filepath.Join(inc, n)) // don't strand it
-				return
+			if os.Rename(filepath.Join(inc, n), filepath.Join(proc, n)) == nil {
+				batch = append(batch, n)
 			}
 		}
-		if claimed == 0 { // backlog empty — wait before re-scanning
+		if len(batch) == 0 { // backlog empty — wait before re-scanning
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Second):
 			}
+			continue
+		}
+		select {
+		case work <- batch:
+		case <-ctx.Done():
+			for _, n := range batch { // don't strand the claimed batch
+				_ = os.Rename(filepath.Join(proc, n), filepath.Join(inc, n))
+			}
+			return
 		}
 	}
 }
@@ -210,39 +214,63 @@ func (e *Engine) recoverProcessing(dir string) {
 	}
 }
 
-// spoolWorker processes claimed files (already moved to processing/) delivered
-// by the scanner over work.
-func (e *Engine) spoolWorker(ctx context.Context, dir string, work <-chan string) {
+// spoolWorker processes claimed batches (files already in processing/) delivered
+// by the scanner, coalescing per CPO (see processSpoolBatch).
+func (e *Engine) spoolWorker(ctx context.Context, dir string, work <-chan []string) {
 	proc, failed := spoolSub(dir, "processing"), spoolSub(dir, "failed")
 	for {
-		var name string
 		select {
 		case <-ctx.Done():
 			return
-		case n, ok := <-work:
+		case batch, ok := <-work:
 			if !ok {
 				return
 			}
-			name = n
+			e.processSpoolBatch(ctx, proc, failed, batch)
 		}
+	}
+}
+
+// processSpoolBatch reads a claimed batch of files (in processing/), parses each
+// once — quarantining bad/unhandled payloads and applying eliso overlays per
+// item — then applies the DATEX docs coalesced per CPO and removes the processed
+// files. Parsing once here (not in applyDocsBatch) lets us quarantine precisely.
+func (e *Engine) processSpoolBatch(ctx context.Context, proc, failed string, names []string) {
+	docs := make([]*datex.AFIRDoc, 0, len(names))
+	good := make([]string, 0, len(names))
+	for _, name := range names {
 		path := filepath.Join(proc, name)
 		body, err := os.ReadFile(path)
 		if err != nil {
 			_ = os.Remove(path)
 			continue
 		}
-		kind, _, ierr := e.IngestMobilithekPush(ctx, body)
-		switch {
-		case ierr != nil:
-			e.toFailed(path, failed, name, "ingest error: "+ierr.Error())
-		case kind == "":
-			e.toFailed(path, failed, name, "unhandled: payload matched no known AFIR publication")
-		default:
-			if kind == "table" && e.TableArchiveDir != "" {
-				e.archiveTable(body)
+		if p, ok := parseElisoPush(body); ok {
+			if _, _, ierr := e.ingestElisoPush(ctx, p); ierr != nil {
+				e.toFailed(path, failed, name, "eliso ingest error: "+ierr.Error())
+				continue
 			}
-			_ = os.Remove(path) // done
+			_ = os.Remove(path)
+			continue
 		}
+		doc, derr := datex.ParseAFIR(body)
+		switch {
+		case derr != nil:
+			e.toFailed(path, failed, name, "parse error: "+derr.Error())
+			continue
+		case doc.Kind == "":
+			e.toFailed(path, failed, name, "unhandled: payload matched no known AFIR publication")
+			continue
+		}
+		if doc.Kind == "table" && e.TableArchiveDir != "" {
+			e.archiveTable(body)
+		}
+		docs = append(docs, doc)
+		good = append(good, path)
+	}
+	e.applyDocsBatch(ctx, docs)
+	for _, p := range good {
+		_ = os.Remove(p)
 	}
 }
 

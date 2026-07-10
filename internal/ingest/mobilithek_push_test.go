@@ -150,3 +150,44 @@ func TestIngestMobilithekPush_TableThenStatus(t *testing.T) {
 		t.Errorf("synthetic test packet kind=%q; want empty", k)
 	}
 }
+
+// TestMobilithekBatchCoalesces verifies the storm fix: a batch of many status
+// pushes for the same refill point collapses to the LATEST state (folded in
+// arrival order), applied in one coalesced pass.
+func TestMobilithekBatchCoalesces(t *testing.T) {
+	ctx := context.Background()
+	st := setup(t)
+	e := NewEngine(st, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	if _, _, err := e.IngestMobilithekPush(ctx, []byte(mobTablePush)); err != nil {
+		t.Fatalf("seed table: %v", err)
+	}
+	conns, err := st.ChargersForEVSE(ctx, "mob-gpjouleconnect", "cp-1")
+	if err != nil || len(conns) != 1 {
+		t.Fatalf("ChargersForEVSE = %d (%v)", len(conns), err)
+	}
+	id := conns[0].ID
+	readStatus := func() string {
+		var s string
+		if err := st.Pool.QueryRow(ctx, `SELECT status FROM charger_status WHERE charger_id=$1`, id).Scan(&s); err != nil {
+			t.Fatalf("read status: %v", err)
+		}
+		return s
+	}
+
+	// A storm ending on 'available' → final AVAILABLE (last push wins).
+	up := func() {
+		_, _ = e.IngestMobilithekBatch(ctx, [][]byte{[]byte(mobStatusPush), []byte(mobStatusPushAvailable)})
+	}
+	up()
+	if got := readStatus(); got != "AVAILABLE" {
+		t.Errorf("after [blocked, available] status=%q, want AVAILABLE", got)
+	}
+
+	// Reverse order → final OUTOFORDER: proves it folds in arrival order, not
+	// arbitrary map order.
+	_, _ = e.IngestMobilithekBatch(ctx, [][]byte{[]byte(mobStatusPushAvailable), []byte(mobStatusPush)})
+	if got := readStatus(); got != "OUTOFORDER" {
+		t.Errorf("after [available, blocked] status=%q, want OUTOFORDER", got)
+	}
+}

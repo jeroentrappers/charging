@@ -38,99 +38,207 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 	// Serialize per CPO: a table + status (or two tables) for the same operator
 	// mustn't race the SCD2 tariff path. Different CPOs proceed in parallel.
 	defer e.mobLocks.lock(cpoID)()
-	// Prefer the readable operator name from the table push (e.g. "GP JOULE
-	// CONNECT"). Status pushes don't carry it, so don't let them downgrade an
-	// already-seeded readable name; fall back to the raw NAP id only on a cold
-	// start where no table push has named the CPO yet.
-	name := doc.Operator
-	if name == "" {
-		if cur, ok, _ := e.Store.GetCPO(ctx, cpoID); ok && cur.Name != "" {
-			name = cur.Name
-		} else if doc.Creator.NationalIdentifier != "" {
-			name = doc.Creator.NationalIdentifier
-		} else {
-			name = cpoID
-		}
-	}
-	// Ensure the cpo row exists for attribution (country/name). Disabled so the
-	// scheduler never tries to poll a push-only source.
-	if serr := e.Store.SeedCPO(ctx, store.CPO{
-		ID: cpoID, Name: name, OCPIBaseURL: "push://" + cpoID,
-		Country: doc.Creator.Country, SourceType: "mobilithek", Enabled: false,
-	}); serr != nil {
-		e.Log.Warn("mobilithek: seed cpo", "cpo", cpoID, "err", serr)
-	}
-	// Heartbeat: we heard from this source. Delta feeds only push what changed,
-	// so this keeps their unchanged-but-healthy chargers live in the read path.
-	if berr := e.Store.BumpCPOPush(ctx, cpoID); berr != nil {
-		e.Log.Warn("mobilithek: bump push heartbeat", "cpo", cpoID, "err", berr)
-	}
+	e.seedAndHeartbeat(ctx, cpoID, doc.Operator, doc.Creator)
 
 	switch doc.Kind {
 	case "table":
-		// Full snapshot — upsert every connector + its tariff (resilient: a bad
-		// row is logged and skipped, never aborting the whole push).
-		var pricedSeen []string
-		for _, conn := range doc.Connectors {
-			conn.CPOID = cpoID
-			id, uerr := e.upsertConnector(ctx, conn)
-			if uerr != nil {
-				e.Log.Error("mobilithek upsert connector", "cpo", cpoID, "evse", conn.EVSEUID, "err", uerr)
-				continue
-			}
-			if conn.TariffID != "" {
-				if _, ok := doc.Tariffs[conn.TariffID]; ok {
-					pricedSeen = append(pricedSeen, conn.EVSEUID)
-				}
-			}
-			if ch, perr := e.processTariff(ctx, id, conn, doc.Tariffs); perr != nil {
-				e.Log.Error("mobilithek process tariff", "cpo", cpoID, "evse", conn.EVSEUID, "err", perr)
-			} else if ch {
-				n++
-			}
-		}
-		if cerr := e.Store.ConfirmTariffsSeen(ctx, cpoID, pricedSeen); cerr != nil {
-			e.Log.Error("mobilithek confirm tariffs", "cpo", cpoID, "err", cerr)
-		}
+		n = e.applyTable(ctx, cpoID, doc.Connectors, doc.Tariffs)
 		e.Log.Info("mobilithek push ingested", "cpo", cpoID, "kind", "table", "connectors", len(doc.Connectors), "tariff_changes", n)
 		return "table", n, nil
-
 	case "status":
-		for _, u := range doc.Statuses {
-			rows, rerr := e.Store.ChargersForEVSE(ctx, cpoID, u.EVSEUID)
-			if rerr != nil {
-				e.Log.Error("mobilithek chargers-for-evse", "cpo", cpoID, "evse", u.EVSEUID, "err", rerr)
-				continue
-			}
-			avail := 0
-			if u.Status == "AVAILABLE" {
-				avail = 1
-			}
-			for _, row := range rows {
-				if serr := e.Store.UpsertStatus(ctx, row.ID, u.Status, avail); serr != nil {
-					e.Log.Error("mobilithek upsert status", "id", row.ID, "err", serr)
-					continue
-				}
-				// Apply a live ad-hoc price update if present (recomputes the
-				// comparable using the charger's stored power/current type).
-				if u.Tariff != nil && u.Tariff.OCPIID != "" {
-					conn := model.Connector{
-						CPOID: cpoID, EVSEUID: u.EVSEUID, ConnectorID: row.ConnectorID,
-						PowerKW: row.PowerKW, CurrentType: row.CurrentType, TariffID: u.Tariff.OCPIID,
-					}
-					if _, perr := e.processTariff(ctx, row.ID, conn, map[string]model.Tariff{u.Tariff.OCPIID: *u.Tariff}); perr != nil {
-						e.Log.Error("mobilithek status tariff", "id", row.ID, "err", perr)
-					} else if cerr := e.Store.ConfirmTariff(ctx, row.ID); cerr != nil {
-						e.Log.Error("mobilithek confirm tariff", "id", row.ID, "err", cerr)
-					}
-				}
-				n++
-			}
-		}
+		n = e.applyStatuses(ctx, cpoID, doc.Statuses)
 		e.Log.Info("mobilithek push ingested", "cpo", cpoID, "kind", "status", "updates", len(doc.Statuses), "rows", n)
 		return "status", n, nil
 	}
 	return doc.Kind, 0, nil
+}
+
+// IngestMobilithekBatch parses many push bodies and applies them coalesced (the
+// storm fix). eliso overlays are applied per item; DATEX docs are merged per CPO
+// and applied once. Convenience wrapper over applyDocsBatch (mainly for tests /
+// non-spool callers); the spool worker parses once itself and calls
+// applyDocsBatch directly so it can quarantine bad payloads.
+func (e *Engine) IngestMobilithekBatch(ctx context.Context, bodies [][]byte) (n int, err error) {
+	var docs []*datex.AFIRDoc
+	for _, body := range bodies {
+		if p, ok := parseElisoPush(body); ok {
+			if _, rows, ierr := e.ingestElisoPush(ctx, p); ierr == nil {
+				n += rows
+			}
+			continue
+		}
+		doc, derr := datex.ParseAFIR(body)
+		if derr != nil || doc.Kind == "" {
+			continue
+		}
+		docs = append(docs, doc)
+	}
+	return n + e.applyDocsBatch(ctx, docs), nil
+}
+
+// applyDocsBatch coalesces already-parsed DATEX docs per CPO — the heart of the
+// storm fix. It buckets docs by their real creator CPO and, per CPO, merges the
+// deltas (latest wins per refill point / per connector) so a burst of small
+// status pushes collapses into ONE ingest under ONE lock with a single CPO seed
+// + heartbeat, instead of N serialized round-trip-heavy ingests. Bucketing is by
+// each doc's own creator, so it's correct no matter how the caller grouped them.
+func (e *Engine) applyDocsBatch(ctx context.Context, docs []*datex.AFIRDoc) (n int) {
+	type merged struct {
+		operator string
+		creator  datex.AFIRCreator
+		conns    map[string]model.Connector        // key: connKey (evse+connector)
+		tariffs  map[string]model.Tariff           // ad-hoc tariffs referenced by conns
+		statuses map[string]datex.AFIRStatusUpdate // key: EVSEUID, latest wins
+	}
+	byCPO := map[string]*merged{}
+	get := func(id string) *merged {
+		m := byCPO[id]
+		if m == nil {
+			m = &merged{conns: map[string]model.Connector{}, tariffs: map[string]model.Tariff{}, statuses: map[string]datex.AFIRStatusUpdate{}}
+			byCPO[id] = m
+		}
+		return m
+	}
+
+	// Fold in arrival order (so "latest wins" is truly the newest push).
+	for _, doc := range docs {
+		if doc == nil || doc.Kind == "" {
+			continue
+		}
+		m := get(mobilithekCPOID(doc.Creator))
+		if doc.Operator != "" {
+			m.operator = doc.Operator
+		}
+		if doc.Creator.NationalIdentifier != "" || doc.Creator.Country != "" {
+			m.creator = doc.Creator
+		}
+		switch doc.Kind {
+		case "table":
+			for _, c := range doc.Connectors {
+				m.conns[connKey(c)] = c
+			}
+			for k, v := range doc.Tariffs {
+				m.tariffs[k] = v
+			}
+		case "status":
+			for _, u := range doc.Statuses {
+				m.statuses[u.EVSEUID] = u // newest push's state for this refill point wins
+			}
+		}
+	}
+
+	// Apply each CPO's merged result once, under its own lock.
+	for cpoID, m := range byCPO {
+		func() {
+			defer e.mobLocks.lock(cpoID)()
+			e.seedAndHeartbeat(ctx, cpoID, m.operator, m.creator)
+			if len(m.conns) > 0 {
+				conns := make([]model.Connector, 0, len(m.conns))
+				for _, c := range m.conns {
+					conns = append(conns, c)
+				}
+				n += e.applyTable(ctx, cpoID, conns, m.tariffs)
+			}
+			if len(m.statuses) > 0 {
+				updates := make([]datex.AFIRStatusUpdate, 0, len(m.statuses))
+				for _, u := range m.statuses {
+					updates = append(updates, u)
+				}
+				n += e.applyStatuses(ctx, cpoID, updates)
+			}
+		}()
+	}
+	return n
+}
+
+// seedAndHeartbeat ensures the (push-only, disabled) cpo row exists with a
+// readable name and records the push heartbeat. Caller holds the per-CPO lock.
+func (e *Engine) seedAndHeartbeat(ctx context.Context, cpoID, operator string, creator datex.AFIRCreator) {
+	// Prefer the readable operator name from a table push; don't let a status
+	// push (no operator) downgrade an already-seeded name — fall back to the raw
+	// NAP id only on a cold start.
+	name := operator
+	if name == "" {
+		if cur, ok, _ := e.Store.GetCPO(ctx, cpoID); ok && cur.Name != "" {
+			name = cur.Name
+		} else if creator.NationalIdentifier != "" {
+			name = creator.NationalIdentifier
+		} else {
+			name = cpoID
+		}
+	}
+	if serr := e.Store.SeedCPO(ctx, store.CPO{
+		ID: cpoID, Name: name, OCPIBaseURL: "push://" + cpoID,
+		Country: creator.Country, SourceType: "mobilithek", Enabled: false,
+	}); serr != nil {
+		e.Log.Warn("mobilithek: seed cpo", "cpo", cpoID, "err", serr)
+	}
+	if berr := e.Store.BumpCPOPush(ctx, cpoID); berr != nil {
+		e.Log.Warn("mobilithek: bump push heartbeat", "cpo", cpoID, "err", berr)
+	}
+}
+
+// applyTable upserts a table snapshot's connectors + ad-hoc tariffs. Resilient:
+// a bad row is logged and skipped. Caller holds the per-CPO lock.
+func (e *Engine) applyTable(ctx context.Context, cpoID string, conns []model.Connector, tariffs map[string]model.Tariff) (n int) {
+	var pricedSeen []string
+	for _, conn := range conns {
+		conn.CPOID = cpoID
+		id, uerr := e.upsertConnector(ctx, conn)
+		if uerr != nil {
+			e.Log.Error("mobilithek upsert connector", "cpo", cpoID, "evse", conn.EVSEUID, "err", uerr)
+			continue
+		}
+		if conn.TariffID != "" {
+			if _, ok := tariffs[conn.TariffID]; ok {
+				pricedSeen = append(pricedSeen, conn.EVSEUID)
+			}
+		}
+		if ch, perr := e.processTariff(ctx, id, conn, tariffs); perr != nil {
+			e.Log.Error("mobilithek process tariff", "cpo", cpoID, "evse", conn.EVSEUID, "err", perr)
+		} else if ch {
+			n++
+		}
+	}
+	if cerr := e.Store.ConfirmTariffsSeen(ctx, cpoID, pricedSeen); cerr != nil {
+		e.Log.Error("mobilithek confirm tariffs", "cpo", cpoID, "err", cerr)
+	}
+	return n
+}
+
+// applyStatuses applies live availability (+ optional price) updates by refill-
+// point id. Caller holds the per-CPO lock.
+func (e *Engine) applyStatuses(ctx context.Context, cpoID string, updates []datex.AFIRStatusUpdate) (n int) {
+	for _, u := range updates {
+		rows, rerr := e.Store.ChargersForEVSE(ctx, cpoID, u.EVSEUID)
+		if rerr != nil {
+			e.Log.Error("mobilithek chargers-for-evse", "cpo", cpoID, "evse", u.EVSEUID, "err", rerr)
+			continue
+		}
+		avail := 0
+		if u.Status == "AVAILABLE" {
+			avail = 1
+		}
+		for _, row := range rows {
+			if serr := e.Store.UpsertStatus(ctx, row.ID, u.Status, avail); serr != nil {
+				e.Log.Error("mobilithek upsert status", "id", row.ID, "err", serr)
+				continue
+			}
+			if u.Tariff != nil && u.Tariff.OCPIID != "" {
+				conn := model.Connector{
+					CPOID: cpoID, EVSEUID: u.EVSEUID, ConnectorID: row.ConnectorID,
+					PowerKW: row.PowerKW, CurrentType: row.CurrentType, TariffID: u.Tariff.OCPIID,
+				}
+				if _, perr := e.processTariff(ctx, row.ID, conn, map[string]model.Tariff{u.Tariff.OCPIID: *u.Tariff}); perr != nil {
+					e.Log.Error("mobilithek status tariff", "id", row.ID, "err", perr)
+				} else if cerr := e.Store.ConfirmTariff(ctx, row.ID); cerr != nil {
+					e.Log.Error("mobilithek confirm tariff", "id", row.ID, "err", cerr)
+				}
+			}
+			n++
+		}
+	}
+	return n
 }
 
 // mobilithekCPOID derives a stable cpo id from the NAP creator id, e.g.
