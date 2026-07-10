@@ -11,7 +11,7 @@ Sender: Jeroen Trappers, Software engineer at Appmire <jeroen@appmire.be> · 049
 | # | Source | Sent | Reply | Fixed? (re-verified) |
 |---|--------|------|-------|----------------------|
 | 1 | EnergyVision | 2026-07-09 | — | ❌ status feed still has `pricePerMinute` 19.80 (checked 2026-07-09 PM) |
-| 2 | NDW / DOT-NL | 2026-07-09 | — | — (workaround shipped our side) |
+| 2 | NDW / DOT-NL | 2026-07-09 | 2026-07-10 (pass-through; asked for the location list to forward to the supplier) | list sent 2026-07-10 (`ndw-defects-2026-07-10.csv`); workaround already shipped our side |
 | 3 | Eco-Movement | 2026-07-09 | — | — |
 | 4 | eRoundup | 2026-07-09 | — | — |
 | 5 | EnBW | 2026-07-09 | — | — |
@@ -90,6 +90,25 @@ A couple of smaller things in the same file: ~15 connectors sit at coordinates
 Thank you for publishing this data — it's genuinely useful.
 
 Jeroen Trappers — Appmire — jeroen@appmire.be — 0497053310
+
+### Reply (2026-07-10) — Marco Dijkstra, NDW
+
+NDW is a pass-through and asked for the affected locations to forward to the
+supplying party. Compiled the full list from the live open feed (our DB stores
+the corrected values, so the faulty raw values only exist in the source):
+**`docs/ndw-defects-2026-07-10.csv`** — 69 defects:
+
+- **13 `power_impossible`** — all Eneco (`NL*ENE*…`): `max_electric_power` is
+  ~1000× too high (2222–7590 kW on 230 V AC posts; the unit bug we reported).
+- **5 `power_too_high_for_AC`** — all Eneco: 35 / 111 / 350 kW on 230 V×32 A AC
+  (physically impossible for AC).
+- **13 `coordinates_null_island`** — at `0,0` (ENV, SGM, CCH).
+- **38 `coordinates_outside_NL`** — US, India, Dublin, lat 90, a swapped lat/lon
+  (`4.28,52.09`), etc. (EFL, EVT, ENE, SGM, SMP, …).
+
+DC "power vs V×A" mismatches were deliberately excluded — for DC
+`max_electric_power` is authoritative and `max_amperage` is often just a nominal
+cable rating, so those aren't defects.
 
 ---
 

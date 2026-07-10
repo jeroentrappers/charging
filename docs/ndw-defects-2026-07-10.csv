@@ -1,0 +1,70 @@
+defect_type,evse_id,connector_id,party_id,detail,latitude,longitude
+power_impossible,NL*ENE*EENECO*G33410*1,1,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,51.2722,4.03972
+power_impossible,NL*ENE*EENECO*G33410*2,2,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,51.2722,4.03972
+power_impossible,NL*ENE*EENECO*G33823*1,1,ENE,AC_1_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~7.4kW,51.94906,4.4337
+power_impossible,NL*ENE*EENECO*G33823*2,2,ENE,AC_1_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~7.4kW,51.94906,4.4337
+power_impossible,NL*ENE*EENECO*G36939*1,1,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,51.910466,4.47235
+power_impossible,NL*ENE*EENECO*G36939*2,2,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,51.910466,4.47235
+power_impossible,NL*ENE*EENECO*G36940*1,1,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,51.910466,4.47235
+power_impossible,NL*ENE*EENECO*G36940*2,2,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,51.910466,4.47235
+power_impossible,NL*ENE*EENECO*G771624*1,1,ENE,AC_3_PHASE 230Vx32A max_electric_power=2222000W (2222.0kW); AC cannot exceed ~22.1kW,51.90962,4.47164
+power_impossible,NL*ENE*EEVB*P1402500*1,1,ENE,AC_3_PHASE 230Vx33A max_electric_power=7590000W (7590.0kW); AC cannot exceed ~22.8kW,53.31322,6.98355
+power_impossible,NL*ENE*EEVB*P1402500*2,2,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,53.31322,6.98355
+power_impossible,NL*ENE*EEVB*P1402500*3,3,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,53.31322,6.98355
+power_impossible,NL*ENE*EEVB*P1402500*4,4,ENE,AC_3_PHASE 230Vx32A max_electric_power=7360000W (7360.0kW); AC cannot exceed ~22.1kW,53.31322,6.98355
+power_too_high_for_AC,NL*ENE*EENECO*G31651*1,1,ENE,AC_1_PHASE 230Vx32A max_electric_power=35000W (35.0kW); AC cannot exceed ~7.4kW,52.28,4.83486
+power_too_high_for_AC,NL*ENE*EENECO*G31651*2,2,ENE,AC_1_PHASE 230Vx32A max_electric_power=35000W (35.0kW); AC cannot exceed ~7.4kW,52.28,4.83486
+power_too_high_for_AC,NL*ENE*EENECO*G36699*1,1,ENE,AC_3_PHASE 230Vx32A max_electric_power=350000W (350.0kW); AC cannot exceed ~22.1kW,52.08007,4.34043
+power_too_high_for_AC,NL*ENE*EENECO*G36699*2,2,ENE,AC_3_PHASE 230Vx32A max_electric_power=350000W (350.0kW); AC cannot exceed ~22.1kW,52.08007,4.34043
+power_too_high_for_AC,NL*ENE*EEVB*P22072083*4,4,ENE,AC_3_PHASE 230Vx32A max_electric_power=111000W (111.0kW); AC cannot exceed ~22.1kW,51.623431,4.871434
+coordinates_null_island,NL*CCH*ENLCCH00890*1,,CCH,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*CCH*ENLCCH00890*2,,CCH,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*ENV*E2305001*1*1,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*ENV*E2305001*2*2,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*ENV*EDCN000015*1*1,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*ENV*EDCN000015*2*2,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*ENV*EDCN000043*1*1,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*ENV*EDCN000043*2*2,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*SGM*E11748404*1,,SGM,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*SGM*E11748404*2,,SGM,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*SGM*E11752221*1,,SGM,"coordinates 0,0",0.0,0.0
+coordinates_null_island,NL*SGM*E11752221*2,,SGM,"coordinates 0,0",0.0,0.0
+coordinates_null_island,b5461e59-76e9-439d-84d5-ed18351ff35c,,ENV,"coordinates 0,0",0.0,0.0
+coordinates_outside_NL,37c6e332-6a4e-4448-8885-aaeaf1f2d699,,SPA,lat/lon outside NL,48.601808,20.149636
+coordinates_outside_NL,4f2f73d1-679c-4fe0-85e3-2623d3e6d9d0,,CCH,lat/lon outside NL,52.148378,46.57272
+coordinates_outside_NL,61998db7-1c57-4e85-9e32-f98715f02c90,,CCH,lat/lon outside NL,52.148378,46.57272
+coordinates_outside_NL,6c0f16b8-b672-49ae-8d5c-a3d1ac12370f,,SPA,lat/lon outside NL,48.601808,20.149636
+coordinates_outside_NL,ATBMCEAC74862C78FCDE,,EVT,lat/lon outside NL,46.933226,13.869431
+coordinates_outside_NL,BE*SMP*E6021000822*1,,SMP,lat/lon outside NL,52.42053,58.7809
+coordinates_outside_NL,BE*SMP*E6021000822*2,,SMP,lat/lon outside NL,52.42053,58.7809
+coordinates_outside_NL,NL*EFL*EV2179323*C1,,EFL,lat/lon outside NL,90.0,135.0
+coordinates_outside_NL,NL*EFL*EV2268418*C1,,EFL,lat/lon outside NL,90.0,135.0
+coordinates_outside_NL,NL*EFL*EV3992125*C1,,EFL,lat/lon outside NL,47.176931,-1.679865
+coordinates_outside_NL,NL*EFL*EV6005036*C1,,EFL,lat/lon outside NL,50.663216,13.30991
+coordinates_outside_NL,NL*EFL*EV6005036*C2,,EFL,lat/lon outside NL,50.663216,13.30991
+coordinates_outside_NL,NL*EFL*EV6481650*C1,,EFL,lat/lon outside NL,90.0,135.0
+coordinates_outside_NL,NL*EFL*EV6481650*C2,,EFL,lat/lon outside NL,90.0,135.0
+coordinates_outside_NL,NL*EFL*EV7996561*C1,,EFL,lat/lon outside NL,90.0,135.0
+coordinates_outside_NL,NL*ENE*EENECO*G56757*1,,ENE,lat/lon outside NL,40.36456,-79.74011
+coordinates_outside_NL,NL*ENE*EENECO*G56757*2,,ENE,lat/lon outside NL,40.36456,-79.74011
+coordinates_outside_NL,NL*ENE*EENECO*G56764*1,,ENE,lat/lon outside NL,40.36456,-79.74011
+coordinates_outside_NL,NL*ENE*EENECO*G56764*2,,ENE,lat/lon outside NL,40.36456,-79.74011
+coordinates_outside_NL,NL*ENE*EENECO*G69607*1,,ENE,lat/lon outside NL,39.67884,-95.67749
+coordinates_outside_NL,NL*ENE*EENECO*G72365*1,,ENE,lat/lon outside NL,39.67884,-95.67749
+coordinates_outside_NL,NL*ENE*EEVB*P1834267*1,,ENE,lat/lon outside NL,13.331394,77.116096
+coordinates_outside_NL,NL*ENE*EEVB*P1834267*2,,ENE,lat/lon outside NL,13.331394,77.116096
+coordinates_outside_NL,NL*SGM*E11729905*1,,SGM,lat/lon outside NL,51.907567,10.279455
+coordinates_outside_NL,NL*SGM*E11729905*2,,SGM,lat/lon outside NL,51.907567,10.279455
+coordinates_outside_NL,NL*SGM*E1703454*1,,SGM,lat/lon outside NL,50.420764,4.932081
+coordinates_outside_NL,NL*SGM*E1703454*2,,SGM,lat/lon outside NL,50.420764,4.932081
+coordinates_outside_NL,NL*SGM*EHinfelaar0particulier*1,,SGM,lat/lon outside NL,4.286112,52.098505
+coordinates_outside_NL,NLBMCEA01D226753014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA48B55A7B3014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA4AB55A7B3014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA4CB55A7B3014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA4EB55A7B3014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA50B55A7B3014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA52B55A7B3014E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLBMCEA52D57C6E2C14E,,EVT,lat/lon outside NL,53.30368,-6.42753
+coordinates_outside_NL,NLLMSE1234909884*1,,LMS,lat/lon outside NL,52.00838,52.00838
+coordinates_outside_NL,NLLMSE1234909884*2,,LMS,lat/lon outside NL,52.00838,52.00838
