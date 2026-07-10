@@ -19,10 +19,10 @@ import (
 // to the right operator/country. Returns the publication kind + rows touched.
 func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind string, n int, err error) {
 	// Non-DATEX overlay feeds pushed to the same endpoint are dispatched first;
-	// parseElisoPush only claims the payload if it clearly matches that shape, so
+	// the eliso parsers only claim a payload that clearly matches their shape, so
 	// AFIR DATEX II (XML/JSON) falls through untouched.
-	if p, ok := parseElisoPush(data); ok {
-		return e.ingestElisoPush(ctx, p)
+	if handled, k, n, ierr := e.tryElisoOverlay(ctx, data); handled {
+		return k, n, ierr
 	}
 
 	// Parse outside any lock so workers decode (big XML/JSON) in parallel.
@@ -61,8 +61,8 @@ func (e *Engine) IngestMobilithekPush(ctx context.Context, data []byte) (kind st
 func (e *Engine) IngestMobilithekBatch(ctx context.Context, bodies [][]byte) (n int, err error) {
 	var docs []*datex.AFIRDoc
 	for _, body := range bodies {
-		if p, ok := parseElisoPush(body); ok {
-			if _, rows, ierr := e.ingestElisoPush(ctx, p); ierr == nil {
+		if handled, _, rows, ierr := e.tryElisoOverlay(ctx, body); handled {
+			if ierr == nil {
 				n += rows
 			}
 			continue

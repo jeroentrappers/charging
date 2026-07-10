@@ -245,12 +245,12 @@ func (e *Engine) processSpoolBatch(ctx context.Context, proc, failed string, nam
 			_ = os.Remove(path)
 			continue
 		}
-		if p, ok := parseElisoPush(body); ok {
-			if _, _, ierr := e.ingestElisoPush(ctx, p); ierr != nil {
+		if handled, _, _, ierr := e.tryElisoOverlay(ctx, body); handled {
+			if ierr != nil {
 				e.toFailed(path, failed, name, "eliso ingest error: "+ierr.Error())
-				continue
+			} else {
+				_ = os.Remove(path)
 			}
-			_ = os.Remove(path)
 			continue
 		}
 		doc, derr := datex.ParseAFIR(body)
