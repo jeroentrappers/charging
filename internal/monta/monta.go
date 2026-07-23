@@ -237,20 +237,25 @@ func (c *Client) Locations(ctx context.Context, cpoID, country string) ([]model.
 
 // ---- per-EVSE status (availability + ad-hoc price) ----
 
+// montaEnum is the {"value":"…"} wrapper Monta adopted when it migrated the
+// per-EVSE status endpoint to the DATEX/AFIR JSON encoding (2026-07). Fields
+// that used to be bare strings (ratePolicy, priceType) are now this shape.
+type montaEnum struct {
+	Value string `json:"value"`
+}
+
 type statusResp struct {
 	Status struct {
 		EvseID             string `json:"evseId"`
 		AvailabilityStatus string `json:"availabilityStatus"`
 		EnergyRateUpdate   []struct {
-			RatePolicy         string `json:"ratePolicy"`
-			ApplicableCurrency string `json:"applicableCurrency"`
-			EnergyRate         []struct {
-				Price              float64 `json:"price"`
-				PriceType          string  `json:"priceType"`
-				UnitType           string  `json:"unitType"`
-				ApplicableQuantity string  `json:"applicableQuantity"`
-				TaxIncluded        *bool   `json:"taxIncluded"`
-			} `json:"energyRate"`
+			RatePolicy         montaEnum `json:"ratePolicy"`
+			ApplicableCurrency []string  `json:"applicableCurrency"`
+			EnergyPrice        []struct {
+				PriceType   montaEnum `json:"priceType"`
+				Value       float64   `json:"value"`
+				TaxIncluded *bool     `json:"taxIncluded"`
+			} `json:"energyPrice"`
 		} `json:"energyRateUpdate"`
 	} `json:"electricChargingPointStatus"`
 }
@@ -282,11 +287,11 @@ func (c *Client) Status(ctx context.Context, evseID string) (status string, tari
 // mapTariff builds a canonical ad-hoc tariff from the energyRateUpdate.
 func mapTariff(evseID string, sr statusResp) *model.Tariff {
 	for _, rate := range sr.Status.EnergyRateUpdate {
-		if rate.RatePolicy != "adHoc" {
+		if !strings.EqualFold(rate.RatePolicy.Value, "adHoc") {
 			continue
 		}
-		// The feed often lists each component twice (tax-incl + tax-excl). Keep
-		// one per type, preferring the tax-inclusive (consumer) price.
+		// The feed may list a component twice (tax-incl + tax-excl). Keep one per
+		// type, preferring the tax-inclusive (consumer) price.
 		type pick struct {
 			price   float64
 			taxIncl bool
@@ -294,14 +299,14 @@ func mapTariff(evseID string, sr statusResp) *model.Tariff {
 		}
 		best := map[string]pick{}
 		order := 0
-		for _, p := range rate.EnergyRate {
-			typ := componentType(p.PriceType, p.UnitType, p.ApplicableQuantity)
+		for _, p := range rate.EnergyPrice {
+			typ, perHour := componentType(p.PriceType.Value)
 			if typ == "" {
 				continue
 			}
-			price := p.Price
-			if (typ == "TIME" || typ == "PARKING_TIME") && p.UnitType == "perMinute" {
-				price *= 60 // our model prices time per hour
+			price := p.Value
+			if perHour {
+				price *= 60 // per-minute → our model prices time per hour
 			}
 			incl := p.TaxIncluded != nil && *p.TaxIncluded
 			if cur, ok := best[typ]; ok && (cur.taxIncl || !incl) {
@@ -318,9 +323,9 @@ func mapTariff(evseID string, sr statusResp) *model.Tariff {
 			comps = append(comps, model.PriceComponent{Type: typ, Price: p.price, StepSize: 1})
 		}
 		sort.Slice(comps, func(i, j int) bool { return best[comps[i].Type].order < best[comps[j].Type].order })
-		cur := rate.ApplicableCurrency
-		if cur == "" {
-			cur = "EUR"
+		cur := "EUR"
+		if len(rate.ApplicableCurrency) > 0 && rate.ApplicableCurrency[0] != "" {
+			cur = strings.ToUpper(rate.ApplicableCurrency[0])
 		}
 		return &model.Tariff{
 			OCPIID:      evseID,
@@ -332,18 +337,23 @@ func mapTariff(evseID string, sr statusResp) *model.Tariff {
 	return nil
 }
 
-func componentType(priceType, unitType, qty string) string {
-	switch {
-	case qty == "energy" || unitType == "perKilowattHour":
-		return "ENERGY"
-	case qty == "occupancy":
-		return "PARKING_TIME"
-	case qty == "time" || unitType == "perMinute" || unitType == "perHour":
-		return "TIME"
-	case priceType == "flatRate" || unitType == "perSession":
-		return "FLAT"
+// componentType maps an AFIR priceType value to our component type and reports
+// whether the price is per-minute (and so must be scaled to €/hour). Bounds
+// (minimum/maximum) and unknown types yield "" and are skipped.
+func componentType(priceType string) (typ string, perMinute bool) {
+	switch priceType {
+	case "pricePerKWh":
+		return "ENERGY", false
+	case "pricePerMinute":
+		return "TIME", true
+	case "pricePerHour":
+		return "TIME", false
+	case "flatRate", "basePrice":
+		return "FLAT", false
+	case "free":
+		return "ENERGY", false
 	default:
-		return "" // minimum/maximum/other bounds — skip for the comparable
+		return "", false
 	}
 }
 
