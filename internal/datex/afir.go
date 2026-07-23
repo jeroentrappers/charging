@@ -63,7 +63,9 @@ type afirSite struct {
 	Operator   string        `xml:"operator>name>values>value"`
 	Brand      string        `xml:"brand>values>value"`
 	Rates      []afirRate    `xml:"energyRate"`
-	Stations   []afirStation `xml:"energyInfrastructureStation"`
+	// Accept the energyProduct wrapper at the site level too (see afirStation).
+	ProductRates []afirRate    `xml:"energyProduct>energyRate"`
+	Stations     []afirStation `xml:"energyInfrastructureStation"`
 
 	// Some publishers (EnergyVision) carry the site location on an
 	// aegi:entrance PointLocation instead of locationReference, with the AFIR
@@ -74,6 +76,15 @@ type afirSite struct {
 	EntPostcode  string         `xml:"entrance>_locationExtension>afirFacilityLocation>address>postcode"`
 	EntCity      string         `xml:"entrance>_locationExtension>afirFacilityLocation>address>city>values>value"`
 	EntLines     []afirAddrLine `xml:"entrance>_locationExtension>afirFacilityLocation>address>addressLine"`
+}
+
+// rates returns the site's rates from either placement (direct or nested under
+// energyProduct).
+func (s afirSite) rates() []afirRate {
+	if len(s.Rates) > 0 {
+		return s.Rates
+	}
+	return s.ProductRates
 }
 
 type afirAddrLine struct {
@@ -138,8 +149,21 @@ func (s afirSite) operator() string {
 }
 
 type afirStation struct {
-	Rates        []afirRate        `xml:"energyRate"`
+	Rates []afirRate `xml:"energyRate"`
+	// Like the refill point, the station may carry the rate directly or nested
+	// under energyProduct. EnergyVision moved its station-wide ad-hoc rate to
+	// energyProduct>energyRate in 2026-07, which the bare mapping missed.
+	ProductRates []afirRate        `xml:"energyProduct>energyRate"`
 	RefillPoints []afirRefillPoint `xml:"refillPoint"`
+}
+
+// rates returns the station's rates from either placement (direct or nested
+// under energyProduct).
+func (st afirStation) rates() []afirRate {
+	if len(st.Rates) > 0 {
+		return st.Rates
+	}
+	return st.ProductRates
 }
 
 type afirRefillPoint struct {
@@ -435,10 +459,10 @@ func buildStaticConnectors(pub afirStaticPub, cpoID string) ([]model.Connector, 
 				// energyProduct), its station, or its site.
 				rates := rp.rates()
 				if len(rates) == 0 {
-					rates = st.Rates
+					rates = st.rates()
 				}
 				if len(rates) == 0 {
-					rates = s.Rates
+					rates = s.rates()
 				}
 				if r, ok := pickRate(rates); ok {
 					if t, ok := buildTariff(rp.ID, r); ok {

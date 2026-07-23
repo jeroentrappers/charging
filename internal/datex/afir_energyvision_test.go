@@ -201,3 +201,87 @@ func TestParseAFIRStaticEnergyVisionEntranceLocation(t *testing.T) {
 		t.Errorf("connector: %+v", c)
 	}
 }
+
+// EnergyVision-shaped table (2026-07 revision): the ad-hoc rate moved OFF the
+// refill point and up to the STATION, nested under an aegi:energyProduct
+// wrapper — the shape that silently stopped pricing until afirStation learned
+// to read energyProduct>energyRate. Both refill points in the station inherit
+// the single station-wide rate.
+const energyVisionStationProductRateXML = `<?xml version="1.0" encoding="UTF-8"?>
+<d2:payload xmlns:aegi="http://datex2.eu/schema/3/afirEnergyInfrastructure"
+            xmlns:afac="http://datex2.eu/schema/3/afirFacilities"
+            xmlns:com="http://datex2.eu/schema/3/common"
+            xmlns:loc="http://datex2.eu/schema/3/locationReferencing"
+            xsi:type="aegi:EnergyInfrastructureTablePublication"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xmlns:d2="http://datex2.eu/schema/3/d2Payload">
+  <aegi:energyInfrastructureTable id="T1">
+    <aegi:energyInfrastructureSite id="SITE1">
+      <aegi:brand><com:values><com:value lang="en">EnergyVision</com:value></com:values></aegi:brand>
+      <aegi:entrance xsi:type="loc:PointLocation">
+        <loc:pointByCoordinates>
+          <loc:pointCoordinates>
+            <loc:latitude>50.89055</loc:latitude>
+            <loc:longitude>4.341847</loc:longitude>
+          </loc:pointCoordinates>
+        </loc:pointByCoordinates>
+      </aegi:entrance>
+      <aegi:energyInfrastructureStation id="SITE1-station">
+        <aegi:refillPoint xsi:type="aegi:ElectricChargingPoint" id="RP1">
+          <aegi:currentType>ac</aegi:currentType>
+          <aegi:connector>
+            <aegi:connectorType>iec62196T2</aegi:connectorType>
+            <aegi:maxPowerAtSocket>7400</aegi:maxPowerAtSocket>
+          </aegi:connector>
+        </aegi:refillPoint>
+        <aegi:refillPoint xsi:type="aegi:ElectricChargingPoint" id="RP2">
+          <aegi:currentType>ac</aegi:currentType>
+          <aegi:connector>
+            <aegi:connectorType>iec62196T2</aegi:connectorType>
+            <aegi:maxPowerAtSocket>7400</aegi:maxPowerAtSocket>
+          </aegi:connector>
+        </aegi:refillPoint>
+        <aegi:energyProduct>
+          <aegi:energyRate id="SITE1-station-adhoc-rate">
+            <aegi:ratePolicy>adHoc</aegi:ratePolicy>
+            <aegi:applicableCurrency>EUR</aegi:applicableCurrency>
+            <aegi:energyPrice>
+              <aegi:priceType>pricePerKWh</aegi:priceType>
+              <aegi:value>0.4082</aegi:value>
+              <aegi:taxIncluded>true</aegi:taxIncluded>
+              <aegi:taxRate>21.0</aegi:taxRate>
+            </aegi:energyPrice>
+          </aegi:energyRate>
+        </aegi:energyProduct>
+      </aegi:energyInfrastructureStation>
+    </aegi:energyInfrastructureSite>
+  </aegi:energyInfrastructureTable>
+</d2:payload>`
+
+func TestParseAFIRStaticStationEnergyProductRate(t *testing.T) {
+	conns, tariffs, err := ParseAFIRStatic("energyvision", []byte(energyVisionStationProductRateXML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 2 {
+		t.Fatalf("got %d connectors, want 2", len(conns))
+	}
+	if len(tariffs) != 2 {
+		t.Fatalf("got %d tariffs, want 2 (station rate fans out to both refill points)", len(tariffs))
+	}
+	for _, c := range conns {
+		if c.TariffID == "" {
+			t.Errorf("%s: no tariff linked — station energyProduct rate was missed", c.EVSEUID)
+			continue
+		}
+		tar, ok := tariffs[c.TariffID]
+		if !ok {
+			t.Errorf("%s: TariffID %q not in tariff map", c.EVSEUID, c.TariffID)
+			continue
+		}
+		pc := tar.Elements[0].PriceComponents[0]
+		if pc.Type != "ENERGY" || pc.Price != 0.4082 {
+			t.Errorf("%s price = %+v, want ENERGY 0.4082", c.EVSEUID, pc)
+		}
+	}
+}
