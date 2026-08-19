@@ -258,6 +258,55 @@ type afirRefillPointStatus struct {
 	Status      string        `xml:"status"`
 	UpdateRates []afirPrice   `xml:"energyRateUpdate>energyPrice"`
 	UpdateCurr  string        `xml:"energyRateUpdate>applicableCurrency"`
+	// Portugal's Mobi.E publishes the live ad-hoc price differently: instead of
+	// an energyRateUpdate it attaches a GeneralRateInformation to each
+	// electricEnergyMixOverride, priced with the DATEX II pricingPolicy
+	// vocabulary. One override per price dimension (energy / time / session), so
+	// a point's full tariff is the set of them.
+	MixRates []afirMixRate `xml:"electricEnergyMixOverride>rates"`
+}
+
+// afirMixRate is one pricingPolicy + amount pair (Mobi.E encoding).
+type afirMixRate struct {
+	Currency string  `xml:"applicableCurrency"`
+	Policy   string  `xml:"energyPricingPolicy>pricingPolicy"`
+	Fee      float64 `xml:"energyPricingPolicy>minimumDeliveryFee"`
+}
+
+// mixComponents converts pricingPolicy-encoded rates into price components.
+//
+// Zero-valued policies are dropped rather than priced as free: a 0.00 fee in
+// this feed means "this dimension isn't charged / isn't published", and keeping
+// it would let a point with no published price at all rank as the cheapest
+// charger anywhere. A point whose every dimension is 0 therefore yields no
+// tariff and shows as unpriced.
+func mixComponents(rates []afirMixRate) []model.PriceComponent {
+	var comps []model.PriceComponent
+	for _, r := range rates {
+		if r.Fee <= 0 {
+			continue
+		}
+		switch strings.ToLower(r.Policy) {
+		case "priceperdeliveryunit": // per kWh
+			comps = append(comps, model.PriceComponent{Type: "ENERGY", Price: r.Fee})
+		case "priceperchargingtime", "priceperminute": // per minute -> our TIME is per hour
+			comps = append(comps, model.PriceComponent{Type: "TIME", Price: round1(r.Fee * 60)})
+		case "flatrate", "baseprice": // per session
+			comps = append(comps, model.PriceComponent{Type: "FLAT", Price: r.Fee})
+		default: // pricePerParkingTime, other -> not part of the charge price
+		}
+	}
+	return dedupeComponents(comps)
+}
+
+// mixCurrency returns the currency the mix rates are quoted in (EUR default).
+func mixCurrency(rates []afirMixRate) string {
+	for _, r := range rates {
+		if r.Currency != "" {
+			return r.Currency
+		}
+	}
+	return "EUR"
 }
 
 // afirReference is a DATEX II reference back to a static element. The id is
@@ -512,9 +561,18 @@ func (p afirStatusPub) each(fn func(id, status string, tariff *model.Tariff)) {
 				rates, curr = st.UpdateRates, st.UpdateCurr
 			}
 			var tariff *model.Tariff
-			if len(rates) > 0 {
+			switch {
+			case len(rates) > 0:
 				if t, ok := buildTariff(id, afirRate{Currency: curr, Prices: rates}); ok {
 					tariff = &t
+				}
+			case len(rps.MixRates) > 0: // Mobi.E pricingPolicy encoding
+				if comps := mixComponents(rps.MixRates); len(comps) > 0 {
+					tariff = &model.Tariff{
+						OCPIID:   id,
+						Currency: mixCurrency(rps.MixRates),
+						Elements: []model.TariffElement{{PriceComponents: comps}},
+					}
 				}
 			}
 			fn(id, statusVocab(rps.Status), tariff)

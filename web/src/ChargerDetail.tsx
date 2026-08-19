@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api, type Charger, type LiveStatus, type PricePoint, type ReportAgg, type ReportValue, type TariffComponent, type TariffElement, type TariffRestrictions } from './api'
-import { AvailBadge, availOf, ago, eur, plugLabel, sourceConfidence, REPORT_TYPES } from './ui'
+import { AvailBadge, availOf, ago, eur, money, plugLabel, sourceConfidence, REPORT_TYPES } from './ui'
 
 // Human text for a report's typed value (site hours / observed kW / €/kWh).
 function reportValueText(a: ReportAgg, t: TFunction): string {
@@ -22,16 +22,17 @@ function mins(seconds: number): number {
   return Math.round(seconds / 60)
 }
 // OCPI prices TIME/PARKING_TIME per hour; drivers think in €/min, so show both.
-function valueText(c: TariffComponent, t: TFunction): string {
+// The tariff's own currency is used: not every register publishes euros.
+function valueText(c: TariffComponent, t: TFunction, cur?: string): string {
   switch (c.type) {
-    case 'ENERGY': return `${eur(c.price)} ${t('unit.kwh')}`
-    case 'FLAT': return `${eur(c.price)} ${t('unit.session')}`
+    case 'ENERGY': return `${money(c.price, cur)} ${t('unit.kwh')}`
+    case 'FLAT': return `${money(c.price, cur)} ${t('unit.session')}`
     case 'TIME':
     case 'PARKING_TIME': {
-      const perMin = c.price > 0 ? ` (€${(c.price / 60).toFixed(2)}${t('unit.min')})` : ''
-      return `${eur(c.price)} ${t('unit.hour')}${perMin}`
+      const perMin = c.price > 0 ? ` (${money(c.price / 60, cur)}${t('unit.min')})` : ''
+      return `${money(c.price, cur)} ${t('unit.hour')}${perMin}`
     }
-    default: return eur(c.price)
+    default: return money(c.price, cur)
   }
 }
 function restrictionText(r: TariffRestrictions | undefined, t: TFunction): string {
@@ -255,6 +256,8 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
   const matrix = Object.entries(charger.comparable_prices).sort(([a], [b]) => a.localeCompare(b))
   const current = (history ?? []).find((h) => h.observed_to == null) ?? (history ?? [])[0] ?? null
   const elements = current?.price_components?.elements ?? []
+  // Components are shown in the currency they were published in (see money()).
+  const tariffCurrency = current?.price_components?.currency || current?.currency
   const hasIdle = elements.some((el) => el.price_components.some((c) => isIdle(c.type) && c.price > 0))
 
   return (
@@ -366,7 +369,7 @@ export function ChargerDetail({ charger, onClose }: { charger: Charger; onClose:
                     {uniqueComponents(el.price_components).map((c, j) => (
                       <tr key={j} className={isIdle(c.type) && c.price > 0 ? 'warn' : ''}>
                         <td>{t(`comp.${c.type}`, c.type)}</td>
-                        <td className="num">{valueText(c, t)}</td>
+                        <td className="num">{valueText(c, t, tariffCurrency)}</td>
                       </tr>
                     ))}
                   </tbody>

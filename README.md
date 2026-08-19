@@ -3,7 +3,8 @@
 Live at **[charging.appmire.be](https://charging.appmire.be)**.
 
 A service that ingests open EV-charging data from Belgium's National Access
-Point and answers:
+Point — and, from the same AFIR obligation, from the Dutch, German, French,
+Spanish, Portuguese, Finnish, Austrian, Polish and Swiss ones — and answers:
 
 1. **Where is the best-value *available* public charger near me?** — ranked by
    the real cost of *your* charge (energy + time + session fee) plus the
@@ -232,8 +233,11 @@ chargingctl sources set-token energyvision "$TOKEN" && chargingctl sources enabl
 |---|---|---|---|
 | **Road** | open OCPI 2.2.1 files | **live, no key** | ~7,700 connectors incl. ad-hoc prices; enabled by default |
 | **Monta** | AFIR list + per-EVSE API | **live** (key) | open locations; per-EVSE price/status crawl; `MONTA_CREDS` |
-| **EnergyVision** | OCPI 2.1.1/eMSP | pending | request a token, or run the OCPI handshake ([docs/ocpi.md](docs/ocpi.md)) |
-| **Eco-Movement** | commercial Data API | pending | has ad-hoc CPO prices (~36k connectors); token-gated, custom schema |
+| **EnergyVision** | DATEX II AFIR pair | **live** (key) | ~3,800 points with live availability + prices; `ENERGYVISION_TOKEN` |
+| **Eco-Movement** | NAP DATEX II | **live** (key) | ~36k connectors, coverage only (no price/status) |
+| **National feeds** | NAP bulk files | **live, no key** | NL DOT-NL, DE BNetzA, FR IRVE, ES DGT, PT Mobi.E, FI Fintraffic, CH SFOE — see [docs/sources.md](docs/sources.md) |
+| **AT E-Control** | keyed REST crawl | **live** (key) | ~38,600 EVSEs, live status + euro ad-hoc prices; `ECONTROL_APIKEY` (key is bound to our domain) |
+| **PL UDT EIPA** | national JSON files | **live** (key) | ~14,200 connectors, live status + **PLN** prices (not euro-comparable yet); `EIPA_TOKEN` |
 | any CPO | OCPI eMSP | ready | we can register + receive pushes ([docs/ocpi.md](docs/ocpi.md)) |
 
 Road + Monta already populate the map. To add a per-CPO OCPI source with a token:

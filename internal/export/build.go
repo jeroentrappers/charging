@@ -214,6 +214,20 @@ func countryAlpha3(c string) string {
 		return "DEU"
 	case "FR":
 		return "FRA"
+	case "ES":
+		return "ESP"
+	case "PT":
+		return "PRT"
+	case "FI":
+		return "FIN"
+	case "CH":
+		return "CHE"
+	case "DK":
+		return "DNK"
+	case "AT":
+		return "AUT"
+	case "PL":
+		return "POL"
 	default:
 		return ""
 	}

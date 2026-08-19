@@ -38,7 +38,7 @@ export async function geocode(query: string, signal?: AbortSignal): Promise<Plac
   url.searchParams.set('q', q)
   url.searchParams.set('format', 'jsonv2')
   url.searchParams.set('limit', '5')
-  url.searchParams.set('countrycodes', 'be,nl,fr,de,lu')
+  url.searchParams.set('countrycodes', 'be,nl,fr,de,lu,es,pt,fi,ch,dk,at,pl')
   url.searchParams.set('addressdetails', '0')
   const res = await fetch(url.toString(), {
     signal,

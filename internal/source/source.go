@@ -148,16 +148,134 @@ func Seeds() []store.CPO {
 		},
 		{
 			// 🇫🇷 FR consolidated IRVE (transport.data.gouv.fr) — national dataset,
-			// ~230k points, open GeoJSON (Licence Ouverte). LOCATION-ONLY: only a
-			// free-text tariff we ignore. ~585 MB → streamed, polled monthly.
+			// ~230k points, open GeoJSON (Licence Ouverte), plus the consolidated
+			// national DYNAMIC file (CSV, ~8 MB) joined on id_pdc_itinerance, which
+			// is the only availability France publishes. Still NO price: the static
+			// schema carries only a free-text tariff we ignore.
+			// The 585 MB static is streamed and cached in-process between passes,
+			// so the daily availability pass costs the small dynamic file.
+			// The dynamic URL is the proxy's NAMED slug: the dataset's
+			// /resources/<numeric-id>/download form just 302s here, and the number
+			// changes when the publisher re-uploads.
 			ID:          "irve",
 			Name:        "transport.data.gouv.fr (FR)",
-			OCPIBaseURL: "https://www.data.gouv.fr/api/1/datasets/r/7eee8f09-5d1b-4f48-a304-5e99e8da1e26",
+			OCPIBaseURL: "https://www.data.gouv.fr/api/1/datasets/r/7eee8f09-5d1b-4f48-a304-5e99e8da1e26|https://proxy.transport.data.gouv.fr/resource/consolidation-nationale-irve-dynamique",
 			SourceType:  "irve",
 			Country:     "FR",
-			PollCron:    "0 6 2 * *", // monthly
-			StatusCron:  "0 6 2 * *",
+			PollCron:    "0 6 2 * *",  // monthly identity refresh (the 585 MB base)
+			StatusCron:  "30 3 * * *", // daily — the dynamic file is rebuilt nightly (~00:45)
 			Enabled:     true,
+		},
+		{
+			// 🇪🇸 ES DGT/MITERD "electrolineras" — the Spanish NAP's AFIR
+			// publication: open DATEX II v3 (no key, CC-BY), ~12,350 sites /
+			// ~37,000 refill points / ~44,000 connectors, regenerated daily (~85 MB).
+			// LOCATION-ONLY: no ad-hoc price and no status publication exists yet.
+			// Same profile as Eco-Movement/Indigo, with two Spanish specifics the
+			// shared reader now handles — coordinates on coordinatesForDisplay, and
+			// the address as labelled free-text lines ("Dirección: …").
+			ID:          "es-dgt",
+			Name:        "DGT · Puntos de recarga (ES)",
+			OCPIBaseURL: "https://infocar.dgt.es/datex2/v3/miterd/EnergyInfrastructureTablePublication/electrolineras.xml",
+			SourceType:  "datex",
+			Country:     "ES",
+			PollCron:    "0 4 * * *", // daily, matching the publisher's 24h cadence
+			StatusCron:  "0 4 * * *", // no live status in this publication
+			Enabled:     true,        // open data, no key required
+		},
+		{
+			// 🇵🇹 PT Mobi.E — Portugal's single national charging network, published
+			// open (no key) on the NAP as an AFIR DATEX II table+status pair:
+			// ~8,200 sites / ~20,300 refill points, with LIVE STATUS and per-point
+			// AD-HOC PRICE. Mobi.E encodes the price differently from the other AFIR
+			// publishers (a pricingPolicy + fee per electricEnergyMixOverride rather
+			// than an energyRateUpdate), which the AFIR reader maps.
+			// The table is 187 MB, so the reader's 1h in-process cache carries it
+			// across the frequent status polls.
+			ID:          "pt-mobie",
+			Name:        "Mobi.E (PT)",
+			OCPIBaseURL: "https://pgm.mobie.pt/integration/nap/evChargingInfra|https://pgm.mobie.pt/integration/nap/evActualStatus",
+			SourceType:  "datex_afir",
+			Country:     "PT",
+			PollCron:    "0 4 * * *",    // daily price refresh
+			StatusCron:  "*/15 * * * *", // availability every 15 min (41 MB status feed)
+			Enabled:     true,           // open data, no key required
+		},
+		{
+			// 🇫🇮 FI Fintraffic AFIR — Finland's NAP collects the CPOs' OCPI and
+			// republishes it open (no key) as one national feed: ~3,800 locations /
+			// ~19,900 EVSEs with LIVE STATUS and structured AD-HOC TARIFFS,
+			// regenerated every minute. Prices are published net of VAT, so the
+			// adapter grosses them up to what a driver pays (see internal/fintraffic).
+			ID:          "fi-fintraffic",
+			Name:        "Fintraffic AFIR (FI)",
+			OCPIBaseURL: "https://afir.digitraffic.fi/api/charging-network/v1",
+			SourceType:  "fintraffic",
+			Country:     "FI",
+			PollCron:    "0 4 * * *",    // daily price refresh
+			StatusCron:  "*/10 * * * *", // availability: snapshots regenerate every minute; 10 min is plenty
+			Enabled:     true,           // open data, no key required
+		},
+		{
+			// 🇵🇱 PL UDT EIPA — the Polish national alternative-fuels register.
+			// Not DATEX/OCPI: five static JSON files plus a dynamic one carrying
+			// LIVE STATUS and AD-HOC PRICES. ~14,200 connectors on ~7,100 electric
+			// stations. The account token is the last path segment of each file URL
+			// (folded in by the adapter), and the register enforces 10 static
+			// downloads/hour and 240 dynamic ones, hence the cached static half.
+			// PRICES ARE IN PLN: they are stored as published, but a non-euro tariff
+			// gets no euro comparable price, so Polish chargers rank as unpriced
+			// until FX conversion exists (see processTariff).
+			ID:          "pl-eipa",
+			Name:        "UDT EIPA (PL)",
+			OCPIBaseURL: "https://eipa.udt.gov.pl/reader/export-data",
+			SourceType:  "eipa",
+			TokenEnv:    "EIPA_TOKEN",
+			Country:     "PL",
+			PollCron:    "0 4 * * *",    // daily: refreshes the static half + prices
+			StatusCron:  "*/10 * * * *", // 6 dynamic fetches/hour, well inside the 240/hour budget
+			Enabled:     true,           // polled once EIPA_TOKEN is set
+		},
+		{
+			// 🇦🇹 AT E-Control Ladestellenverzeichnis — the Austrian national
+			// register, and the only new source carrying BOTH live status and a
+			// structured ad-hoc price in euros (per kWh, per minute, start fee, and
+			// a blocking fee with a grace threshold).
+			// There is no bulk export: the API is walked operators → stations →
+			// points. Measured live, that is 1,113 operators and 14,679 active
+			// stations, so ONE pass is ~15,800 small requests — and status lives on
+			// the point payload, so availability cannot be refreshed any cheaper.
+			// Hence a daily price pass plus twice-daily availability (~3 crawls/day)
+			// with a modest 4 concurrent requests: E-Control publishes no rate limit,
+			// and until they tell us one, restraint beats being cut off. A bulk or
+			// DATEX II export (their NAP record mentions DATEX) would fix this
+			// properly — worth asking them for.
+			// The key is sent as an "Apikey" header AND validated against the
+			// request's Referer domain — see internal/econtrol.
+			ID:          "at-econtrol",
+			Name:        "E-Control Ladestellen (AT)",
+			OCPIBaseURL: "https://api.e-control.at/charge/1.0",
+			SourceType:  "econtrol",
+			TokenEnv:    "ECONTROL_APIKEY",
+			Country:     "AT",
+			PollCron:    "0 4 * * *",    // daily price refresh (re-walks the whole tree)
+			StatusCron:  "0 */12 * * *", // twice daily — each pass re-reads all ~15k stations
+			Enabled:     true,           // polled once ECONTROL_APIKEY is set
+		},
+		{
+			// 🇨🇭 CH SFOE ich-tanke-strom — the Swiss federal charging register.
+			// Switzerland is outside AFIR, so this is OICP (Hubject) JSON rather
+			// than DATEX II/OCPI: ~19,100 EVSEs of which ~14,400 are publicly
+			// accessible (restricted-access points are dropped), with LIVE STATUS
+			// and NO price. Open, no key; licence O-By-Ask (attribution).
+			ID:          "ch-sfoe",
+			Name:        "SFOE ich-tanke-strom (CH)",
+			OCPIBaseURL: "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json|https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/status/ch.bfe.ladestellen-elektromobilitaet.json",
+			SourceType:  "oicp",
+			Country:     "CH",
+			PollCron:    "0 5 * * *",    // daily identity refresh (no price to poll)
+			StatusCron:  "*/15 * * * *", // availability every 15 min (1.2 MB + 0.2 MB)
+			Enabled:     true,           // open data, no key required
 		},
 		{
 			// 🇧🇪 Group Indigo (parking operator) — open static DATEX II (schema 3)

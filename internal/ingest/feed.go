@@ -12,11 +12,15 @@ import (
 
 	"github.com/appmire/charging/internal/bnetza"
 	"github.com/appmire/charging/internal/datex"
+	"github.com/appmire/charging/internal/econtrol"
+	"github.com/appmire/charging/internal/eipa"
+	"github.com/appmire/charging/internal/fintraffic"
 	"github.com/appmire/charging/internal/irve"
 	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/monta"
 	"github.com/appmire/charging/internal/normalize"
 	"github.com/appmire/charging/internal/ocpi"
+	"github.com/appmire/charging/internal/oicp"
 	"github.com/appmire/charging/internal/source"
 )
 
@@ -47,7 +51,29 @@ func feedFor(src source.Source) feed {
 	case "bnetza":
 		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: bnetza.Fetch}
 	case "irve":
+		// FR: "<static-geojson>" alone, or "<static-geojson>|<dynamic-csv>" to
+		// overlay the national dynamic file's availability on the static base.
+		if st, dyn, ok := strings.Cut(src.CPO.OCPIBaseURL, "|"); ok {
+			return irveFeed{
+				cpoID:      src.CPO.ID,
+				staticURL:  strings.TrimSpace(st),
+				dynamicURL: strings.TrimSpace(dyn),
+				token:      src.Token,
+			}
+		}
 		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: irve.Fetch}
+	case "oicp":
+		// CH SFOE ich-tanke-strom: OICP JSON pair "<data>|<status>", open.
+		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: oicp.Fetch}
+	case "fintraffic":
+		// FI Fintraffic AFIR: OCPI-shaped JSON (locations + statuses + tariffs).
+		return fintrafficFeed{cpoID: src.CPO.ID, client: fintraffic.New(src.CPO.OCPIBaseURL)}
+	case "eipa":
+		// PL UDT EIPA: five static JSON files + one dynamic, token in the path.
+		return eipaFeed{cpoID: src.CPO.ID, client: eipa.New(src.CPO.OCPIBaseURL, src.Token)}
+	case "econtrol":
+		// AT E-Control: keyed REST crawl (operators -> stations -> points).
+		return econtrolFeed{cpoID: src.CPO.ID, country: countryOf(src), client: econtrol.New(src.CPO.OCPIBaseURL, src.Token)}
 	case "ocpi_file":
 		return fileFeed{cpoID: src.CPO.ID, base: src.CPO.OCPIBaseURL, token: src.Token}
 	case "ocpi_file_gz":
@@ -383,4 +409,258 @@ func (f montaFeed) Availability(ctx context.Context) ([]model.Connector, error) 
 func (f montaFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
 	conns, err := f.client.Locations(ctx, f.cpoID, f.country)
 	return conns, map[string]model.Tariff{}, err
+}
+
+// ---- FI Fintraffic AFIR (OCPI-shaped national JSON) ----
+// Fintraffic republishes the Finnish CPOs' OCPI as one open national feed:
+// locations, per-EVSE statuses and ad-hoc tariffs on three endpoints. The
+// adapter hands us OCPI wire types, so normalization is the shared OCPI path.
+
+type fintrafficFeed struct {
+	cpoID  string
+	client *fintraffic.Client
+}
+
+func (f fintrafficFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	locs, _, err := f.client.Snapshot(ctx, false) // no tariffs on the light path
+	if err != nil {
+		return nil, err
+	}
+	return normalize.FromOCPI(f.cpoID, locs, nil).Connectors, nil
+}
+
+func (f fintrafficFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	locs, tars, err := f.client.Snapshot(ctx, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	r := normalize.FromOCPI(f.cpoID, locs, tars)
+	return r.Connectors, r.Tariffs, nil
+}
+
+// ---- FR IRVE static + national dynamic file ----
+// The static consolidated GeoJSON carries identity (and is ~585 MB); the
+// consolidated dynamic CSV (~8 MB) carries operational state per point de
+// charge, joined on id_pdc_itinerance. Availability passes therefore reuse a
+// cached parse of the static base and only re-fetch the small dynamic file; the
+// price pass (monthly) always re-fetches the static and refreshes that cache.
+
+type irveFeed struct {
+	cpoID      string
+	staticURL  string
+	dynamicURL string
+	token      string
+}
+
+// irveStaticTTL caps how long an availability pass may reuse the cached static
+// base. The identity data changes slowly and the authoritative refresh is the
+// monthly price pass, so a week keeps daily availability cheap (one 8 MB file)
+// without letting the base drift for long.
+const irveStaticTTL = 7 * 24 * time.Hour
+
+var (
+	irveStaticMu    sync.Mutex
+	irveStaticCache = map[string]irveStaticEntry{}
+)
+
+type irveStaticEntry struct {
+	fetched time.Time
+	conns   []model.Connector
+}
+
+// Availability is the pass the dynamic file exists for, so a failure to read it
+// fails the pass rather than quietly reporting the static base as unchanged.
+func (f irveFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	return f.load(ctx, false, true)
+}
+
+// Full refreshes identity, which is worth ingesting on its own: a dynamic-file
+// failure only costs the status overlay, so it does not fail the pass.
+func (f irveFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	conns, err := f.load(ctx, true, false)
+	// France publishes no structured price, so the tariff map stays empty.
+	return conns, map[string]model.Tariff{}, err
+}
+
+// load returns the static base with the dynamic file's statuses overlaid.
+func (f irveFeed) load(ctx context.Context, fresh, dynamicRequired bool) ([]model.Connector, error) {
+	conns, err := f.static(ctx, fresh)
+	if err != nil {
+		return nil, err
+	}
+	if f.dynamicURL == "" {
+		return conns, nil
+	}
+	statuses, err := irve.FetchDynamic(ctx, f.dynamicURL, f.token)
+	if err != nil {
+		if dynamicRequired {
+			return nil, fmt.Errorf("irve dynamic %s: %w", f.cpoID, err)
+		}
+		return conns, nil
+	}
+	for i := range conns {
+		if st, ok := statuses[conns[i].EVSEUID]; ok {
+			conns[i].EVSEStatus = st
+		}
+	}
+	return conns, nil
+}
+
+// static returns a copy of the parsed static base, re-fetching when asked for a
+// fresh read or when the cached copy has aged past irveStaticTTL.
+func (f irveFeed) static(ctx context.Context, fresh bool) ([]model.Connector, error) {
+	irveStaticMu.Lock()
+	e, ok := irveStaticCache[f.staticURL]
+	irveStaticMu.Unlock()
+	if fresh || !ok || time.Since(e.fetched) > irveStaticTTL {
+		conns, _, err := irve.Fetch(ctx, f.cpoID, f.staticURL, f.token)
+		if err != nil {
+			return nil, fmt.Errorf("irve static %s: %w", f.cpoID, err)
+		}
+		e = irveStaticEntry{fetched: time.Now(), conns: conns}
+		irveStaticMu.Lock()
+		irveStaticCache[f.staticURL] = e
+		irveStaticMu.Unlock()
+	}
+	return append([]model.Connector(nil), e.conns...), nil
+}
+
+// countryOf returns the source's ISO country code for feeds whose API is
+// country-scoped, defaulting to AT for the Austrian register.
+func countryOf(src source.Source) string {
+	if c := strings.ToUpper(strings.TrimSpace(src.CPO.Country)); c != "" {
+		return c
+	}
+	return "AT"
+}
+
+// ---- PL UDT EIPA (five static JSON files + one dynamic) ----
+// EIPA enforces per-account download limits — 10/hour for the static files and
+// 240/hour for the dynamic one — so the static half is parsed once and reused,
+// and each availability pass costs a single dynamic fetch.
+
+type eipaFeed struct {
+	cpoID  string
+	client *eipa.Client
+}
+
+// eipaStaticTTL keeps the static half well inside the 10/hour budget while still
+// picking up new sites daily. A price pass always refreshes it.
+const eipaStaticTTL = 12 * time.Hour
+
+var (
+	eipaStaticMu    sync.Mutex
+	eipaStaticCache = map[string]eipaStaticEntry{}
+)
+
+type eipaStaticEntry struct {
+	fetched time.Time
+	static  *eipa.Static
+}
+
+func (f eipaFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	conns, _, err := f.load(ctx, false)
+	return conns, err
+}
+
+func (f eipaFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	return f.load(ctx, true)
+}
+
+func (f eipaFeed) load(ctx context.Context, fresh bool) ([]model.Connector, map[string]model.Tariff, error) {
+	st, err := f.static(ctx, fresh)
+	if err != nil {
+		return nil, nil, fmt.Errorf("eipa static %s: %w", f.cpoID, err)
+	}
+	dyn, err := f.client.Dynamic(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("eipa dynamic %s: %w", f.cpoID, err)
+	}
+	conns, tariffs := eipa.Build(f.cpoID, st, dyn, time.Now())
+	return conns, tariffs, nil
+}
+
+func (f eipaFeed) static(ctx context.Context, fresh bool) (*eipa.Static, error) {
+	key := f.cpoID
+	eipaStaticMu.Lock()
+	e, ok := eipaStaticCache[key]
+	eipaStaticMu.Unlock()
+	if fresh || !ok || time.Since(e.fetched) > eipaStaticTTL {
+		st, err := f.client.Static(ctx)
+		if err != nil {
+			return nil, err
+		}
+		e = eipaStaticEntry{fetched: time.Now(), static: st}
+		eipaStaticMu.Lock()
+		eipaStaticCache[key] = e
+		eipaStaticMu.Unlock()
+	}
+	return e.static, nil
+}
+
+// ---- AT E-Control (keyed REST crawl) ----
+// There is no bulk export: a pass walks operators -> stations -> points, which is
+// thousands of small requests. The operator/station tree changes slowly, so it is
+// cached and only the (much larger) point level is re-read for availability.
+
+type econtrolFeed struct {
+	cpoID   string
+	country string
+	client  *econtrol.Client
+}
+
+// econtrolTreeTTL is how long the operator/station tree may be reused. It saves
+// the ~1,100 operator requests on every availability pass; new sites appear with
+// the daily price pass, which always re-walks it.
+const econtrolTreeTTL = 24 * time.Hour
+
+var (
+	econtrolTreeMu    sync.Mutex
+	econtrolTreeCache = map[string]econtrolTreeEntry{}
+)
+
+type econtrolTreeEntry struct {
+	fetched  time.Time
+	stations []econtrol.Station
+}
+
+func (f econtrolFeed) Availability(ctx context.Context) ([]model.Connector, error) {
+	conns, _, err := f.load(ctx, false)
+	return conns, err
+}
+
+func (f econtrolFeed) Full(ctx context.Context) ([]model.Connector, map[string]model.Tariff, error) {
+	return f.load(ctx, true)
+}
+
+// load walks the register. Status and price both live on the point payload, so
+// there is no cheaper path for availability than re-reading the points.
+func (f econtrolFeed) load(ctx context.Context, fresh bool) ([]model.Connector, map[string]model.Tariff, error) {
+	stations, err := f.stations(ctx, fresh)
+	if err != nil {
+		return nil, nil, fmt.Errorf("econtrol stations %s: %w", f.cpoID, err)
+	}
+	conns, tariffs, err := f.client.Points(ctx, f.cpoID, f.country, stations)
+	if err != nil {
+		return nil, nil, fmt.Errorf("econtrol points %s: %w", f.cpoID, err)
+	}
+	return conns, tariffs, nil
+}
+
+func (f econtrolFeed) stations(ctx context.Context, fresh bool) ([]econtrol.Station, error) {
+	key := f.cpoID + "/" + f.country
+	econtrolTreeMu.Lock()
+	e, ok := econtrolTreeCache[key]
+	econtrolTreeMu.Unlock()
+	if fresh || !ok || time.Since(e.fetched) > econtrolTreeTTL {
+		stations, err := f.client.Stations(ctx, f.country)
+		if err != nil {
+			return nil, err
+		}
+		e = econtrolTreeEntry{fetched: time.Now(), stations: stations}
+		econtrolTreeMu.Lock()
+		econtrolTreeCache[key] = e
+		econtrolTreeMu.Unlock()
+	}
+	return e.stations, nil
 }

@@ -36,6 +36,76 @@ type site struct {
 	City       string    `xml:"locationReference>_pointLocationExtension>facilityLocation>address>city"`
 	Operator   string    `xml:"operator>name>values>value"`
 	Stations   []station `xml:"energyInfrastructureStation"`
+
+	// The Spanish NAP (DGT/MITERD) publishes the same profile but puts the site
+	// coordinates on a PointLocation's coordinatesForDisplay, and the address
+	// under _locationReferenceExtension as free-text lines ("Dirección: …",
+	// "Municipio: …"). Used as fallbacks when the paths above are empty.
+	DispLatitude  float64    `xml:"locationReference>coordinatesForDisplay>latitude"`
+	DispLongitude float64    `xml:"locationReference>coordinatesForDisplay>longitude"`
+	ExtPostalCode string     `xml:"locationReference>_locationReferenceExtension>facilityLocation>address>postcode"`
+	ExtLines      []textLine `xml:"locationReference>_locationReferenceExtension>facilityLocation>address>addressLine"`
+}
+
+// textLine is one DATEX II AddressLine: a type plus a multilingual text value.
+type textLine struct {
+	Type string `xml:"type"`
+	Text string `xml:"text>values>value"`
+}
+
+func (s site) lat() float64 {
+	if s.Latitude != 0 {
+		return s.Latitude
+	}
+	return s.DispLatitude
+}
+
+func (s site) lon() float64 {
+	if s.Longitude != 0 {
+		return s.Longitude
+	}
+	return s.DispLongitude
+}
+
+func (s site) postcode() string {
+	if s.PostalCode != "" {
+		return s.PostalCode
+	}
+	return s.ExtPostalCode
+}
+
+// labelledLine returns the text of the first address line whose value starts
+// with one of the given label prefixes, with the label stripped. The Spanish
+// NAP types every line "generalTextLine" and instead prefixes the value with a
+// Spanish label, so the label is the only way to tell street from municipality.
+func (s site) labelledLine(labels ...string) string {
+	for _, l := range s.ExtLines {
+		v := strings.TrimSpace(l.Text)
+		low := strings.ToLower(v)
+		for _, lab := range labels {
+			if !strings.HasPrefix(low, lab) {
+				continue
+			}
+			// Drop everything up to the label's colon; matching only the ASCII
+			// stem of the label keeps accents out of the comparison.
+			if _, rest, ok := strings.Cut(v, ":"); ok {
+				return strings.TrimSpace(rest)
+			}
+			return strings.TrimSpace(v[len(lab):])
+		}
+	}
+	return ""
+}
+
+// street returns the site's street address from the labelled address lines
+// ("Dirección: Calle Marea Baja, 16"); empty when the feed carries none.
+func (s site) street() string { return s.labelledLine("direcci") }
+
+func (s site) city() string {
+	if s.City != "" {
+		return s.City
+	}
+	return s.labelledLine("municipio")
 }
 
 type station struct {
@@ -45,9 +115,26 @@ type station struct {
 type refillPoint struct {
 	ID            string  `xml:"id,attr"`
 	ExternalID    string  `xml:"externalIdentifier"`
+	Name          string  `xml:"name>values>value"`
 	ConnectorType string  `xml:"connector>connectorType"`
 	ChargingMode  string  `xml:"connector>chargingMode"`     // mode3AC3p (AC), mode4 (DC), ...
 	MaxPowerW     float64 `xml:"connector>maxPowerAtSocket"` // watts
+}
+
+// uid picks the most stable identifier for a refill point. externalIdentifier
+// is the publisher's roaming id and wins (Eco-Movement, Indigo). Failing that,
+// a name that looks like an EVSE id is preferred over the id attribute: the
+// Spanish NAP carries no externalIdentifier and its id attribute is an opaque
+// token, while the name holds the real EVSE id ("ES*WEN*EWSMALAGA04DC2") — the
+// only value we can trust to stay the same across daily republications.
+func (rp refillPoint) uid() string {
+	if rp.ExternalID != "" {
+		return rp.ExternalID
+	}
+	if n := strings.TrimSpace(rp.Name); strings.Contains(n, "*") {
+		return n
+	}
+	return rp.ID
 }
 
 // Fetch retrieves and parses a DATEX II locations publication.
@@ -91,23 +178,19 @@ func Parse(cpoID string, data []byte) ([]model.Connector, map[string]model.Tarif
 	for _, s := range pub.Sites {
 		for _, st := range s.Stations {
 			for _, rp := range st.RefillPoints {
-				uid := rp.ExternalID
-				if uid == "" {
-					uid = rp.ID
-				}
 				conns = append(conns, model.Connector{
 					CPOID:       cpoID,
-					EVSEUID:     uid,
+					EVSEUID:     rp.uid(),
 					ConnectorID: "1",
-					Lat:         s.Latitude,
-					Lon:         s.Longitude,
+					Lat:         s.lat(),
+					Lon:         s.lon(),
 					PowerKW:     round1(rp.MaxPowerW / 1000),
 					PlugType:    rp.ConnectorType,
 					CurrentType: currentType(rp.ChargingMode),
 					Name:        name(s),
 					Address:     address(s),
-					PostalCode:  s.PostalCode,
-					City:        s.City,
+					PostalCode:  s.postcode(),
+					City:        s.city(),
 					EVSEStatus:  "", // not in this DATEX profile
 				})
 			}
@@ -138,13 +221,16 @@ func name(s site) string {
 
 func address(s site) string {
 	parts := []string{}
-	if s.PostalCode != "" {
-		parts = append(parts, s.PostalCode)
+	if st := s.street(); st != "" {
+		parts = append(parts, st+",")
 	}
-	if s.City != "" {
-		parts = append(parts, s.City)
+	if pc := s.postcode(); pc != "" {
+		parts = append(parts, pc)
 	}
-	return strings.Join(parts, " ")
+	if c := s.city(); c != "" {
+		parts = append(parts, c)
+	}
+	return strings.TrimSuffix(strings.Join(parts, " "), ",")
 }
 
 func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }

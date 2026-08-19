@@ -15,6 +15,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -251,7 +252,7 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 // Push/delta (mobilithek) and crawl (monta) feeds do not, so they are excluded.
 func fullSnapshotSource(t string) bool {
 	switch t {
-	case "ocpi", "ocpi_file", "ocpi_file_gz", "datex", "datex_afir", "bnetza", "irve":
+	case "ocpi", "ocpi_file", "ocpi_file_gz", "datex", "datex_afir", "bnetza", "irve", "oicp", "fintraffic", "eipa", "econtrol":
 		return true
 	default:
 		return false
@@ -392,6 +393,13 @@ func (e *Engine) RecordLive(ctx context.Context, chargerID int64, conn model.Con
 // Honesty: a missing tariff_id (or a tariff absent from this feed) is treated
 // as "unknown" and leaves history untouched — we do NOT close the open version,
 // since a transient feed gap must not look like a price withdrawal.
+// comparableCurrency reports whether a tariff's prices can go straight into the
+// euro-denominated comparable price. An empty currency means the source did not
+// state one; every such feed we ingest quotes euros.
+func comparableCurrency(c string) bool {
+	return c == "" || strings.EqualFold(c, "EUR")
+}
+
 func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connector, tariffs map[string]model.Tariff) (bool, error) {
 	if conn.TariffID == "" {
 		return false, nil
@@ -415,14 +423,22 @@ func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connect
 		return false, fmt.Errorf("marshal components: %w", err)
 	}
 
-	// Headline (default sort) + the per-session comparison matrix.
+	// Headline (default sort) + the per-session comparison matrix. Both are euro
+	// amounts (comparable_price_eur) and nothing converts currencies, so a
+	// non-euro tariff is stored with its components and currency but WITHOUT a
+	// comparable price: a Polish 2.40 PLN/kWh tariff ranked as 2.40 EUR/kWh would
+	// misprice it by more than 4x. Such chargers show their published tariff and
+	// sort as unpriced until FX conversion exists.
 	var comparable *float64
-	if c, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle); ok {
-		comparable = &c
-	}
-	pricesJSON, err := json.Marshal(pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle))
-	if err != nil {
-		return false, fmt.Errorf("marshal prices: %w", err)
+	pricesJSON := []byte("{}")
+	if comparableCurrency(tar.Currency) {
+		if c, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle); ok {
+			comparable = &c
+		}
+		var err error
+		if pricesJSON, err = json.Marshal(pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)); err != nil {
+			return false, fmt.Errorf("marshal prices: %w", err)
+		}
 	}
 
 	var srcUpdated *time.Time

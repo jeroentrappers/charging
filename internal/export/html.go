@@ -109,6 +109,20 @@ func countryName(code string) string {
 		return "🇩🇪 Germany"
 	case "FR":
 		return "🇫🇷 France"
+	case "ES":
+		return "🇪🇸 Spain"
+	case "PT":
+		return "🇵🇹 Portugal"
+	case "FI":
+		return "🇫🇮 Finland"
+	case "CH":
+		return "🇨🇭 Switzerland"
+	case "DK":
+		return "🇩🇰 Denmark"
+	case "AT":
+		return "🇦🇹 Austria"
+	case "PL":
+		return "🇵🇱 Poland"
 	case "XX":
 		return "Other / unknown"
 	}

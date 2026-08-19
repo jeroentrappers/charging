@@ -138,3 +138,71 @@ note on terms would be much appreciated.
 Best regards,
 Jeroen Trappers
 Software engineer at Appmire — jeroen@appmire.be — 0497053310
+
+---
+
+## 6. Austria E-Control — via https://admin.ladestellen.at/#/api/registrieren
+
+Austria's national charging register is the one remaining source that publishes
+**live status AND ad-hoc price** but needs a registration (per its NAP metadata
+on mobilitydata.gv.at; `api.e-control.at/charge/1.0/…` answers 401 without a
+key). Self-service registration first — use this only if the form stalls or the
+scope is unclear. German, since the register is German-language.
+
+**Subject:** API-Zugang zum Ladestellenverzeichnis (DATEX II) — AFIR Art. 20
+
+Sehr geehrtes E-Control-Team,
+
+wir betreiben einen Verbraucherdienst, der Preis und Verfügbarkeit öffentlicher
+Ladepunkte in Europa vergleicht (charging.appmire.be), und möchten das
+**nationale Ladepunkteregister** über Ihre API einbinden. Laut dem Datensatz auf
+mobilitydata.gv.at wird es als **DATEX II v3.2** bereitgestellt und enthält
+sowohl den **Status (frei/besetzt)** als auch den **Ad-hoc-Preis**.
+
+Dürften wir Sie um Folgendes bitten:
+
+- einen API-Zugang bzw. die Freigabe unserer Registrierung über
+  admin.ladestellen.at;
+- die Endpunkte der statischen Tabelle und der Statuspublikation
+  (EnergyInfrastructureTablePublication / …StatusPublication);
+- Hinweise zu Abrufintervallen, die wir einhalten sollen.
+
+Wir lesen DATEX II v3 bereits für mehrere nationale Zugangspunkte (BE, ES, PT)
+und können das Format unverändert verarbeiten. Gemäß AFIR Artikel 20 ist der
+Zugang unentgeltlich und nichtdiskriminierend.
+
+Vielen Dank und freundliche Grüße,
+Jeroen Trappers
+Software engineer at Appmire — jeroen@appmire.be — 0497053310
+
+---
+
+## 7. Poland UDT (EIPA) — eipa@udt.gov.pl
+
+EIPA's `dynamic.json` carries **status + tariffs in PLN**; access needs a
+registration and comes with an hourly download limit.
+
+**Subject:** EIPA open data access — charging point status and prices (AFIR Art. 20)
+
+Dear UDT / EIPA team,
+
+We run a consumer service comparing the price and availability of public EV
+chargers across Europe (charging.appmire.be), built entirely on open national
+access point data. We would like to include Poland via the **EIPA** open data
+files documented at `https://eipa.udt.gov.pl/reader/docs` — in particular
+`station.json`, `point.json` and `dynamic.json` (status and current tariffs).
+
+Could you please:
+
+- register us for file access and confirm how to authenticate;
+- confirm the hourly download limit you would like us to stay within, and how
+  often `dynamic.json` is regenerated;
+- confirm the licence/attribution you require.
+
+If a DATEX II endpoint is or becomes available alongside the JSON files (we saw
+the `EVChargingInfra_v3.2` schema published on the site), we can consume that
+format directly as well.
+
+Thank you very much,
+Jeroen Trappers
+Software engineer at Appmire — jeroen@appmire.be — 0497053310

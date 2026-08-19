@@ -7,13 +7,16 @@
 // time rather than loaded whole. Each feature is one point de charge and maps
 // to exactly one connector.
 //
-// This publication is LOCATION-ONLY: it has no structured price (only a
-// free-text `tarification` field, which we ignore) and no live status. Parsed
-// connectors therefore carry no tariff and unknown availability.
+// The static publication has NO structured price (only a free-text
+// `tarification` field, which we ignore) and no status. Availability comes from
+// a second national file — the consolidated *dynamic* base, one CSV row per
+// point de charge keyed by the same `id_pdc_itinerance` — read by ParseDynamic
+// below. So France is coverage + availability, still no price.
 package irve
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +27,14 @@ import (
 
 	"github.com/appmire/charging/internal/model"
 )
+
+// DynamicMaxAge bounds how old a row in the dynamic file may be and still be
+// treated as a statement about availability. The consolidated dynamic file is
+// rebuilt daily but carries every point any publisher ever reported, so a large
+// share of its rows are months stale — reporting those as "libre" would invent
+// availability. Rows older than this are ignored, leaving the point's status
+// unknown.
+const DynamicMaxAge = 36 * time.Hour
 
 // ---- GeoJSON feature structs ----
 
@@ -262,3 +273,148 @@ func truthy(s string) bool {
 }
 
 func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }
+
+// ---- Dynamic availability (consolidated national file) ----
+//
+// France's NAP publishes a second consolidated base alongside the static one:
+// one CSV row per point de charge with its operational state, keyed by
+// `id_pdc_itinerance` — the same identifier the static publication uses, so the
+// two join directly. The file carries no price (France still publishes ad-hoc
+// price only as free text in the static schema).
+//
+// Two properties of the file shape the reader: rows repeat (several publishers
+// report the same point, so the freshest row wins) and many rows are long stale
+// (see DynamicMaxAge).
+
+// FetchDynamic retrieves the consolidated dynamic CSV and returns one status per
+// point de charge, in our EVSE status vocabulary, keyed by id_pdc_itinerance.
+func FetchDynamic(ctx context.Context, url, token string) (map[string]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	// Deliberately permissive: the NAP's /resources/<id>/download endpoint answers
+	// 500 to a narrow "Accept: text/csv" (it 302s to the proxy below, which is
+	// what we point at anyway).
+	req.Header.Set("Accept", "*/*")
+	resp, err := (&http.Client{Timeout: 180 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("irve dynamic http %d", resp.StatusCode)
+	}
+	return ParseDynamic(io.LimitReader(resp.Body, 1<<30), time.Now())
+}
+
+// ParseDynamic reads the dynamic CSV, keeping for each point the freshest row
+// that is not older than DynamicMaxAge relative to now.
+func ParseDynamic(r io.Reader, now time.Time) (map[string]string, error) {
+	cr := csv.NewReader(r)
+	cr.FieldsPerRecord = -1 // tolerate trailing/extra columns being added upstream
+	head, err := cr.Read()
+	if err != nil {
+		return nil, fmt.Errorf("irve dynamic: read header: %w", err)
+	}
+	col := map[string]int{}
+	for i, h := range head {
+		col[strings.TrimSpace(strings.ToLower(h))] = i
+	}
+	idIx, okID := col["id_pdc_itinerance"]
+	etatIx, okEtat := col["etat_pdc"]
+	occIx, okOcc := col["occupation_pdc"]
+	tsIx, okTS := col["horodatage"]
+	if !okID || !okEtat || !okOcc || !okTS {
+		return nil, fmt.Errorf("irve dynamic: unexpected columns %v", head)
+	}
+
+	type row struct {
+		status string
+		at     time.Time
+	}
+	best := map[string]row{}
+	cutoff := now.Add(-DynamicMaxAge)
+	for {
+		rec, err := cr.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("irve dynamic: %w", err)
+		}
+		if len(rec) <= max4(idIx, etatIx, occIx, tsIx) {
+			continue
+		}
+		id := strings.TrimSpace(rec[idIx])
+		if id == "" {
+			continue
+		}
+		at, ok := parseHorodatage(rec[tsIx])
+		if !ok || at.Before(cutoff) {
+			continue // no usable timestamp, or too old to claim anything
+		}
+		if prev, seen := best[id]; seen && !at.After(prev.at) {
+			continue // a fresher row for this point already won
+		}
+		best[id] = row{status: dynamicStatus(rec[etatIx], rec[occIx]), at: at}
+	}
+
+	out := make(map[string]string, len(best))
+	for id, r := range best {
+		out[id] = r.status
+	}
+	return out, nil
+}
+
+// dynamicStatus maps the French state pair onto our EVSE status vocabulary.
+// Operational state wins: a point out of service is unusable regardless of what
+// the occupancy column claims.
+func dynamicStatus(etat, occupation string) string {
+	switch strings.ToLower(strings.TrimSpace(etat)) {
+	case "hors_service":
+		return "OUTOFORDER"
+	}
+	switch strings.ToLower(strings.TrimSpace(occupation)) {
+	case "libre":
+		return "AVAILABLE"
+	case "occupe", "reserve":
+		return "CHARGING"
+	}
+	return "UNKNOWN"
+}
+
+// parseHorodatage accepts the timestamp spellings seen in the file: RFC 3339,
+// and the "2026-07-13 13:42:40+00:00" / fractional-second variants the
+// consolidation emits.
+func parseHorodatage(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02 15:04:05Z07:00",
+		"2006-01-02 15:04:05.999999Z07:00",
+		"2006-01-02T15:04:05.999999Z07:00",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func max4(a, b, c, d int) int {
+	m := a
+	for _, v := range []int{b, c, d} {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}

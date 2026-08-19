@@ -11,6 +11,24 @@ export function eur(n: number | null | undefined): string {
   return n == null ? '—' : '€' + n.toFixed(2)
 }
 
+// Symbols for the currencies our sources publish in. Most quote euros, but some
+// national registers do not (Poland's EIPA publishes PLN), and printing those
+// with a € sign would misstate the price by the exchange rate.
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  EUR: '€', PLN: 'zł', DKK: 'kr', SEK: 'kr', NOK: 'kr', CHF: 'CHF', CZK: 'Kč', HUF: 'Ft', GBP: '£',
+}
+
+// money renders an amount in the currency it was published in. A trailing symbol
+// reads more naturally for the non-euro ones ("2.19 zł"), which is also how those
+// currencies are normally written.
+export function money(n: number | null | undefined, currency?: string): string {
+  if (n == null) return '—'
+  const code = (currency || 'EUR').toUpperCase()
+  if (code === 'EUR') return '€' + n.toFixed(2)
+  const sym = CURRENCY_SYMBOLS[code]
+  return sym ? `${n.toFixed(2)} ${sym}` : `${n.toFixed(2)} ${code}`
+}
+
 export function km(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`
 }

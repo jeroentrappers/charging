@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type SourceHealth, type StatusResponse } from './api'
 
-// Location-only registers (no live status, no price feed) — their missing
+// Location-only sources (no live status, no price feed) — their missing
 // freshness is expected, not a fault, so render it neutral. Mirrors the server's
-// old dashboard logic.
-const LOCATION_ONLY = new Set(['bnetza', 'irve'])
+// old dashboard logic. Keyed by source id where a type is shared: `datex` covers
+// both the Spanish register (location-only) and feeds that carry more.
+const LOCATION_ONLY_TYPES = new Set(['bnetza'])
+const LOCATION_ONLY_IDS = new Set(['es-dgt'])
 
 function mode(s: SourceHealth): 'push' | 'poll' | 'off' {
   if (s.type === 'mobilithek') return 'push'
@@ -160,7 +162,7 @@ export function StatusPage() {
             <tbody>
               {rows.map((s) => {
                 const m = mode(s)
-                const locOnly = LOCATION_ONLY.has(s.type)
+                const locOnly = LOCATION_ONLY_TYPES.has(s.type) || LOCATION_ONLY_IDS.has(s.id)
                 // A source whose polls succeed but which yields zero chargers
                 // (e.g. a feed still missing coordinates) is empty by upstream
                 // content, not broken — render its freshness neutral.
