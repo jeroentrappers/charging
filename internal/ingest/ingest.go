@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/appmire/charging/internal/fx"
 	"github.com/appmire/charging/internal/model"
 	"github.com/appmire/charging/internal/pricing"
 	"github.com/appmire/charging/internal/source"
@@ -39,6 +40,11 @@ type Engine struct {
 	Log     *slog.Logger
 	Vehicle pricing.Vehicle // reference car for the comparable session prices
 	Limit   int             // max concurrent sources; 0 -> NumCPU
+
+	// FX converts non-euro tariffs into the euro comparable price. Nil means no
+	// conversion is available, in which case a non-euro tariff is stored with its
+	// components but without a comparable price (see processTariff).
+	FX *fx.Cache
 
 	// OnRun, if set, is called after each pass for metrics. Safe for nil.
 	OnRun func(cpoID, kind string, rowsSeen, changes int, dur time.Duration, err error)
@@ -393,11 +399,15 @@ func (e *Engine) RecordLive(ctx context.Context, chargerID int64, conn model.Con
 // Honesty: a missing tariff_id (or a tariff absent from this feed) is treated
 // as "unknown" and leaves history untouched — we do NOT close the open version,
 // since a transient feed gap must not look like a price withdrawal.
-// comparableCurrency reports whether a tariff's prices can go straight into the
-// euro-denominated comparable price. An empty currency means the source did not
-// state one; every such feed we ingest quotes euros.
-func comparableCurrency(c string) bool {
-	return c == "" || strings.EqualFold(c, "EUR")
+// toEUR returns the factor that turns an amount in the tariff's currency into
+// euros, and whether a euro comparable can be produced at all. Euro tariffs (and
+// feeds that state no currency — every one of those quotes euros) pass through
+// with a factor of 1 and never depend on the FX feed.
+func (e *Engine) toEUR(ctx context.Context, amount float64, currency string) (float64, bool) {
+	if c := strings.ToUpper(strings.TrimSpace(currency)); c == "" || c == "EUR" {
+		return amount, true
+	}
+	return e.FX.ToEUR(ctx, amount, currency)
 }
 
 func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connector, tariffs map[string]model.Tariff) (bool, error) {
@@ -424,19 +434,32 @@ func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connect
 	}
 
 	// Headline (default sort) + the per-session comparison matrix. Both are euro
-	// amounts (comparable_price_eur) and nothing converts currencies, so a
-	// non-euro tariff is stored with its components and currency but WITHOUT a
-	// comparable price: a Polish 2.40 PLN/kWh tariff ranked as 2.40 EUR/kWh would
-	// misprice it by more than 4x. Such chargers show their published tariff and
-	// sort as unpriced until FX conversion exists.
+	// amounts (comparable_price_eur), so a tariff quoted in another currency is
+	// converted at the ECB daily reference rate: a Polish 2.40 PLN/kWh tariff
+	// ranked as 2.40 EUR/kWh would misprice it more than fourfold. The published
+	// components are stored unchanged, in their own currency — only the derived
+	// comparable is euro-normalised.
+	//
+	// When no rate is available (FX unset, an unknown currency, or a rate set too
+	// old to trust), such a tariff is deliberately stored WITHOUT a comparable
+	// price: it shows its real published tariff and sorts as unpriced, rather
+	// than being ranked at a made-up parity.
 	var comparable *float64
 	pricesJSON := []byte("{}")
-	if comparableCurrency(tar.Currency) {
+	rate, convertible := e.toEUR(ctx, 1, tar.Currency)
+	if convertible {
 		if c, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle); ok {
+			c *= rate
 			comparable = &c
 		}
+		prices := pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)
+		if rate != 1 {
+			for k, v := range prices {
+				prices[k] = v * rate
+			}
+		}
 		var err error
-		if pricesJSON, err = json.Marshal(pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)); err != nil {
+		if pricesJSON, err = json.Marshal(prices); err != nil {
 			return false, fmt.Errorf("marshal prices: %w", err)
 		}
 	}

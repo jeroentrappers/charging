@@ -25,6 +25,7 @@ import (
 	"github.com/appmire/charging/internal/config"
 	"github.com/appmire/charging/internal/datex"
 	"github.com/appmire/charging/internal/export"
+	"github.com/appmire/charging/internal/fx"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
 	"github.com/appmire/charging/internal/monta"
@@ -55,6 +56,7 @@ type server struct {
 	analytics         *analytics.Recorder // non-blocking first-party event recorder; nil disables
 	analyticsLimiter  *ipLimiter          // per-IP throttle on POST /events
 	analyticsSalt     string              // secret salt for daily-rotated visitor hashing
+	fx                *fx.Cache           // ECB reference rates for /fx (client-side currency normalisation)
 	nginxReportFile   string              // path to the GoAccess HTML report (served admin-gated)
 	publicURL         string
 	ocpiParty         ocpi.Party
@@ -109,7 +111,14 @@ func main() {
 		s.router = routing.New(cfg.OSRMURL)
 		log.Info("route/corridor search enabled", "osrm", cfg.OSRMURL)
 	}
+	// ECB reference rates: served to the client on /fx so it can normalise
+	// foreign-currency tariffs, and used by the admin-triggered ingest passes for
+	// the stored comparable price. One cache serves both.
+	if cfg.FXRatesURL != "" {
+		s.fx = &fx.Cache{URL: cfg.FXRatesURL}
+	}
 	s.engine = ingest.NewEngine(st, log)
+	s.engine.FX = s.fx
 	s.engine.Vehicle = s.vehicle
 
 	// Durable Mobilithek push queue: the webhook enqueues to mobilithekSpoolDir;
@@ -211,6 +220,7 @@ func (s *server) routes(corsOrigins string) http.Handler {
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
 	r.Get("/status", s.statusJSON)                   // per-source health/staleness/availability (JSON; rendered by the web /status page)
+	r.Get("/fx", s.serveFX)                          // ECB reference rates, so the client can price non-euro tariffs
 	r.Get("/admin/nginx-report", s.serveNginxReport) // GoAccess HTML, admin-bearer gated (raw HTML → not a huma route)
 	r.Handle("/metrics", metrics.Handler())
 

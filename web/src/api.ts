@@ -380,7 +380,42 @@ export interface ChargerListParams {
   offset?: number
 }
 
+export interface FXRates {
+  base: string
+  date: string
+  rates: Record<string, number>
+}
+
+// Cached exchange rates. Most sources quote euros, but some national registers
+// do not (Poland's EIPA publishes PLN), and the client prices chargers itself
+// from the published tariff — so without a rate it would compare zloty against
+// euros. Loaded once per session; if the endpoint is unavailable we simply do not
+// convert, and those chargers rank as unpriced (see toEUR in pricing.ts).
+let fxRates: FXRates | null = null
+let fxLoading: Promise<FXRates | null> | null = null
+
+export function fxRatesCached(): FXRates | null {
+  return fxRates
+}
+
+export async function loadFXRates(): Promise<FXRates | null> {
+  if (fxRates) return fxRates
+  if (!fxLoading) {
+    fxLoading = get<FXRates>('/fx')
+      .then((r) => {
+        fxRates = r
+        return r
+      })
+      .catch(() => null)
+      .finally(() => {
+        fxLoading = null
+      })
+  }
+  return fxLoading
+}
+
 export const api = {
+  fx: () => get<FXRates>('/fx'),
   cheapest: (p: CheapestParams) =>
     get<{ results: Charger[]; count: number }>('/chargers/cheapest', { ...p }),
   // Geo-only candidates (with structured tariffs) for client-side pricing/ranking.

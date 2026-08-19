@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FindPage } from './FindPage'
-import { API_BASE, track, type Charger } from './api'
+import { API_BASE, loadFXRates, track, type Charger } from './api'
 import { buildPath, parseUrl, type NavState } from './url'
 import { useSettings } from './settings'
 import { useTheme } from './theme'
@@ -35,6 +35,13 @@ export default function App() {
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  // Exchange rates for the client-side pricing of non-euro tariffs (Poland's PLN
+  // today). Fetched once per load, best-effort: without it those chargers rank as
+  // unpriced rather than being compared as if zloty were euros.
+  useEffect(() => {
+    void loadFXRates()
   }, [])
 
   // First-party analytics: app open (once per load) + PWA install.

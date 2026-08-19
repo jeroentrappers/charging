@@ -67,14 +67,21 @@ E-Control publishes no rate limit. **Two things worth asking them:** what pollin
 cadence they permit, and whether the DATEX II export their NAP record mentions is
 available — it would replace the whole crawl.
 
-**🇵🇱 Poland — the currency caveat.** EIPA quotes PLN, and nothing in the pipeline
-converts currencies: `comparable_price_eur` is a euro amount, and the PWA prints
-euros. Ingesting 2.19 PLN/kWh as 2.19 EUR/kWh would overstate it by ~4.3x and
-corrupt cross-border ranking, so `processTariff` now stores a non-euro tariff's
-components and currency but **no comparable price**: Polish chargers show their
-real published tariff (the detail view renders each tariff in its own currency)
-and sort as unpriced. Making them rankable needs an FX rate — the ECB publishes a
-free daily reference feed — which is a deliberate, separate decision.
+**🇵🇱 Poland — currency handling (FX).** EIPA quotes PLN. Published components are
+always stored **as published**, in their own currency; only the derived
+`comparable_price_eur` (and the per-profile matrix) is euro-normalised, using the
+**ECB daily reference feed** — open, no key, ~1.5 KB:
+`https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` (`FX_RATES_URL`,
+`internal/fx`). Rates are units per euro, so converting divides: 2.19 PLN/kWh →
+€0.507/kWh at 4.3190.
+Because the PWA prices chargers client-side from the raw tariff, the API also
+serves the rates on **`GET /fx`**; the app loads them once per session and
+normalises before ranking (`toEUR` in `web/src/pricing.ts`).
+If no rate is available — `FX_RATES_URL` empty, an unknown currency, or a rate set
+older than a week (`fx.MaxAge`, since the ECB publishes only on working days) —
+the tariff is stored and displayed but gets **no comparable price**, so the
+charger sorts as unpriced instead of being ranked at a made-up parity. The detail
+view always renders each tariff in its own currency (`ui.money`).
 Download limits are enforced per account: **10/hour** for the five static files,
 **240/hour** for the dynamic one, hence the 12h static cache and 10-minute status.
 

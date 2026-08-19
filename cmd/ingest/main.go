@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/appmire/charging/internal/config"
+	"github.com/appmire/charging/internal/fx"
 	"github.com/appmire/charging/internal/ingest"
 	"github.com/appmire/charging/internal/metrics"
 	"github.com/appmire/charging/internal/pricing"
@@ -45,6 +46,22 @@ func main() {
 	}
 
 	eng := ingest.NewEngine(st, log)
+	// Non-euro tariffs (Poland's PLN today) are converted into the euro
+	// comparable price at the ECB daily reference rate. Without this they would
+	// be stored unranked; with it they compete on equal terms. Set FX_RATES_URL
+	// empty to switch conversion off.
+	if cfg.FXRatesURL != "" {
+		eng.FX = &fx.Cache{
+			URL: cfg.FXRatesURL,
+			OnUpdate: func(r *fx.Rates, err error) {
+				if err != nil {
+					log.Error("fx rates refresh", "err", err)
+					return
+				}
+				log.Info("fx rates loaded", "date", r.Date.Format("2006-01-02"), "currencies", len(r.Rate))
+			},
+		}
+	}
 	eng.Vehicle = pricing.Vehicle{
 		UsableKWh:         cfg.VehicleUsableKWh,
 		ConsumptionKWh100: cfg.VehicleConsumption,

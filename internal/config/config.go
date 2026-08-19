@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/appmire/charging/internal/fx"
 )
 
 type Config struct {
@@ -21,6 +23,12 @@ type Config struct {
 	PriceStaleAfter time.Duration
 	// Address for the ingest process to expose Prometheus /metrics.
 	MetricsAddr string
+
+	// FXRatesURL is the ECB daily reference-rate feed used to convert non-euro
+	// tariffs (e.g. Poland's PLN) into the euro comparable price. Set it empty to
+	// switch conversion off, in which case foreign-currency chargers keep their
+	// published tariff but sort as unpriced.
+	FXRatesURL string
 	// Comma-separated allowed CORS origins for the API ("*" = any).
 	CORSOrigins string
 	// Bearer token protecting the admin endpoints; empty disables them.
@@ -98,6 +106,7 @@ func Load() Config {
 		AvailabilityStaleAfter: envDuration("AVAILABILITY_STALE_AFTER", 15*time.Minute),
 		PriceStaleAfter:        envDuration("PRICE_STALE_AFTER", 48*time.Hour),
 		MetricsAddr:            env("METRICS_ADDR", ":9090"),
+		FXRatesURL:             env("FX_RATES_URL", fx.DefaultURL),
 		CORSOrigins:            env("CORS_ORIGINS", "*"),
 		AdminToken:             os.Getenv("ADMIN_TOKEN"),
 		APIBasePath:            env("API_BASE_PATH", ""),

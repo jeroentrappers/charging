@@ -8,6 +8,7 @@
 // /chargers/cheapest. (Two deliberate client-only refinements the server
 // doesn't apply: membership/MSP pricing below, and the car's AC/DC max-power cap
 // in customPrice — the server only gets usable_kWh + consumption, not max powers.)
+import { fxRatesCached } from './api'
 import type { Charger, TariffStruct, TariffElement, TariffRestrictions } from './api'
 import type { Settings } from './settings'
 import { MSPS, flatSessionPrice, markupSessionPrice } from './msps'
@@ -104,6 +105,20 @@ function detourCost(distanceM: number, settings: Settings): number {
   return energy + time
 }
 
+// toEUR converts a price computed from a charger's own tariff into euros, so a
+// zloty charger can be compared with a euro one. Rates are units per euro (the
+// ECB's convention), so we divide. Returns null when the currency is unknown or
+// rates have not loaded: the charger then ranks as unpriced rather than being
+// compared at a made-up parity — the same rule the server applies to the stored
+// comparable price.
+function toEUR(price: number | null, currency: string | undefined): number | null {
+  if (price == null) return null
+  const code = (currency || 'EUR').toUpperCase()
+  if (code === 'EUR') return price
+  const rate = fxRatesCached()?.rates?.[code]
+  return rate && rate > 0 ? price / rate : null
+}
+
 // rankChargers prices each candidate for the user's car + charging profile at
 // `now`, adds the detour, and returns the cheapest `limit` by weighted cost
 // (avoid-flagged sink to the bottom; unpriceable last). It writes the computed
@@ -152,6 +167,10 @@ export function rankChargers(chargers: Charger[], settings: Settings, now: Date,
         estimated = bestEst
       }
     }
+    // Everything above is computed in the charger's OWN currency (its published
+    // tariff); normalise to euros before the detour is added and the ranking
+    // compares chargers with each other.
+    price = toEUR(price, c.currency)
     const det = price != null ? detourCost(c.distance_m, settings) : 0
     const weighted = price == null ? null : price + det
     return {
