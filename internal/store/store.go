@@ -336,6 +336,31 @@ type TariffWrite struct {
 	SourceLastUpdated *time.Time
 }
 
+// FillDerivedPrices sets the euro comparable figures on a charger's open tariff
+// version, but ONLY when they are absent. It never touches a version that
+// already has them, and never opens a new version: the published tariff has not
+// changed, just our ability to express it in euros.
+//
+// This exists because comparable_price_eur is derived from the tariff AND an
+// exchange rate. A foreign-currency tariff first seen while no rate was
+// available is stored without it, and since the tariff content never changes the
+// normal SCD2 path would skip it forever, leaving the charger permanently
+// unranked. Returns whether a row was filled.
+func (s *Store) FillDerivedPrices(ctx context.Context, chargerID int64, comparable float64, prices []byte) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE tariff_version
+		   SET comparable_price_eur = $2,
+		       comparable_prices    = $3
+		 WHERE charger_id = $1
+		   AND observed_to IS NULL
+		   AND comparable_price_eur IS NULL`,
+		chargerID, comparable, prices)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // ReplaceTariff closes the current open version (if any) and inserts a new one,
 // atomically. Call only when the hash has actually changed.
 func (s *Store) ReplaceTariff(ctx context.Context, chargerID int64, w TariffWrite) error {

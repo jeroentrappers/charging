@@ -410,6 +410,35 @@ func (e *Engine) toEUR(ctx context.Context, amount float64, currency string) (fl
 	return e.FX.ToEUR(ctx, amount, currency)
 }
 
+// fillMissingEuroPrices backfills the derived euro figures of an already-stored,
+// unchanged tariff. It is a no-op for euro tariffs (which always got them) and
+// whenever conversion still isn't possible.
+func (e *Engine) fillMissingEuroPrices(ctx context.Context, id int64, conn model.Connector, tar model.Tariff) error {
+	if c := strings.ToUpper(strings.TrimSpace(tar.Currency)); c == "" || c == "EUR" {
+		return nil
+	}
+	rate, ok := e.toEUR(ctx, 1, tar.Currency)
+	if !ok {
+		return nil
+	}
+	comparable, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)
+	if !ok {
+		return nil
+	}
+	prices := pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)
+	for k, v := range prices {
+		prices[k] = v * rate
+	}
+	pricesJSON, err := json.Marshal(prices)
+	if err != nil {
+		return fmt.Errorf("marshal prices: %w", err)
+	}
+	if _, err := e.Store.FillDerivedPrices(ctx, id, comparable*rate, pricesJSON); err != nil {
+		return fmt.Errorf("fill derived prices: %w", err)
+	}
+	return nil
+}
+
 func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connector, tariffs map[string]model.Tariff) (bool, error) {
 	if conn.TariffID == "" {
 		return false, nil
@@ -425,7 +454,12 @@ func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connect
 		return false, fmt.Errorf("current tariff hash: %w", err)
 	}
 	if found && curHash == newHash {
-		return false, nil // unchanged
+		// The published tariff is unchanged — but the stored euro figures are
+		// derived from it AND an exchange rate, so a foreign-currency tariff first
+		// seen while no rate was available still has none. Fill those in now
+		// (in place, without opening a new version); otherwise it would sort as
+		// unpriced forever, since its content never changes.
+		return false, e.fillMissingEuroPrices(ctx, id, conn, tar)
 	}
 
 	components, err := tar.Components()

@@ -191,3 +191,74 @@ func TestIngest_NonEuroTariffConvertedWithFX(t *testing.T) {
 		t.Errorf("stored currency = %q, want PLN", currency)
 	}
 }
+
+// A foreign-currency tariff first ingested with no rates available must pick up
+// its euro comparable on a later pass, even though the published tariff — and so
+// its hash — never changes. Without this it would sort as unpriced forever.
+func TestIngest_BackfillsEuroPricesWhenRatesArriveLater(t *testing.T) {
+	ctx := context.Background()
+	st := setup(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	const token = "test-token"
+	feed := newMockFeed(token)
+	srv := feed.server()
+	defer srv.Close()
+
+	ecb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+ <Cube><Cube time='` + time.Now().Format("2006-01-02") + `'>
+   <Cube currency='PLN' rate='4.0000'/>
+ </Cube></Cube></gesmes:Envelope>`))
+	}))
+	defer ecb.Close()
+
+	cpo := store.CPO{
+		ID: "mockbackfill", Name: "Mock PLN CPO",
+		OCPIBaseURL: srv.URL + "/", OCPIVersion: "2.1.1",
+		PollCron: "0 4 * * *", Enabled: true, Country: "PL",
+	}
+	if err := st.UpsertCPO(ctx, cpo); err != nil {
+		t.Fatal(err)
+	}
+	src := source.Source{CPO: cpo, Token: token}
+
+	zloty := sampleTariff(2.40, time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC))
+	zloty.Currency = "PLN"
+	feed.set([]ocpi.Location{sampleLocation("AVAILABLE")}, []ocpi.Tariff{zloty})
+
+	// Pass 1: no FX configured -> stored, but not comparable.
+	if err := NewEngine(st, log).RunPrices(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	id := singleChargerID(t, st)
+	if p := currentPrice(t, st, id); p != nil {
+		t.Fatalf("expected no comparable price without rates, got %v", *p)
+	}
+
+	// Pass 2: same tariff (same hash), now with rates -> backfilled in place.
+	eng := NewEngine(st, log)
+	eng.FX = &fx.Cache{URL: ecb.URL}
+	if err := eng.RunPrices(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	p := currentPrice(t, st, id)
+	if p == nil {
+		t.Fatal("want the euro comparable to be backfilled once rates are available")
+	}
+	if *p <= 0 {
+		t.Errorf("backfilled comparable = %v", *p)
+	}
+	if prices := currentPrices(t, st, id); len(prices) == 0 {
+		t.Error("want the per-profile matrix backfilled too")
+	}
+	// Still one version: a backfill must not open a new SCD2 row.
+	var versions int
+	if err := st.Pool.QueryRow(ctx, `SELECT count(*) FROM tariff_version WHERE charger_id=$1`, id).Scan(&versions); err != nil {
+		t.Fatal(err)
+	}
+	if versions != 1 {
+		t.Errorf("tariff versions = %d, want 1 (backfill must not version)", versions)
+	}
+}
