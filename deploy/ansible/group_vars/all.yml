@@ -54,6 +54,7 @@ ssh_allow_ips:
   - 84.198.246.169      # secondary deploy egress (flaps with the hq.appmire.be dyndns IP); added 2026-06-24
   - 81.246.14.32/28     # Secutec VPN egress block; added 2026-07-10
   - 94.110.48.221       # home (hq.appmire.be) static safety net alongside the ssh-dyndns rule; added 2026-07-10
+  - 109.135.24.210      # Secutec office egress (outside the 81.246.14.32/28 VPN block); added 2026-08-19
 
 # Dynamic allow-list: a timer resolves this host and maintains comment-tagged
 # ufw SSH rules for it (ported from the box's old nftables ssh_dyndns updater).
