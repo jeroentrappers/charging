@@ -7,8 +7,8 @@ consumer of their public/AFIR feed, reporting issues to help — not complaining
 Sender: Jeroen Trappers, Software engineer at Appmire <jeroen@appmire.be> · 0497053310.
 
 **Drafts 1–7 sent 2026-07-09**; #8 (Fintraffic) is drafted but not sent — it
-lives in its own file because Fintraffic has no email channel, only a public
-developer group. Reply / re-verification tracker:
+lives in its own file because it needed a longer evidence trail than a table row.
+Reply / re-verification tracker:
 
 | # | Source | Sent | Reply | Fixed? (re-verified) |
 |---|--------|------|-------|----------------------|
@@ -19,7 +19,7 @@ developer group. Reply / re-verification tracker:
 | 5 | EnBW | 2026-07-09 | — | — |
 | 6 | EW Pricing GmbH | 2026-07-09 | — | — |
 | 7 | Monta | 2026-07-09 | — | — |
-| 8 | **Fintraffic (FI)** — draft in [`fintraffic-mail.md`](./fintraffic-mail.md) | **not sent yet** | — | 47% of FI connectors reference tariff ids that no publication contains (found 2026-08-20) |
+| 8 | **Fintraffic (FI)** — `info@fintraffic.fi`, draft in [`fintraffic-mail.md`](./fintraffic-mail.md) | **not sent yet** | — | 47% of FI connectors reference tariff ids that no publication contains (found 2026-08-20) |
 
 Only sources with findings are listed. **No issues found** (nothing to send):
 tesla, road, indigo, mob-chargecloudgmbh (minor), and the smaller Mobilithek

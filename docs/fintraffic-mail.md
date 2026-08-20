@@ -8,25 +8,25 @@ measured against the live feed; see also the `fi-fintraffic` row in
 
 ## Where to send it
 
-Fintraffic publishes **no dedicated AFIR or Digitraffic support address** — their
-contact page lists only `firstname.lastname@fintraffic.fi` plus the switchboard
-(+358 29 450 7000). The channels they *do* name for the APIs are, in order of
-preference:
+**To:** `info@fintraffic.fi` — Fintraffic's official address for general
+enquiries (switchboard +358 29 450 7000; postal: P.O. Box 71, 00241 Helsinki).
+It is a general inbox rather than a team address, so the message opens by asking
+them to pass it to whoever maintains the AFIR charging APIs.
 
-1. **Road-traffic Google Group** — `roaddigitrafficfi@googlegroups.com`
-   (web: <https://groups.google.com/g/roaddigitrafficfi>). Digitraffic's own
-   support page says: "Open developer communities form the support channel for
-   the Digitraffic service… Fintraffic specialists participate." Best first stop:
-   it reaches the maintainers *and* the thread is useful to every other consumer
-   hitting the same gap.
-   NOTE: this is a **public** list — don't include a phone number or anything
-   you wouldn't publish.
-2. **Palauteväylä feedback channel** — <https://palautevayla.fi/aspa?lang=en>.
-   The route linked from both the Digitraffic AFIR page and Fintraffic's AFIR
-   service page; use it if you want a tracked ticket rather than a public thread.
-3. **GitHub `tmfg/digitraffic`** — for documentation fixes only, not data content.
+Useful alternatives, either instead of or after the email:
 
-If someone from Fintraffic replies, continue directly with them at
+- **Road-traffic Google Group** — `roaddigitrafficfi@googlegroups.com`
+  (web: <https://groups.google.com/g/roaddigitrafficfi>). Digitraffic's support
+  page says: "Open developer communities form the support channel for the
+  Digitraffic service… Fintraffic specialists participate." It reaches the
+  maintainers directly and the thread helps other consumers hitting the same gap.
+  NOTE: this list is **public** — strip the phone number from the signature
+  before posting there.
+- **Palauteväylä feedback channel** — <https://palautevayla.fi/aspa?lang=en>,
+  the route linked from both AFIR pages, if a tracked ticket is preferred.
+- **GitHub `tmfg/digitraffic`** — documentation fixes only, not data content.
+
+If someone from Fintraffic replies, continue with them directly at
 `firstname.lastname@fintraffic.fi`.
 
 Write in **English** — the AFIR API documentation and the Google Group are in
@@ -41,6 +41,10 @@ English.
 ## Message
 
 Hello Fintraffic team,
+
+Could I ask you to forward this to whoever looks after the AFIR charging-point
+APIs on Digitraffic? It is a data-quality observation rather than a support
+request, and I could not find a direct address for that team.
 
 First of all, thank you for the AFIR charging APIs on `afir.digitraffic.fi`.
 We consume a number of national access points across Europe, and yours is the
@@ -128,7 +132,8 @@ has clearly gone into the service.
 
 Kind regards,
 Jeroen Trappers
-Appmire — jeroen@appmire.be
+Software engineer at Appmire — jeroen@appmire.be — 0497053310
+(omit the phone number if this is posted to the public Google Group instead)
 
 ---
 
