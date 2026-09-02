@@ -26,8 +26,10 @@ Useful alternatives, either instead of or after the email:
   the route linked from both AFIR pages, if a tracked ticket is preferred.
 - **GitHub `tmfg/digitraffic`** — documentation fixes only, not data content.
 
-If someone from Fintraffic replies, continue with them directly at
-`firstname.lastname@fintraffic.fi`.
+**Sent 2026-08-20 to `info@fintraffic.fi`; answered 2026-09-02** — see
+[the reply](#reply-2026-09-02--mika-ahvenainen-fintraffic) below. For any
+follow-up, use the team address they gave us: **`digitraffic@fintraffic.fi`**
+(or `mika.ahvenainen@fintraffic.fi` to continue this thread directly).
 
 Write in **English** — the AFIR API documentation and the Google Group are in
 English.
@@ -137,13 +139,49 @@ Software engineer at Appmire — jeroen@appmire.be — 0497053310
 
 ---
 
+### Reply (2026-09-02) — Mika Ahvenainen, Fintraffic
+
+Development Manager, Data and Information Services. Answered both findings,
+splitting them the same way the report did.
+
+**1. The missing tariff records — not Fintraffic's to fix.** Digitraffic
+republishes what the operators deliver, so the absent records for `FI*001`
+Liikennevirta and `FI*EPA` eParking have to be corrected in those operators'
+own data delivery. He noted that **Traficom** (the Finnish Transport and
+Communications Agency, acting as the AFIR National Body) is actively
+communicating with the operators and reminding them of their obligations, and
+expects tariff coverage to increase in the near future.
+
+So the 47% unpriceable share stands for now and there is no fix to wait for on
+the API side — it will improve operator by operator instead. Nothing to do but
+re-measure; see below.
+
+**2. The unused tariffs — being fixed.** He took this to their development team,
+and they decided to **change the default behaviour of `/tariffs` to return only
+tariffs that are referenced from the connectors**, adding a parameter to query
+all tariffs in their database. No date was given.
+
+Harmless for us: `Client.tariffs` fetches `/tariffs` with `limit=ALL` and joins
+by id, so a smaller referenced-only response is strictly less work and nothing
+in the adapter or in `/api/status` keys off the tariff count. Worth knowing at
+cutover only because the published tariff total will drop by roughly 77%
+(2,969 → ~700), which is the change landing and not a feed regression. We do not
+need the new all-tariffs parameter — we only ever resolve referenced ids.
+
+He also thanked us for sending the `Digitraffic-User` header
+(`fintraffic.UserAgent`, set in `Client.get`), which their fair-use policy asks for. Keep it.
+
 ## After sending
 
-- Tick this off here and note the reply, as with the other reports in
-  [`data-quality-emails.md`](./data-quality-emails.md).
-- If the records appear, the `fi-fintraffic` price coverage in `/api/status`
-  should jump from ~17% to ~64% within a day (the source runs a daily price pass);
-  the numbers in [`sources.md`](./sources.md) need updating then.
+- [x] Ticked off in [`data-quality-emails.md`](./data-quality-emails.md) with the
+  reply summarised above.
+- As operators start submitting, the `fi-fintraffic` price coverage in
+  `/api/status` should climb from ~17% towards ~64% (the source runs a daily
+  price pass); the numbers in [`sources.md`](./sources.md) need updating then.
+  Expect this in steps as each operator fixes its delivery, not in one jump.
+- Re-measure every month or two rather than watching it: worth a check around
+  **2026-11**, and again if `/tariffs` suddenly shrinks (that is the
+  referenced-only default landing, see the reply).
 - Worth re-measuring before chasing: the gap was stable at 3,460 → 3,465
   resolving connectors across 2026-08-19/20, so it is structural rather than a
   transient.

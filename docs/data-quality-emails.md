@@ -6,8 +6,9 @@ consumer of their public/AFIR feed, reporting issues to help — not complaining
 
 Sender: Jeroen Trappers, Software engineer at Appmire <jeroen@appmire.be> · 0497053310.
 
-**Drafts 1–7 sent 2026-07-09**; #8 (Fintraffic) is drafted but not sent — it
-lives in its own file because it needed a longer evidence trail than a table row.
+**Drafts 1–7 sent 2026-07-09**; **#8 (Fintraffic) sent 2026-08-20** — it lives in
+its own file because it needed a longer evidence trail than a table row, and it
+is the only one so far to have drawn a substantive reply (see that file).
 Reply / re-verification tracker:
 
 | # | Source | Sent | Reply | Fixed? (re-verified) |
@@ -19,7 +20,7 @@ Reply / re-verification tracker:
 | 5 | EnBW | 2026-07-09 | — | — |
 | 6 | EW Pricing GmbH | 2026-07-09 | — | — |
 | 7 | Monta | 2026-07-09 | — | — |
-| 8 | **Fintraffic (FI)** — `info@fintraffic.fi`, draft in [`fintraffic-mail.md`](./fintraffic-mail.md) | **not sent yet** | — | 47% of FI connectors reference tariff ids that no publication contains (found 2026-08-20) |
+| 8 | **Fintraffic (FI)** — draft in [`fintraffic-mail.md`](./fintraffic-mail.md) | 2026-08-20 | **2026-09-02** (Mika Ahvenainen, Development Manager) | ⚠️ partly: the missing records are the **operators'** to submit (Traficom is chasing them) — no Fintraffic-side fix; the unused-tariff over-publication **will** be fixed (`/tariffs` to return only referenced tariffs by default) |
 
 Only sources with findings are listed. **No issues found** (nothing to send):
 tesla, road, indigo, mob-chargecloudgmbh (minor), and the smaller Mobilithek
