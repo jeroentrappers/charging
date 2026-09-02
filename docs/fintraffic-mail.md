@@ -171,6 +171,98 @@ need the new all-tariffs parameter — we only ever resolve referenced ids.
 He also thanked us for sending the `Digitraffic-User` header
 (`fintraffic.UserAgent`, set in `Client.get`), which their fair-use policy asks for. Keep it.
 
+### Re-verification against the live API (2026-09-02)
+
+Ran the real adapter (`Client.Snapshot`) against
+`https://afir.digitraffic.fi/api/charging-network/v1` right after the reply
+arrived. **Data is flowing normally** — 3,803 locations, 20,107 connectors,
+19,770 EVSEs with a live status, 3,002 tariffs, prices parsing and grossing up
+as before (e.g. `FIHLNTTRF638527384991268283` → 0.3639 €/kWh).
+
+Neither of the two things in the reply has landed yet:
+
+| | 2026-08-20 | 2026-09-02 |
+|---|---|---|
+| Connectors resolving to a tariff | 3,465 (17%) | 3,464 (17.2%) |
+| Referenced but not published | 9,460 (47%) | 9,537 (47.4%) |
+| No `tariffIds` at all | 7,085 (35%) | 7,106 (35.3%) |
+| Distinct unresolved tariff ids | 425 | 428 |
+| Published tariffs | 2,969 | 3,002 |
+| Of those, referenced by no FI connector | 77% | 2,309 (77%) |
+
+`FI*001` (7,023 connectors) and `FI*EPA` (1,599) still resolve **zero**, so no
+operator has fixed its delivery yet — expected this soon after the reply. The
+referenced-only default is not deployed either: paging the default `/tariffs`
+returns exactly the same 3,002 records as the all-tariffs endpoint (693 of the
+1,121 referenced ids are published, so the referenced-only response should be
+~693 records once it ships).
+
+**One API change we did hit** — `?limit=ALL` now answers **302** and redirects
+to a sibling `/all` path, on all three endpoints:
+
+```
+/locations?limit=ALL          → 302 /locations/all
+/locations/statuses?limit=ALL → 302 /locations/statuses/all
+/tariffs?limit=ALL            → 302 /tariffs/all
+```
+
+`limit` is also validated now: `?limit=10` returns 400 `Limit must be one of:
+500 or ALL`, and the default page size is 500 with a `nextCursor`. Our client is
+unaffected — Go follows the redirect (same host, so the `Digitraffic-User`
+header survives) and the `/all` responses carry no `nextCursor`. The latent
+trap, should we ever need it: the 302 drops the query string, so a `cursor`
+passed to `/tariffs?limit=ALL` is silently lost. If a `/all` response ever
+starts paginating, `Client.pages` would re-fetch page 1, see the same cursor and
+stop after one page rather than error. Not worth changing while every `/all`
+returns the full set in one response — but if we do touch it, request the
+`/all` paths directly.
+
+### Draft answer to Mika (not sent)
+
+Short and low-effort on their side: thank them, put the id list on the table for
+Traficom, and ask only the one thing that affects our code (how the new
+parameter will be spelled). To `mika.ahvenainen@fintraffic.fi`, cc
+`digitraffic@fintraffic.fi`.
+
+**Subject:** `Re: AFIR charging API: tariff records missing for some parties`
+
+Hello Mika,
+
+Thank you for the clear answer, and for taking the unused-tariff point to your
+development team so quickly — returning only referenced tariffs by default is
+exactly the right call, and the extra parameter for the full set means nobody
+loses anything.
+
+Understood on the missing records being the operators' own delivery to fix. If
+it is of any use to Traficom or to the operators in those discussions, we are
+happy to send the **428 tariff ids that are currently referenced by connectors
+but not published**, grouped by party — it is a concrete, checkable list, and
+`FI*001` and `FI*EPA` account for almost all of it. Just say the word and I will
+send it as a CSV; no need for anything in return.
+
+One small question so we can be ready on our side: when the referenced-only
+default ships, what will the parameter for querying all tariffs be called? We
+only ever resolve ids that connectors reference, so the new default suits us and
+we expect to change nothing — but knowing the name in advance means we will not
+mistake the smaller response for a feed problem when the tariff count drops from
+~3,000 to ~700.
+
+Finally, one observation from re-checking the API this morning, in case it is
+unintended: `?limit=ALL` now answers `302` to the matching `/all` path
+(`/tariffs?limit=ALL` → `/tariffs/all`, likewise for `/locations` and
+`/locations/statuses`), and the redirect drops the query string. Clients that
+follow redirects are fine, and the `/all` responses come back complete in one
+page, so this is not affecting us. It would only bite a client that combines
+`limit=ALL` with a `cursor`, since the cursor is lost on the hop. Documenting
+the `/all` paths as the canonical form would probably save someone a puzzled
+afternoon.
+
+Thanks again — and yes, we will keep sending the `Digitraffic-User` header.
+
+Kind regards,
+Jeroen Trappers
+Software engineer at Appmire — jeroen@appmire.be
+
 ## After sending
 
 - [x] Ticked off in [`data-quality-emails.md`](./data-quality-emails.md) with the
