@@ -207,15 +207,17 @@ to a sibling `/all` path, on all three endpoints:
 ```
 
 `limit` is also validated now: `?limit=10` returns 400 `Limit must be one of:
-500 or ALL`, and the default page size is 500 with a `nextCursor`. Our client is
-unaffected — Go follows the redirect (same host, so the `Digitraffic-User`
-header survives) and the `/all` responses carry no `nextCursor`. The latent
-trap, should we ever need it: the 302 drops the query string, so a `cursor`
-passed to `/tariffs?limit=ALL` is silently lost. If a `/all` response ever
-starts paginating, `Client.pages` would re-fetch page 1, see the same cursor and
-stop after one page rather than error. Not worth changing while every `/all`
-returns the full set in one response — but if we do touch it, request the
-`/all` paths directly.
+500 or ALL`, and the default page size is 500 with a `nextCursor`.
+
+Nothing broke — Go follows the redirect, and being same-host the
+`Digitraffic-User` header survives it — but the hop drops the query string, so a
+`cursor` passed alongside `limit=ALL` is silently lost. If an `/all` response
+ever started paginating, `Client.pages` would re-fetch page 1, see the same
+cursor and stop after one page rather than error. So `Client.pages` now
+requests the `/all` paths directly and, if one of them ever answers with a
+`nextCursor`, follows it on the paged base path with `limit=500` (`/all`
+ignores a cursor and always answers in full). Re-verified against the live API
+after the change: same 3,803 locations / 3,002 tariffs / 17.2% resolving.
 
 ### Draft answer to Mika (not sent)
 

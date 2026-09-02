@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -143,13 +144,15 @@ func TestClient_SendsRequiredHeadersAndGunzips(t *testing.T) {
 			w.WriteHeader(http.StatusNotAcceptable)
 			return
 		}
-		if r.URL.Query().Get("limit") != "ALL" {
-			t.Errorf("limit = %q, want ALL", r.URL.Query().Get("limit"))
+		// The complete set must be asked for as /all, not "?limit=ALL" — the
+		// latter is a 302 to the former with the query string dropped.
+		if r.URL.RawQuery != "" {
+			t.Errorf("query = %q, want none", r.URL.RawQuery)
 		}
 		body := map[string]string{
-			"/locations":          locationsJSON,
-			"/locations/statuses": statusesJSON,
-			"/tariffs":            tariffsJSON,
+			"/locations/all":          locationsJSON,
+			"/locations/statuses/all": statusesJSON,
+			"/tariffs/all":            tariffsJSON,
 		}[r.URL.Path]
 		if body == "" {
 			http.NotFound(w, r)
@@ -190,11 +193,11 @@ func decodeAll(t *testing.T) ([]locationFeature, map[string]string, []tariff) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/locations":
+		case "/locations/all":
 			_, _ = w.Write([]byte(locationsJSON))
-		case "/locations/statuses":
+		case "/locations/statuses/all":
 			_, _ = w.Write([]byte(statusesJSON))
-		case "/tariffs":
+		case "/tariffs/all":
 			_, _ = w.Write([]byte(tariffsJSON))
 		default:
 			http.NotFound(w, r)
@@ -216,4 +219,41 @@ func decodeAll(t *testing.T) ([]locationFeature, map[string]string, []tariff) {
 		t.Fatal(err)
 	}
 	return locs, st, tars
+}
+
+// If an /all response ever comes back partial, the cursor has to be followed on
+// the paged base path: /all ignores a cursor and would re-serve page one
+// forever, and "?limit=ALL" is a 302 that drops the query string.
+func TestClient_FollowsCursorOnThePagedPath(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.RequestURI())
+		switch {
+		case r.URL.Path == "/tariffs/all":
+			_, _ = w.Write([]byte(`{"pagination":{"nextCursor":"c 2"},"tariffs":[
+				{"id":"t-1","currency":"EUR","elements":[]}]}`))
+		case r.URL.Path == "/tariffs" && r.URL.Query().Get("cursor") == "c 2":
+			if l := r.URL.Query().Get("limit"); l != "500" {
+				t.Errorf("limit = %q, want 500", l)
+			}
+			_, _ = w.Write([]byte(`{"pagination":{},"tariffs":[
+				{"id":"t-2","currency":"EUR","elements":[]}]}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.RequestURI())
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tars, err := New(srv.URL).tariffs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tars) != 2 || tars[0].ID != "t-1" || tars[1].ID != "t-2" {
+		t.Errorf("tariffs = %+v", tars)
+	}
+	want := []string{"/tariffs/all", "/tariffs?limit=500&cursor=c+2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("requests = %q, want %q", got, want)
+	}
 }

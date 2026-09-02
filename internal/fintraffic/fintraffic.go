@@ -9,6 +9,9 @@
 //	/locations/statuses one live status per EVSE id
 //	/tariffs            OCPI tariffs (ad-hoc price), referenced by tariffIds
 //
+// Each of the three has an "/all" sibling that answers with the complete set in
+// one response, which is what this package asks for.
+//
 // Rather than re-derive power, restrictions and address handling, this package
 // translates the payload into the internal/ocpi wire types and lets
 // internal/normalize do the mapping — the same path NL DOT-NL and Road take.
@@ -37,9 +40,14 @@ import (
 // request (their fair-use policy: identify yourself so they can reach you).
 const UserAgent = "appmire-charging (https://charging.appmire.be)"
 
-// maxPages bounds cursor-following. limit=ALL returns everything in one
+// maxPages bounds cursor-following. The /all endpoints return everything in one
 // response today; the cursor loop is a safety net if that ever changes.
 const maxPages = 200
+
+// pageLimit is the page size for cursor-following. The API validates the
+// parameter ("Limit must be one of: 500 or ALL"), so 500 is the only usable
+// value once we are paging rather than asking for /all.
+const pageLimit = 500
 
 // ---- wire types (camelCase OCPI) ----
 
@@ -234,13 +242,18 @@ func (c *Client) Snapshot(ctx context.Context, withTariffs bool) ([]ocpi.Locatio
 	return ol, ot, nil
 }
 
-// pages GETs path with limit=ALL and follows nextCursor until it is empty.
+// pages GETs path's /all sibling and follows nextCursor until it is empty.
+//
+// The complete set is requested as /<path>/all rather than /<path>?limit=ALL:
+// the latter answers 302 to the former and drops the query string on the way,
+// which would silently lose a cursor. Since /all ignores a cursor and always
+// answers in full, following one means falling back to the paged base path.
 func (c *Client) pages(ctx context.Context, path string, handle func([]byte) (string, error)) error {
 	cursor := ""
 	for page := 0; page < maxPages; page++ {
-		u := c.Base + path + "?limit=ALL"
+		u := c.Base + path + "/all"
 		if cursor != "" {
-			u += "&cursor=" + url.QueryEscape(cursor)
+			u = fmt.Sprintf("%s%s?limit=%d&cursor=%s", c.Base, path, pageLimit, url.QueryEscape(cursor))
 		}
 		body, err := c.get(ctx, u)
 		if err != nil {
