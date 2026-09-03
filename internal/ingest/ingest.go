@@ -258,7 +258,7 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 // Push/delta (mobilithek) and crawl (monta) feeds do not, so they are excluded.
 func fullSnapshotSource(t string) bool {
 	switch t {
-	case "ocpi", "ocpi_file", "ocpi_file_gz", "datex", "datex_afir", "bnetza", "irve", "oicp", "fintraffic", "eipa", "econtrol":
+	case "ocpi", "ocpi_file", "ocpi_file_gz", "datex", "datex_afir", "bnetza", "irve", "oicp", "fintraffic", "eipa", "econtrol", "ecomovement":
 		return true
 	default:
 		return false

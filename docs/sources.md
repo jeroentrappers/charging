@@ -15,6 +15,11 @@ see [EU expansion](#eu-expansion--wired-2026-08-18).
 Live update 2026-08-19: keys arrived for **PL (UDT EIPA)** and **AT (E-Control)**
 — both wired. Austria is now our richest new source: ~38,600 EVSEs with live
 status AND structured euro ad-hoc prices on 98% of them.
+Live update 2026-09-04: **Eco-Movement moved to the Belgian NAP's own AFIR feed**
+(`https://nap-be.eco-movement.com/datex2/v1/locations`, Bearer token) — DATEX II
+v3 **JSON** with **live status and ad-hoc price**, replacing the old locations-only
+XML export. 16,700 sites / **69,408 connectors** (was ~35,800), power on all but
+two (was 40% missing), price on 56,717 of them. See [Eco-Movement (BE NAP)](#eco-movement--be-nap-2026-09).
 
 ## Beyond Belgium — wired 2026-06-11 (no paid feeds)
 
@@ -101,14 +106,15 @@ the no-paid-feeds rule. Next-sweep leads: the NAPCORE monitor
 | **Monta** (Public API) | list: ✅ open / price: ⚠️ key | ⚠️ key + **per-EVSE** only | ⚠️ key + per-EVSE |
 | **EnergyVision** ✅LIVE | ⚠️ free key (email) | ✅ **yes** (status-feed rate updates) | ✅ yes (60s status feed) |
 | **Tesla** ✅LIVE | ⚠️ key (pre-encoded) | ❌ **no tariffs module** | ✅ yes (live status) |
-| **Eco-Movement** ✅LIVE | ✅ yes (token in URL) | ❌ no | ❌ no |
+| **Eco-Movement** ✅LIVE | ⚠️ free token (email) | ✅ **yes** (since the 2026-09 NAP feed) | ✅ **yes** (same feed) |
 | **INDIGO** ✅LIVE | ✅ yes | ❌ no (static) | ❌ no |
 | Gireve (EVCI) | ❌ fee-based license | ❌ not in open set | — |
 
 **Conclusion:** **Road is the only fully-open (no-credential) source with ad-hoc
 price in bulk** — and it's already live. No other open feed gives bulk price:
-Eco-Movement, INDIGO and **Monta's open charge-points list** are all
-location-only. **Monta's** price + availability are key-gated and **per-EVSE**
+INDIGO and **Monta's open charge-points list** are
+location-only (Eco-Movement was too, until its 2026-09 NAP feed added price and
+status behind a free token). **Monta's** price + availability are key-gated and **per-EVSE**
 (on-demand), so useful as a live "price for the tapped charger" lookup (with a
 key, Monta network only), not for bulk ingestion. Open Charge Map (global, free
 key) has only a sparse, unstructured `UsageCost` text field — not comparable
@@ -149,7 +155,7 @@ verified against the actual 1.2 MB file (37 element types, none price-related).
 | **Tesla Belgium** ✅LIVE | 1 CPO (~92 sites / 456 connectors) | OCPI **2.2.1** | `https://charging-roaming-data.tesla.com/ocpi/cpo/2.2.1/` | ✅ wired & ingesting — locations + **live status**, no tariffs module. Token is pre-base64 (`TESLA_TOKEN=base64:…`) | spolireddi@tesla.com |
 | **Monta** | 1 CPO | AFIR JSON (OCPI 2.2.1) | `https://docs.partner-api.monta.com/reference/get-afir-charge-points` | ⚠️ needs 2.2.1 / adapter | data@monta.com |
 | **Road** ✅LIVE | 1 CPO (~3,300 sites / 7,700 connectors) | OCPI 2.2.1 static JSON | `https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305/{locations,tariffs}.json` | ✅ **open, no key** — wired & ingesting (incl. prices) | roaming-dev@road.io |
-| **Eco-Movement** ⭐ ✅LIVE | **~20 networks (~35,800 connectors)** | **DATEX II** XML (open, token in URL) | `https://api.eco-movement.com/api/nap/datexii/locations?token=…` | ✅ wired & ingesting — **locations + power only, NO price/availability** (≈31 MB). Token set in DB via `chargingctl sources set-token ecomovement …` (folded into `?token=`) | nap@eco-movement.com |
+| **Eco-Movement** ⭐ ✅LIVE | **the BE NAP (16,700 sites / 69,408 connectors)** | **DATEX II v3 AFIR JSON** (Bearer token) | `https://nap-be.eco-movement.com/datex2/v1/locations` | ✅ wired & ingesting — **locations + power + live status + ad-hoc price**, paginated 1,000 sites/page (~104 MB per pass). Token set in DB via `chargingctl sources set-token ecomovement …` | support@eco-movement.com |
 | **Gireve (EVCI)** | many (roaming) | DATEX II XML | dataset `/en/dataset/evci` | ❌ needs DATEX II reader | via dataset page |
 | **Group INDIGO** ✅LIVE | 1 CPO (~2,300 connectors) | DATEX II XML (open) | `…/resource/d4bc8ddd-…/download/indigo-data-evcharging-static-datexii.xml` | ✅ wired & ingesting — **location-only** (no price/status), open, no key | via dataset page |
 
@@ -170,11 +176,15 @@ commercial **OCPI** API is the richer alternative.
   fetch via `Client.HasModule`). A `base64:` token prefix sends a pre-encoded
   credential verbatim. Monta uses its own adapter.
 - **DATEX II** — ✅ reader built (`internal/datex`, v3 EnergyInfrastructure),
-  wired via `cpo.source_type='datex'`. **Live: Eco-Movement (~35,800 connectors)
-  and Group Indigo (~2,300 connectors)**. The NAP feeds authenticate with a
-  `?token=` query param (folded in by `feedFor`), not a Bearer header. Caveat:
-  both are **coverage only — no ad-hoc price, no live status**, so enable them for
-  reach, not for price comparison. Mandatory NAP format from 2026-04-14.
+  wired via `cpo.source_type='datex'`. **Live: Group Indigo (~2,300 connectors)**
+  — coverage only (no ad-hoc price, no live status), so enable it for reach, not
+  for price comparison. Some NAP feeds of this shape authenticate with a `?token=`
+  query param (folded in by `feedFor`) rather than a Bearer header. Mandatory NAP
+  format from 2026-04-14.
+- **DATEX II AFIR JSON, paginated (`source_type='ecomovement'`)** — ✅ the Belgian
+  NAP feed: Bearer token, 1,000 sites per page, each page carrying the table AND
+  the status publication for its own sites. Parsed by the shared AFIR JSON reader
+  (`internal/datex`) and walked by `internal/ecomovement`.
 - **DATEX II AFIR pair (Bearer)** — ✅ (`source_type='datex_afir'`): a
   `<table>|<status>` URL pair authenticated with `Authorization: Bearer <key>`,
   parsed by the shared AFIR reader (station-level `energyRateUpdate` supported).
@@ -202,11 +212,51 @@ replies. Tick off and set the token env once each arrives.
 - [x] Tesla Belgium — spolireddi@tesla.com / aboumssimrat@tesla.com → `TESLA_TOKEN` — ✅ **token received & live** (transportdata.be NAP; pre-base64, set as `TESLA_TOKEN=base64:…`)
 - [x] Monta — data@monta.com → `MONTA_TOKEN` — sent, awaiting reply
 - [x] Road — roaming-dev@road.io — **not needed**: public file is live & ingesting (a token may add more, but the open feed works)
-- [x] Eco-Movement — nap@eco-movement.com → `ECOMOVEMENT_TOKEN` — ✅ **token received & live** (token in `?token=` URL; set in DB via `chargingctl sources set-token`)
+- [x] Eco-Movement — nap@eco-movement.com → `ECOMOVEMENT_TOKEN` — ✅ **token received & live**. Re-issued 2026-09-03 for the new **BE NAP** interface (`nap-be.eco-movement.com`, `Authorization: Bearer <token>`); set in the DB via `chargingctl sources set-token ecomovement …`. Further tokens: support@eco-movement.com, docs at https://developers.eco-movement.com/v5/docs/belgium-datex-ii
 - [x] Group Indigo — transportdata.be open dataset — **not needed**: open static DATEX II, live & ingesting
 - [x] ES DGT / PT Mobi.E / FI Fintraffic / CH SFOE — **not needed**: all four are open, no key, live & ingesting since 2026-08-18
 - [x] **AT E-Control** — registered at `https://admin.ladestellen.at/#/api/registrieren`; key received 2026-08-19 → `ECONTROL_APIKEY`. Live: 38,567 EVSEs with status + euro prices. NOTE: the key is tied to the `charging.appmire.be` Referer.
 - [x] **PL UDT (EIPA)** — registered at `https://eipa.udt.gov.pl/reader/register`; token received 2026-08-19 → `EIPA_TOKEN`. Live: 14,190 connectors with status + PLN prices (not euro-comparable yet).
+
+## Eco-Movement — BE NAP (2026-09)
+
+Eco-Movement replaced its `api.eco-movement.com` DATEX II XML export with the
+Belgian NAP publication at `https://nap-be.eco-movement.com/datex2/v1/`. Same
+aggregator, an entirely different interface — the old URL now answers
+`{"status_code":3001,"status_message":"Interface not found"}`.
+
+| | old XML export | new NAP feed |
+|---|---|---|
+| Format | DATEX II XML | DATEX II v3 **JSON**, AFIR profile 01-00-00 |
+| Auth | `?token=` in the URL | `Authorization: Bearer <token>` |
+| Size | one ~31 MB document | 17 pages × ~6 MB (`?limit=1000&offset=…`, `Link: rel="next"`) |
+| Connectors | ~35,800 | **69,408** (16,700 sites) |
+| Power | **40% missing** | 2 missing |
+| Live status | ❌ | ✅ six values, on every point |
+| Ad-hoc price | ❌ | ✅ 56,717 points (81.7%) |
+
+Feed specifics the readers handle:
+
+- **Both publications per page.** Each page is one document holding the
+  `aegiEnergyInfrastructureTablePublication` *and* the
+  `aegiEnergyInfrastructureStatusPublication` for exactly its sites, at the
+  document ROOT (no `messageContainer`/`payload` envelope). There is no bulk
+  status endpoint — the only other route is `/status/{evse_id}`, one request per
+  EVSE — so a status pass is a full walk of the feed (~104 MB, ~1 min,
+  uncompressed). Hence hourly availability, daily price.
+- **Location on the site's `entrance`**, not `locationReference`, with the
+  address under `locLocationExtensionG > FacilityLocation`.
+- **CPO on `energyDistributor`**, not `operator`.
+- **Net prices.** Every `energyPrice` is `taxIncluded:false` with `taxRate`
+  alongside — and the rate's unit is inconsistent (`21` on most, `0.21` on some
+  of the same 21% VAT). The reader grosses up, treating a rate above 1 as a
+  percentage. Median ad-hoc price after gross-up: €0.5348/kWh.
+- **Identity.** Refill points are keyed by an internal `idG`
+  (`BE-ENE-EENECO_G44971-1`) with the roaming eMI3 id on the connector's
+  `externalIdentifier` (`BE*ENE*EENECO*G44971*1`). We key chargers by the roaming
+  id: it matches 99.6% of what the old export published, so the switch keeps
+  chargers' identity (and their price history) instead of duplicating them, and
+  it is the id every other Belgian source uses.
 
 ## Suggested integration order
 

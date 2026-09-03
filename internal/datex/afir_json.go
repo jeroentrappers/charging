@@ -12,6 +12,11 @@ package datex
 //
 // A synthetic test push carries `payload` as an ARRAY of commonGenericPublication
 // objects with no aegi* energy publication; that parses to Kind="" and is ignored.
+//
+// Pull feeds may skip the envelope altogether and put the publication(s) at the
+// document root, and may carry BOTH kinds in one document (Eco-Movement's
+// Belgian NAP feed pages locations and their live status together) — both are
+// parsed, and Kind then reports the table.
 
 import (
 	"bytes"
@@ -40,6 +45,11 @@ type AFIRDoc struct {
 	Connectors []model.Connector       // table only; CPOID left EMPTY (caller sets it)
 	Tariffs    map[string]model.Tariff // table only; keyed by energyRate idG (== each connector's TariffID)
 	Statuses   []AFIRStatusUpdate      // status only
+	// EVSEIDs maps a refill-point idG to the roaming (eMI3) EVSE id published
+	// on its externalIdentifier, when there is one. Callers whose publisher
+	// keys refill points by an internal id (Eco-Movement) can re-key connectors
+	// onto the stable roaming id and still join Statuses, which reference idG.
+	EVSEIDs map[string]string
 }
 
 // ---- Wire types (lenient; only the fields we consume) -------------------
@@ -104,24 +114,33 @@ type jafirElectricEnergy struct {
 }
 
 type jafirConnector struct {
-	ConnectorType    jafirValued `json:"connectorType"`
-	MaxPowerAtSocket float64     `json:"maxPowerAtSocket"`
-	ConnectorFormat  jafirValued `json:"connectorFormat"`
-	Voltage          float64     `json:"voltage"`
-	MaximumCurrent   float64     `json:"maximumCurrent"`
+	ConnectorType      jafirValued       `json:"connectorType"`
+	ExternalIdentifier []jafirExternalID `json:"externalIdentifier"`
+	MaxPowerAtSocket   float64           `json:"maxPowerAtSocket"`
+	ConnectorFormat    jafirValued       `json:"connectorFormat"`
+	Voltage            float64           `json:"voltage"`
+	MaximumCurrent     float64           `json:"maximumCurrent"`
+}
+
+// jafirExternalID is a publisher-supplied identifier alongside the DATEX idG —
+// the roaming (eMI3) EVSE id when typeOfIdentifier says "evseId".
+type jafirExternalID struct {
+	Identifier       string      `json:"identifier"`
+	TypeOfIdentifier jafirValued `json:"typeOfIdentifier"`
+}
+
+func (e jafirExternalID) isEVSEID() bool {
+	return e.TypeOfIdentifier.ExtendedValueG == "evseId" || e.TypeOfIdentifier.Value == "evseId"
 }
 
 type jafirChargingPoint struct {
-	IDG                string `json:"idG"`
-	VersionG           string `json:"versionG"`
-	ExternalIdentifier []struct {
-		Identifier       string      `json:"identifier"`
-		TypeOfIdentifier jafirValued `json:"typeOfIdentifier"`
-	} `json:"externalIdentifier"`
-	DeliveryUnit   jafirValued           `json:"deliveryUnit"`
-	CurrentType    jafirValued           `json:"currentType"`
-	Connector      []jafirConnector      `json:"connector"`
-	ElectricEnergy []jafirElectricEnergy `json:"electricEnergy"`
+	IDG                string                `json:"idG"`
+	VersionG           string                `json:"versionG"`
+	ExternalIdentifier []jafirExternalID     `json:"externalIdentifier"`
+	DeliveryUnit       jafirValued           `json:"deliveryUnit"`
+	CurrentType        jafirValued           `json:"currentType"`
+	Connector          []jafirConnector      `json:"connector"`
+	ElectricEnergy     []jafirElectricEnergy `json:"electricEnergy"`
 }
 
 type jafirRefillPoint struct {
@@ -134,7 +153,14 @@ type jafirStation struct {
 	NumberOfRefillPoints int                `json:"numberOfRefillPoints"`
 	LocationReference    jafirLocRef        `json:"locationReference"`
 	Operator             jafirOperator      `json:"operator"`
+	EnergyDistributor    jafirOperator      `json:"energyDistributor"`
 	RefillPoint          []jafirRefillPoint `json:"refillPoint"`
+}
+
+// operatorName is the readable network name: the AFIR operator when published,
+// else the energyDistributor Eco-Movement uses to carry the CPO.
+func (st jafirStation) operatorName() string {
+	return jafirFirstNonEmpty(st.Operator.name(), st.EnergyDistributor.name())
 }
 
 // jafirLocRef (coordinates + address) and jafirOperator may appear at the site
@@ -217,8 +243,29 @@ type jafirSite struct {
 	IDG               string         `json:"idG"`
 	TypeOfSite        jafirValued    `json:"typeOfSite"`
 	LocationReference jafirLocRef    `json:"locationReference"`
+	Entrance          []jafirLocRef  `json:"entrance"`
 	Operator          jafirOperator  `json:"operator"`
+	EnergyDistributor jafirOperator  `json:"energyDistributor"`
 	Station           []jafirStation `json:"energyInfrastructureStation"`
+}
+
+// location returns the site's coordinates + address: the AFIR locationReference
+// when it carries them, else the first entrance that does (Eco-Movement puts the
+// whole FacilityLocation on the site entrance).
+func (s jafirSite) location() jafirLocRef {
+	if s.LocationReference.hasCoords() {
+		return s.LocationReference
+	}
+	for _, e := range s.Entrance {
+		if e.hasCoords() {
+			return e
+		}
+	}
+	return s.LocationReference
+}
+
+func (s jafirSite) operatorName() string {
+	return jafirFirstNonEmpty(s.Operator.name(), s.EnergyDistributor.name())
 }
 
 type jafirTable struct {
@@ -305,13 +352,18 @@ func ParseAFIRJSON(data []byte) (*AFIRDoc, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
-	doc := &AFIRDoc{Tariffs: map[string]model.Tariff{}}
+	doc := &AFIRDoc{Tariffs: map[string]model.Tariff{}, EVSEIDs: map[string]string{}}
 
 	raw := c.Payload
 	if len(bytes.TrimSpace(raw)) == 0 && c.MessageContainer != nil {
 		raw = c.MessageContainer.Payload
 	}
 	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		// No envelope: pull feeds (Eco-Movement) put the publications at the
+		// document root. A root object carrying neither still yields Kind="".
+		raw = bytes.TrimSpace(data)
+	}
 	if len(raw) == 0 {
 		return doc, nil
 	}
@@ -331,10 +383,12 @@ func ParseAFIRJSON(data []byte) (*AFIRDoc, error) {
 		if err := json.Unmarshal(e, &p); err != nil {
 			continue // skip a malformed element, keep the rest
 		}
-		switch {
-		case p.TablePublication != nil:
+		// A document may carry both publications; build each. Table first, so
+		// Kind reports "table" for a combined document.
+		if p.TablePublication != nil {
 			jafirBuildTable(doc, p.TablePublication)
-		case p.StatusPublication != nil:
+		}
+		if p.StatusPublication != nil {
 			jafirBuildStatus(doc, p.StatusPublication)
 		}
 	}
@@ -352,7 +406,7 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 				// or the site (GP JOULE) — prefer the station, fall back to site.
 				loc := st.LocationReference
 				if !loc.hasCoords() {
-					loc = site.LocationReference
+					loc = site.location()
 				}
 				coords := loc.coords()
 				if coords.Latitude == 0 || coords.Longitude == 0 {
@@ -360,9 +414,9 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 				}
 				addr := loc.address()
 				street := jafirStreetLine(addr)
-				operator := st.Operator.name()
+				operator := st.operatorName()
 				if operator == "" {
-					operator = site.Operator.name()
+					operator = site.operatorName()
 				}
 				if doc.Operator == "" && operator != "" {
 					doc.Operator = operator // readable CPO name for attribution
@@ -374,6 +428,9 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 					cp := rp.ChargingPoint
 					if cp.IDG == "" {
 						continue
+					}
+					if id := jafirEVSEID(cp); id != "" {
+						doc.EVSEIDs[cp.IDG] = id
 					}
 					tariffID := jafirBuildTariff(doc, cp.ElectricEnergy)
 
@@ -410,8 +467,12 @@ func jafirBuildTable(doc *AFIRDoc, pub *jafirTablePublication) {
 }
 
 func jafirBuildStatus(doc *AFIRDoc, pub *jafirStatusPublication) {
-	doc.Kind = "status"
-	doc.Creator = AFIRCreator{Country: pub.PublicationCreator.Country, NationalIdentifier: pub.PublicationCreator.NationalIdentifier}
+	if doc.Kind == "" { // a combined document is reported as its table
+		doc.Kind = "status"
+	}
+	if (doc.Creator == AFIRCreator{}) {
+		doc.Creator = AFIRCreator{Country: pub.PublicationCreator.Country, NationalIdentifier: pub.PublicationCreator.NationalIdentifier}
+	}
 
 	for _, site := range pub.SiteStatus {
 		for _, st := range site.StationStatus {
@@ -484,18 +545,20 @@ func jafirBuildTariff(doc *AFIRDoc, ee []jafirElectricEnergy) string {
 	return sel.IDG
 }
 
-// jafirPriceComponents maps AFIR energyPrice entries to our price components.
+// jafirPriceComponents maps AFIR energyPrice entries to our price components,
+// as the driver-facing (tax-inclusive) price.
 func jafirPriceComponents(prices []jafirEnergyPrice) []model.PriceComponent {
 	var out []model.PriceComponent
 	for _, ep := range prices {
+		v := jafirGrossPrice(ep)
 		switch ep.PriceType.Value {
 		case "pricePerKWh":
-			out = append(out, model.PriceComponent{Type: "ENERGY", Price: ep.Value})
+			out = append(out, model.PriceComponent{Type: "ENERGY", Price: v})
 		case "pricePerMinute":
 			// Our TIME component is €/hour.
-			out = append(out, model.PriceComponent{Type: "TIME", Price: ep.Value * 60, AfterMinutes: graceMinutes(ep.AdditionalInformation.all()...)})
+			out = append(out, model.PriceComponent{Type: "TIME", Price: jafirRound4(v * 60), AfterMinutes: graceMinutes(ep.AdditionalInformation.all()...)})
 		case "flatRate", "basePrice":
-			out = append(out, model.PriceComponent{Type: "FLAT", Price: ep.Value})
+			out = append(out, model.PriceComponent{Type: "FLAT", Price: v})
 		case "free":
 			out = append(out, model.PriceComponent{Type: "ENERGY", Price: 0})
 		default:
@@ -564,7 +627,43 @@ func jafirFirstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// jafirEVSEID returns the refill point's roaming (eMI3) EVSE id, from the
+// charging point's own externalIdentifier or, failing that, its first
+// connector's. Empty when the publisher carries none.
+func jafirEVSEID(cp jafirChargingPoint) string {
+	for _, e := range cp.ExternalIdentifier {
+		if e.isEVSEID() && e.Identifier != "" {
+			return e.Identifier
+		}
+	}
+	for _, c := range cp.Connector {
+		for _, e := range c.ExternalIdentifier {
+			if e.isEVSEID() && e.Identifier != "" {
+				return e.Identifier
+			}
+		}
+	}
+	return ""
+}
+
+// jafirGrossPrice converts a published price into what a driver actually pays.
+// AFIR states the tax per price: taxIncluded=false means the value is net, with
+// taxRate alongside. Publishers disagree on that rate's unit — Eco-Movement's
+// Belgian feed mixes 21 and 0.21 for the same 21% VAT — so a rate above 1 is
+// read as a percentage and anything at or below it as a fraction.
+func jafirGrossPrice(ep jafirEnergyPrice) float64 {
+	if ep.TaxIncluded || ep.TaxRate <= 0 {
+		return ep.Value
+	}
+	rate := ep.TaxRate
+	if rate > 1 {
+		rate /= 100
+	}
+	return jafirRound4(ep.Value * (1 + rate))
+}
+
 func jafirRound1(v float64) float64 { return math.Round(v*10) / 10 }
+func jafirRound4(v float64) float64 { return math.Round(v*10000) / 10000 }
 
 // jafirItoa converts a small non-negative int to its decimal string without fmt.
 func jafirItoa(n int) string {

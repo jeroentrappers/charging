@@ -234,7 +234,7 @@ chargingctl sources set-token energyvision "$TOKEN" && chargingctl sources enabl
 | **Road** | open OCPI 2.2.1 files | **live, no key** | ~7,700 connectors incl. ad-hoc prices; enabled by default |
 | **Monta** | AFIR list + per-EVSE API | **live** (key) | open locations; per-EVSE price/status crawl; `MONTA_CREDS` |
 | **EnergyVision** | DATEX II AFIR pair | **live** (key) | ~3,800 points with live availability + prices; `ENERGYVISION_TOKEN` |
-| **Eco-Movement** | NAP DATEX II | **live** (key) | ~36k connectors, coverage only (no price/status) |
+| **Eco-Movement** | BE NAP AFIR DATEX II JSON | **live** (key) | ~69k connectors with live status + ad-hoc prices; `ECOMOVEMENT_TOKEN` |
 | **National feeds** | NAP bulk files | **live, no key** | NL DOT-NL, DE BNetzA, FR IRVE, ES DGT, PT Mobi.E, FI Fintraffic, CH SFOE — see [docs/sources.md](docs/sources.md) |
 | **AT E-Control** | keyed REST crawl | **live** (key) | ~38,600 EVSEs, live status + euro ad-hoc prices; `ECONTROL_APIKEY` (key is bound to our domain) |
 | **PL UDT EIPA** | national JSON files | **live** (key) | ~14,200 connectors, live status + **PLN** prices (not euro-comparable yet); `EIPA_TOKEN` |
@@ -305,6 +305,5 @@ ranking, car/charging-profile settings, community reports, private-charger
 filtering, plug normalization, shareable URLs, the open `/export` dumps, and an
 OCPI 2.2.1 eMSP (handshake + push) ready for direct CPO integrations.
 
-Next: connect EnergyVision (OCPI handshake or their forthcoming consumer API)
-and Eco-Movement (priced API); DATEX II coverage expansion (mandatory
-2026-04-14); CI guard that `pricing.ts` matches `pricing.go`.
+Next: DATEX II coverage expansion (mandatory 2026-04-14); euro conversion for
+the remaining non-euro tariffs; CI guard that `pricing.ts` matches `pricing.go`.

@@ -292,21 +292,29 @@ func Seeds() []store.CPO {
 			Enabled:     true,        // open data, no key required
 		},
 		{
-			// 🇧🇪 DATEX II aggregator (~20 networks, ~35,800 connectors). Validated
-			// live: it carries locations + connector type + power, but NO price and
-			// NO live status, and the response is ~31 MB, so poll it at most daily.
-			// The NAP token authenticates via a ?token= query param (not a Bearer
-			// header); feedFor folds the resolved token (here from ECOMOVEMENT_TOKEN)
-			// into the URL. Coverage-only, but enabled for reach.
+			// 🇧🇪 Eco-Movement — the Belgian NAP's AFIR publication (nap-be.eco-movement.com).
+			// Replaced the old api.eco-movement.com DATEX II XML export in 2026-09:
+			// same aggregator, new interface, and a different feed entirely —
+			// DATEX II v3 *JSON* (AFIR profile 01-00-00) with LIVE STATUS and
+			// AD-HOC PRICE, where the old one carried locations only. Measured
+			// live: 16,700 sites / ~69,400 connectors (was ~35,800), power on
+			// all but a handful (the old feed missed 40%), and a price on ~82%
+			// of refill points. Prices are published NET of VAT with the rate
+			// alongside, so the AFIR JSON parser grosses them up.
+			// Each page carries the table AND the status publication for its own
+			// sites; there is no bulk status endpoint (the alternative is
+			// /status/{evse_id}, one request per EVSE), so a pass walks all ~17
+			// pages / ~104 MB uncompressed — hence hourly, not per minute.
+			// Bearer token, free on request from support@eco-movement.com.
 			ID:          "ecomovement",
-			Name:        "Eco-Movement (NAP aggregator)",
-			OCPIBaseURL: "https://api.eco-movement.com/api/nap/datexii/locations",
-			SourceType:  "datex",
+			Name:        "Eco-Movement · BE NAP",
+			OCPIBaseURL: "https://nap-be.eco-movement.com/datex2/v1/locations",
+			SourceType:  "ecomovement",
 			TokenEnv:    "ECOMOVEMENT_TOKEN",
 			Country:     "BE",
-			PollCron:    "0 5 * * *",
-			StatusCron:  "30 5 * * *", // daily; no live status in this feed
-			Enabled:     true,
+			PollCron:    "0 5 * * *", // daily price refresh
+			StatusCron:  "0 * * * *", // hourly availability — a pass is the whole feed
+			Enabled:     true,        // polled once ECOMOVEMENT_TOKEN (or the DB token) is set
 		},
 	}
 }

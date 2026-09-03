@@ -12,6 +12,7 @@ import (
 
 	"github.com/appmire/charging/internal/bnetza"
 	"github.com/appmire/charging/internal/datex"
+	"github.com/appmire/charging/internal/ecomovement"
 	"github.com/appmire/charging/internal/econtrol"
 	"github.com/appmire/charging/internal/eipa"
 	"github.com/appmire/charging/internal/fintraffic"
@@ -62,6 +63,11 @@ func feedFor(src source.Source) feed {
 			}
 		}
 		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: irve.Fetch}
+	case "ecomovement":
+		// BE NAP AFIR DATEX II JSON (Eco-Movement), paginated; each page carries
+		// the table AND the matching status publication, so one walk yields
+		// locations, availability and ad-hoc price.
+		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: ecomovement.Fetch}
 	case "oicp":
 		// CH SFOE ich-tanke-strom: OICP JSON pair "<data>|<status>", open.
 		return locFeed{cpoID: src.CPO.ID, url: src.CPO.OCPIBaseURL, token: src.Token, fetch: oicp.Fetch}
