@@ -100,6 +100,12 @@ type jafirEnergyPrice struct {
 	TaxIncluded           bool        `json:"taxIncluded"`
 	TaxRate               float64     `json:"taxRate"`
 	AdditionalInformation jafirML     `json:"additionalInformation"`
+	// TimeBasedApplicability carries the AFIR structured grace threshold: the
+	// price applies only past that many minutes into the session. Eco-Movement's
+	// Belgian NAP feed uses it for idle/blocking fees.
+	TimeBasedApplicability struct {
+		FromMinute int `json:"fromMinute"`
+	} `json:"timeBasedApplicability"`
 }
 
 type jafirEnergyRate struct {
@@ -533,6 +539,9 @@ func jafirBuildTariff(doc *AFIRDoc, ee []jafirElectricEnergy) string {
 		return ""
 	}
 	comps := jafirPriceComponents(sel.EnergyPrice)
+	if len(comps) == 0 {
+		return "" // nothing priceable (e.g. a €0 flat fee standing in for a missing tariff)
+	}
 	currency := "EUR"
 	if len(sel.ApplicableCurrency) > 0 && sel.ApplicableCurrency[0] != "" {
 		currency = sel.ApplicableCurrency[0]
@@ -556,7 +565,8 @@ func jafirPriceComponents(prices []jafirEnergyPrice) []model.PriceComponent {
 			out = append(out, model.PriceComponent{Type: "ENERGY", Price: v})
 		case "pricePerMinute":
 			// Our TIME component is €/hour.
-			out = append(out, model.PriceComponent{Type: "TIME", Price: jafirRound4(v * 60), AfterMinutes: graceMinutes(ep.AdditionalInformation.all()...)})
+			out = append(out, model.PriceComponent{Type: "TIME", Price: jafirRound4(v * 60),
+				AfterMinutes: graceThreshold(ep.TimeBasedApplicability.FromMinute, ep.AdditionalInformation.all()...)})
 		case "flatRate", "basePrice":
 			out = append(out, model.PriceComponent{Type: "FLAT", Price: v})
 		case "free":
@@ -565,7 +575,7 @@ func jafirPriceComponents(prices []jafirEnergyPrice) []model.PriceComponent {
 			// unknown price type → skip
 		}
 	}
-	return dedupeComponents(out)
+	return usableComponents(dedupeComponents(out))
 }
 
 func jafirMapStatus(v string) string {

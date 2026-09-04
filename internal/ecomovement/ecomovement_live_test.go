@@ -33,8 +33,52 @@ func TestLive_WalkBelgianNAP(t *testing.T) {
 			withPower++
 		}
 	}
+	// Idle fees: the feed states the grace threshold structurally
+	// (timeBasedApplicability), and a tariff must never carry the free tier of
+	// that schedule as a second TIME component.
+	var withGrace, feeFromZero, zeroOnly, doubleTime int
+	for _, tar := range tariffs {
+		var times, paidTimes int
+		priceable := false
+		for _, el := range tar.Elements {
+			for _, pc := range el.PriceComponents {
+				switch {
+				case pc.Type == "TIME":
+					times++
+					if pc.Price > 0 {
+						paidTimes++
+						if pc.AfterMinutes > 0 {
+							withGrace++
+						} else {
+							feeFromZero++
+						}
+					}
+				}
+				if pc.Type == "ENERGY" || pc.Price > 0 {
+					priceable = true
+				}
+			}
+		}
+		if times > 1 {
+			doubleTime++
+		}
+		if !priceable {
+			zeroOnly++
+		}
+	}
 	t.Logf("connectors: %d (status %d, priced %d, power %d), tariffs: %d",
 		len(conns), withStatus, priced, withPower, len(tariffs))
+	t.Logf("idle fees: %d with a grace threshold, %d charged from minute 0", withGrace, feeFromZero)
+
+	if withGrace == 0 {
+		t.Error("no tariff carries a grace threshold — timeBasedApplicability not parsed?")
+	}
+	if doubleTime > 0 {
+		t.Errorf("%d tariffs carry more than one TIME component; the evaluator only reads the first", doubleTime)
+	}
+	if zeroOnly > 0 {
+		t.Errorf("%d tariffs price nothing (e.g. a €0 flat fee) and would rank as free chargers", zeroOnly)
+	}
 
 	// Measured 2026-09-03: 69,408 connectors, all with status, ~82% priced,
 	// power on all but two. Thresholds are loose enough to tolerate the feed

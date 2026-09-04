@@ -55,14 +55,14 @@ func (p afirStaticPub) creator() afirCreatorXML {
 }
 
 type afirSite struct {
-	Name       string        `xml:"name>values>value"`
-	Latitude   float64       `xml:"locationReference>pointByCoordinates>pointCoordinates>latitude"`
-	Longitude  float64       `xml:"locationReference>pointByCoordinates>pointCoordinates>longitude"`
-	PostalCode string        `xml:"locationReference>_pointLocationExtension>facilityLocation>address>postcode"`
-	City       string        `xml:"locationReference>_pointLocationExtension>facilityLocation>address>city"`
-	Operator   string        `xml:"operator>name>values>value"`
-	Brand      string        `xml:"brand>values>value"`
-	Rates      []afirRate    `xml:"energyRate"`
+	Name       string     `xml:"name>values>value"`
+	Latitude   float64    `xml:"locationReference>pointByCoordinates>pointCoordinates>latitude"`
+	Longitude  float64    `xml:"locationReference>pointByCoordinates>pointCoordinates>longitude"`
+	PostalCode string     `xml:"locationReference>_pointLocationExtension>facilityLocation>address>postcode"`
+	City       string     `xml:"locationReference>_pointLocationExtension>facilityLocation>address>city"`
+	Operator   string     `xml:"operator>name>values>value"`
+	Brand      string     `xml:"brand>values>value"`
+	Rates      []afirRate `xml:"energyRate"`
 	// Accept the energyProduct wrapper at the site level too (see afirStation).
 	ProductRates []afirRate    `xml:"energyProduct>energyRate"`
 	Stations     []afirStation `xml:"energyInfrastructureStation"`
@@ -215,6 +215,9 @@ type afirPrice struct {
 	// AddInfo holds any additionalInformation text values — where German NAP
 	// ad-hoc tariffs state a per-minute grace threshold in prose (see graceMinutes).
 	AddInfo []string `xml:"additionalInformation>values>value"`
+	// FromMinute is the AFIR structured grace threshold: this price only applies
+	// once the session passes that many minutes (see graceMinutes).
+	FromMinute int `xml:"timeBasedApplicability>fromMinute"`
 }
 
 // ---- Status publication (EnergyInfrastructureStatusPublication) ----
@@ -398,7 +401,7 @@ func priceComponents(prices []afirPrice) []model.PriceComponent {
 			comps = append(comps, model.PriceComponent{Type: "ENERGY", Price: p.Value})
 		case "priceperminute":
 			// DATEX is €/min; our TIME component is €/hour.
-			comps = append(comps, model.PriceComponent{Type: "TIME", Price: round1(p.Value * 60), AfterMinutes: graceMinutes(p.AddInfo...)})
+			comps = append(comps, model.PriceComponent{Type: "TIME", Price: round1(p.Value * 60), AfterMinutes: graceThreshold(p.FromMinute, p.AddInfo...)})
 		case "flatrate", "baseprice":
 			comps = append(comps, model.PriceComponent{Type: "FLAT", Price: p.Value})
 		case "free":
@@ -406,7 +409,64 @@ func priceComponents(prices []afirPrice) []model.PriceComponent {
 		default: // other -> skip
 		}
 	}
-	return dedupeComponents(comps)
+	return usableComponents(dedupeComponents(comps))
+}
+
+// graceThreshold returns the number of minutes after which a per-minute price
+// starts to apply. AFIR has a structured field for it (timeBasedApplicability
+// fromMinute, used by the Belgian NAP); the German NAP states it in prose
+// instead, so free text is the fallback. 0 = charged from the start.
+func graceThreshold(fromMinute int, texts ...string) int {
+	if fromMinute > 0 {
+		return fromMinute
+	}
+	return graceMinutes(texts...)
+}
+
+// usableComponents cleans up a publisher's price list so it prices a session
+// the way a driver would actually be billed. Two AFIR conventions need it:
+//
+//   - A per-minute schedule published as tiers ("€0/min up to N minutes, then
+//     €X/min") arrives as several pricePerMinute prices. We carry one TIME
+//     component with a grace threshold, which says exactly that, so the other
+//     tiers are redundant — and harmful, because the pricing evaluator takes
+//     the first TIME component it finds: whichever tier the publisher happened
+//     to list first would win, either dropping the real fee or charging it from
+//     minute zero. We keep the paid tier that starts earliest, since that is the
+//     one a session of ordinary length runs into.
+//   - A rate whose only content is a €0 flat fee (Eco-Movement publishes one for
+//     ~700 Belgian points whose operator has not filed a tariff) is not a free
+//     charger, it is a missing price. Pricing it at €0 would rank those points
+//     as the cheapest chargers around. An explicitly zero ENERGY price — or the
+//     AFIR "free" price type, which maps to one — IS a free-charging claim and
+//     is kept.
+//
+// Returns nil when nothing priceable is left, which callers treat as "no tariff".
+func usableComponents(comps []model.PriceComponent) []model.PriceComponent {
+	keep := -1 // index of the paid TIME tier to keep
+	for i, c := range comps {
+		if c.Type != "TIME" || c.Price <= 0 {
+			continue
+		}
+		if keep < 0 || c.AfterMinutes < comps[keep].AfterMinutes {
+			keep = i
+		}
+	}
+	out := make([]model.PriceComponent, 0, len(comps))
+	priceable := false
+	for i, c := range comps {
+		if c.Type == "TIME" && keep >= 0 && i != keep {
+			continue // another tier of the schedule the kept component describes
+		}
+		if c.Type == "ENERGY" || c.Price > 0 {
+			priceable = true
+		}
+		out = append(out, c)
+	}
+	if !priceable {
+		return nil
+	}
+	return out
 }
 
 // dedupeComponents drops exact-duplicate price components, preserving order.
