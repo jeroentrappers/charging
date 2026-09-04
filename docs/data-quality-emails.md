@@ -308,8 +308,17 @@ current one. All 19 Lidl cases look like this (e.g. `BE*LDL*E00000011`:
 inoperative at €0.363/kWh beside available at €0.7016; the cheap figures are
 €0.20/€0.30 net, which we believe were Lidl's prices some years ago), plus 2 at
 Q8 electric. Since both copies share one roaming EVSE id, a consumer keying on
-that id has to guess which record is current. Dropping the decommissioned copies
-would settle it.
+that id has to guess which record is current — and the two endpoints answer
+differently: `GET /datex2/v1/status/BE*LDL*E00000011` returns only the
+**inoperative** copy at €0.363, while the same id on `/datex2/v1/locations`
+carries both, the live one priced €0.7016. So a consumer using your per-EVSE
+status endpoint gets the retired record's price and availability. Dropping the
+decommissioned copies would settle both.
+
+(For what it is worth, the timestamps do let a consumer tell them apart: the
+retired copies' `lastUpdated` has not moved since 2026-09-03T10:08:40Z, while
+their live twins are touched through the day. That is what we now use to pick
+the right one, but we would rather not have to.)
 
 **6. Duplicate `energyPrice` entries.** Many rates repeat the same price under
 different `priceGroupIndex` values — e.g. the same `pricePerMinute` twice at
