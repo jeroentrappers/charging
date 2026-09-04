@@ -9,18 +9,20 @@ Sender: Jeroen Trappers, Software engineer at Appmire <jeroen@appmire.be> · 049
 **Drafts 1–7 sent 2026-07-09**; **#8 (Fintraffic) sent 2026-08-20** — it lives in
 its own file because it needed a longer evidence trail than a table row, and it
 is the only one so far to have drawn a substantive reply (see that file).
+**#9 (Eco-Movement, on their new Belgian NAP feed) drafted 2026-09-04.**
 Reply / re-verification tracker:
 
 | # | Source | Sent | Reply | Fixed? (re-verified) |
 |---|--------|------|-------|----------------------|
 | 1 | EnergyVision | 2026-07-09 | — | ❌ status feed still has `pricePerMinute` 19.80 (checked 2026-07-09 PM) |
 | 2 | NDW / DOT-NL | 2026-07-09 | 2026-07-10 (pass-through; asked for the location list to forward to the supplier) | list sent 2026-07-10 (`ndw-defects-2026-07-10.csv`); workaround already shipped our side |
-| 3 | Eco-Movement | 2026-07-09 | — | — |
+| 3 | Eco-Movement | 2026-07-09 | — | ⚠️ **power fixed 2026-09-04** — their new BE NAP feed (`nap-be.eco-movement.com`) carries power on all but 2 of 69,408 connectors (was ~41% missing). The **mislocated points remain** (12 sites / 188 points outside Belgium, 6 of them in the US) — re-reported with the ids in #9 |
 | 4 | eRoundup | 2026-07-09 | — | — |
 | 5 | EnBW | 2026-07-09 | — | — |
 | 6 | EW Pricing GmbH | 2026-07-09 | — | — |
 | 7 | Monta | 2026-07-09 | — | — |
 | 8 | **Fintraffic (FI)** — draft in [`fintraffic-mail.md`](./fintraffic-mail.md) | 2026-08-20 | **2026-09-02** (Mika Ahvenainen, Development Manager) | ⚠️ partly: the missing records are the **operators'** to submit (Traficom is chasing them) — no Fintraffic-side fix; the unused-tariff over-publication **will** be fixed (`/tariffs` to return only referenced tariffs by default) |
+| 9 | **Eco-Movement** (new BE NAP feed) — draft below | drafted 2026-09-04 | — | — |
 
 Only sources with findings are listed. **No issues found** (nothing to send):
 tesla, road, indigo, mob-chargecloudgmbh (minor), and the smaller Mobilithek
@@ -216,3 +218,98 @@ Two small data points we spotted in your Belgian feed:
 Nothing urgent — just flagging so they can be corrected at source. Thanks!
 
 Jeroen Trappers — Appmire — jeroen@appmire.be — 0497053310
+
+---
+
+## 9. Eco-Movement — support@eco-movement.com (new Belgian NAP feed, 2026-09-04)
+
+**Subject:** BE NAP DATEX II feed — thanks, plus five observations from ingesting it
+
+Hello Peter / Eco-Movement team,
+
+Thank you for the token for the new Belgian NAP publication
+(`nap-be.eco-movement.com/datex2/v1/`). We switched over to it this week and it
+is a big step up on the old XML export: 16,700 sites / 69,408 connectors, live
+status on every refill point, an ad-hoc price on 81% of them, and — the thing we
+reported back in July — a power rating on all but two connectors, where the old
+feed was missing about 40%. We're also glad to see `timeBasedApplicability` on
+the idle fees; we now price those correctly because of it.
+
+Five things we noticed while ingesting, in case they're easy to act on:
+
+**1. TotalEnergies publishes almost no prices.** 12,585 of their 12,778 refill
+points carry no `energyRateUpdate` at all — and they account for 99% of every
+unpriced point in the feed (12,585 of 12,689). The 193 points they do price come
+through fine (€0.79/kWh DC). They're the largest network in the publication by
+point count, so this one operator is the whole gap between 81% and ~99% price
+coverage. Is that something you can chase with them, or is it a matter for the
+Belgian NAP / the operator directly?
+
+**2. `taxRate` is published in two different units.** Most prices state
+`"taxRate": 21` for Belgian VAT, but 1,314 of them (all TotalEnergies) state
+`"taxRate": 0.21` for what we believe is the same 21%. We read a value above 1
+as a percentage and a value at or below 1 as a fraction, which gives
+TotalEnergies' net 0.6529 → €0.79/kWh — a plausible round consumer price, so we
+think that reading is right. Could you confirm which form is intended, and
+ideally normalise it? As published, a consumer that takes the number literally
+either overcharges by 21% or undercharges by the same.
+
+**3. A `flatRate` of 0.00 as the only price on ~693 points.** 544 of them are
+Eneco (whose other 2,324 points carry normal per-kWh prices), the rest spread
+over NUMOBI, Stroohm, G&V, CenEnergy and a few others — 19 distinct
+`energyRate` ids in total. Taken literally, that says a session costs €0, so
+those points sorted to the top of our "cheapest charger nearby" list ahead of
+genuinely priced ones. We now treat a rate that prices nothing as "no tariff
+published" instead. If these operators really do charge nothing, the AFIR
+`priceType` `free` (or a 0.00 `pricePerKWh`) would say so unambiguously; if the
+tariff simply isn't filed, omitting the `energyRateUpdate` — as you already do
+for TotalEnergies — is clearer than a zero fee.
+
+**4. Twelve sites are still outside Belgium** (188 refill points) — the one
+finding from our July note that carried over. Six are Eneco sites plotted in the
+United States, and the rest look like placeholders or swapped coordinates:
+
+| site `idG` | latitude, longitude | points |
+|---|---|---|
+| `Eneco-FEF42BB2-11B1-49AB-B2D5-C4AC6BB590E9` | 42.01916, −93.44568 (Iowa) | 20 |
+| `Eneco-6AD7C846-FFDB-4522-B400-CA6FCA55B2FA` | 32.52707, −92.29220 (Louisiana) | 8 |
+| `Eneco-DFE90232-D5DB-4C53-A35D-789CFB1AA64C` | 39.64574, −77.73575 (Maryland) | 6 |
+| `Eneco-DC0F4263-4BF9-45BB-930A-EBF7D68DD3BF` | 37.55969, −86.76846 (Kentucky) | 2 |
+| `Eneco-C8F379A7-8926-4612-836F-338F59F639BB` | 40.54271, −78.78938 (Pennsylvania) | 2 |
+| `Eneco-B41F4B1A-DFA8-49C6-9576-4ADD015C9C97` | 38.13606, −89.10456 (Illinois) | 1 |
+| `Stroohm-89332768` | −43, −43 (South Atlantic) | 24 |
+| `Stroohm-90919929` | 48.876667, 123.393333 (China) | 5 |
+| `Pluginvest-90355655` | 48.876667, 123.393333 (same pair) | 2 |
+| `50five-90248112` | 52.082855, 4.301847 (The Hague, NL) | 112 |
+| `Sparki-7dd0ba37-19ac-4b7c-94a3-bdd6dfceda7b` | 50.107491, 19.832203 (Poland) | 4 |
+| `ChargePoint-BECPIL6986155` | 44.908544, 1.471283 (France) | 2 |
+
+All twelve carry `countryCode: BE` in their address, so a bounding-box check
+against the stated country would catch them at your end.
+
+**5. Duplicate `energyPrice` entries.** Many rates repeat the same price under
+different `priceGroupIndex` values — e.g. the same `pricePerMinute` twice at
+index 1 and twice at index 2. Harmless (we collapse identical entries), but it
+roughly doubles the size of those payloads.
+
+And two questions about consuming the feed:
+
+- **Polling cadence.** Since there is no bulk status endpoint, the only way to
+  refresh availability is to walk all 17 pages, which is ~104 MB per pass. We
+  currently do that hourly (plus a daily pass for prices) to be polite. What
+  cadence are you comfortable with — and is a status-only or delta endpoint on
+  the roadmap? That would let us follow your 60-second refresh instead of
+  sampling it hourly.
+- **Compression.** The endpoint doesn't honour `Accept-Encoding: gzip`; the JSON
+  compresses about 10:1, so enabling it would cut both our bandwidth and yours
+  by an order of magnitude.
+
+Minor, and only if you're collecting them: 128 connectors report more than
+400 kW, 14 AC connectors report over 44 kW, and 2 report 0 kW.
+
+Happy to send the exact EVSE ids behind any of these. Thanks again for the new
+feed and for turning the token around so quickly.
+
+Best regards,
+Jeroen Trappers
+Software engineer at Appmire — jeroen@appmire.be — 0497053310
