@@ -52,6 +52,7 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 	client := &http.Client{Timeout: pageTimeout}
 	tariffs := map[string]model.Tariff{}
 	var conns []model.Connector
+	var updated []time.Time // when the publisher last touched each connector's status
 
 	next := pageURL(base, 0)
 	for page := 0; page < maxPages && next != ""; page++ {
@@ -66,7 +67,9 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 		if len(doc.Connectors) == 0 {
 			break // past the last page
 		}
-		conns = append(conns, pageConnectors(cpoID, doc, tariffs)...)
+		pc, pu := pageConnectors(cpoID, doc, tariffs)
+		conns = append(conns, pc...)
+		updated = append(updated, pu...)
 
 		if link != "" {
 			next = resolve(next, link) // the publisher sends it absolute; relative still works
@@ -74,7 +77,7 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 			next = pageURL(base, (page+1)*pageSize)
 		}
 	}
-	return collapseDuplicates(conns), tariffs, nil
+	return collapseDuplicates(conns, updated), tariffs, nil
 }
 
 // collapseDuplicates keeps one connector per roaming EVSE id + connector id.
@@ -88,10 +91,21 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 // last decided both the price and the availability we published.
 //
 // Preference: a usable status beats a dead one, then a priced record beats an
-// unpriced one, then the first seen wins (stable). It also protects against the
-// offset pagination overlapping while the publisher regenerates a page.
-func collapseDuplicates(conns []model.Connector) []model.Connector {
+// unpriced one, then the more recently updated record wins — the leftover copy's
+// status timestamp stands still (Lidl's ghosts have not moved since the day they
+// were retired) while its live twin is touched whenever a driver plugs in. That
+// tie-break matters: a live charger reads "inoperative" now and then, and
+// without it the ghost's old price won those moments on page order alone.
+// It also protects against offset pagination overlapping while the publisher
+// regenerates a page.
+func collapseDuplicates(conns []model.Connector, updated []time.Time) []model.Connector {
 	type key struct{ evse, conn string }
+	at := func(i int) time.Time {
+		if i < len(updated) {
+			return updated[i]
+		}
+		return time.Time{}
+	}
 	best := make(map[key]int, len(conns))
 	order := make([]key, 0, len(conns))
 	for i, c := range conns {
@@ -102,7 +116,8 @@ func collapseDuplicates(conns []model.Connector) []model.Connector {
 			order = append(order, k)
 			continue
 		}
-		if rank(conns[i]) > rank(conns[j]) {
+		ri, rj := rank(conns[i]), rank(conns[j])
+		if ri > rj || (ri == rj && at(i).After(at(j))) {
 			best[k] = i
 		}
 	}
@@ -136,15 +151,19 @@ func rank(c model.Connector) int {
 }
 
 // pageConnectors overlays one page's status publication onto its table, re-keys
-// the connectors onto their roaming EVSE id, and records the tariffs seen.
-func pageConnectors(cpoID string, doc *datex.AFIRDoc, tariffs map[string]model.Tariff) []model.Connector {
+// the connectors onto their roaming EVSE id, and records the tariffs seen. The
+// second return value is each connector's status timestamp, used to break ties
+// between duplicate records.
+func pageConnectors(cpoID string, doc *datex.AFIRDoc, tariffs map[string]model.Tariff) ([]model.Connector, []time.Time) {
 	conns := doc.Connectors
+	updated := make([]time.Time, len(conns))
 	byPoint := make(map[string][]int, len(conns))
 	for i := range conns {
 		byPoint[conns[i].EVSEUID] = append(byPoint[conns[i].EVSEUID], i)
 	}
 	for _, s := range doc.Statuses {
 		for _, i := range byPoint[s.EVSEUID] {
+			updated[i] = s.LastUpdated
 			if s.Status != "" {
 				conns[i].EVSEStatus = s.Status
 			}
@@ -172,7 +191,7 @@ func pageConnectors(cpoID string, doc *datex.AFIRDoc, tariffs map[string]model.T
 			conns[i].EVSEUID = evseID
 		}
 	}
-	return conns
+	return conns, updated
 }
 
 // pageURL builds the feed URL for one offset, preserving any query the caller

@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"time"
 
 	"github.com/appmire/charging/internal/model"
 )
@@ -35,6 +36,11 @@ type AFIRStatusUpdate struct {
 	EVSEUID string        // the refill-point idG (join key), e.g. "cp-DE*CNT*EP90046*002*1-1"
 	Status  string        // mapped to OUR vocab
 	Tariff  *model.Tariff // from energyRateUpdate adHoc price; nil if none
+	// LastUpdated is when the publisher last changed this point's status. Zero
+	// when absent. A record the publisher has stopped touching is a strong hint
+	// that it is a leftover: Eco-Movement publishes some EVSEs twice, and the
+	// decommissioned copy's timestamp stands still while its live twin moves.
+	LastUpdated time.Time
 	// PriceWithdrawn distinguishes the two reasons Tariff can be nil: the
 	// publisher sent a price update that prices NOTHING (a €0 flat fee standing
 	// in for a missing tariff), rather than sending no price update at all. On a
@@ -300,6 +306,7 @@ type jafirChargingPointStatus struct {
 		TargetClass string `json:"targetClass"`
 		IDG         string `json:"idG"`
 	} `json:"reference"`
+	LastUpdated      string      `json:"lastUpdated"`
 	Status           jafirValued `json:"status"`
 	EnergyRateUpdate []struct {
 		EnergyRateReference struct {
@@ -493,6 +500,9 @@ func jafirBuildStatus(doc *AFIRDoc, pub *jafirStatusPublication) {
 				upd := AFIRStatusUpdate{
 					EVSEUID: cps.Reference.IDG,
 					Status:  jafirMapStatus(cps.Status.Value),
+				}
+				if t, err := time.Parse(time.RFC3339, cps.LastUpdated); err == nil {
+					upd.LastUpdated = t
 				}
 				// Build a tariff from energyRateUpdate (pick adHoc, else first).
 				if len(cps.EnergyRateUpdate) > 0 {

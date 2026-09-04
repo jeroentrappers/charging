@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/appmire/charging/internal/model"
 )
@@ -189,7 +190,7 @@ func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
 		{"ghost first", []model.Connector{ghost, live, other}},
 		{"live first", []model.Connector{live, ghost, other}},
 	} {
-		got := collapseDuplicates(tc.in)
+		got := collapseDuplicates(tc.in, nil)
 		if len(got) != 2 {
 			t.Fatalf("%s: %d connectors, want 2", tc.name, len(got))
 		}
@@ -204,7 +205,7 @@ func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
 	// Two dead copies: the priced one is still the better record.
 	unpriced := ghost
 	unpriced.TariffID = ""
-	got := collapseDuplicates([]model.Connector{unpriced, ghost})
+	got := collapseDuplicates([]model.Connector{unpriced, ghost}, nil)
 	if len(got) != 1 || got[0].TariffID != "old" {
 		t.Errorf("dead copies: kept %+v, want the priced one", got)
 	}
@@ -212,7 +213,34 @@ func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
 	// Distinct connectors of one EVSE are not duplicates.
 	c2 := live
 	c2.ConnectorID = "2"
-	if got := collapseDuplicates([]model.Connector{live, c2}); len(got) != 2 {
+	if got := collapseDuplicates([]model.Connector{live, c2}, nil); len(got) != 2 {
 		t.Errorf("connector 1 and 2 of one EVSE collapsed: %d rows", len(got))
+	}
+}
+
+// A live charger reads "inoperative" now and then, which ties it on status with
+// the leftover copy of the same EVSE. The publisher's status timestamp breaks
+// that tie: the ghost's has not moved in months, the live one's is minutes old.
+func TestCollapseDuplicates_BreaksAStatusTieOnFreshness(t *testing.T) {
+	stale := time.Date(2026, 9, 3, 10, 8, 40, 0, time.UTC)
+	fresh := time.Date(2026, 9, 4, 9, 5, 3, 0, time.UTC)
+	ghost := model.Connector{EVSEUID: "BE*LDL*E00000019", ConnectorID: "1", EVSEStatus: "OUTOFORDER", TariffID: "old", PlugType: "IEC_62196_T2_COMBO"}
+	live := model.Connector{EVSEUID: "BE*LDL*E00000019", ConnectorID: "1", EVSEStatus: "OUTOFORDER", TariffID: "current", PlugType: "CHADEMO"}
+
+	got := collapseDuplicates([]model.Connector{ghost, live}, []time.Time{stale, fresh})
+	if len(got) != 1 || got[0].TariffID != "current" {
+		t.Errorf("ghost first: kept %+v, want the freshly-updated record", got)
+	}
+	got = collapseDuplicates([]model.Connector{live, ghost}, []time.Time{fresh, stale})
+	if len(got) != 1 || got[0].TariffID != "current" {
+		t.Errorf("live first: kept %+v, want the freshly-updated record", got)
+	}
+	// Status still outranks freshness: a stale-but-available record beats a
+	// freshly-updated dead one.
+	avail := live
+	avail.EVSEStatus = "AVAILABLE"
+	got = collapseDuplicates([]model.Connector{avail, ghost}, []time.Time{stale, fresh})
+	if len(got) != 1 || got[0].EVSEStatus != "AVAILABLE" {
+		t.Errorf("kept %+v, want the available record", got)
 	}
 }
