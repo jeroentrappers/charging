@@ -95,6 +95,17 @@ func TestLive_WalkBelgianNAP(t *testing.T) {
 	if withPower < len(conns)*95/100 {
 		t.Errorf("connectors with power = %d of %d, want >= 95%%", withPower, len(conns))
 	}
+	// Duplicate roaming ids must be collapsed before they reach the store,
+	// where they would race for one charger row.
+	seen := map[string]bool{}
+	for _, c := range conns {
+		k := c.EVSEUID + "|" + c.ConnectorID
+		if seen[k] {
+			t.Errorf("duplicate connector %s survived the walk", k)
+			break
+		}
+		seen[k] = true
+	}
 	if len(tariffs) < 100 {
 		t.Errorf("tariffs = %d, want >= 100", len(tariffs))
 	}

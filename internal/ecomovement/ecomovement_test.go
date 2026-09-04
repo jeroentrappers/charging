@@ -172,3 +172,47 @@ func TestNextLink(t *testing.T) {
 		}
 	}
 }
+
+// The feed publishes some physical EVSEs twice — a live record and a
+// decommissioned one, each with its own tariff (Lidl's Belgian sites). Both map
+// to the same charger, so the live one must win rather than whichever copy the
+// walk read last.
+func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
+	ghost := model.Connector{EVSEUID: "BE*LDL*E00000011", ConnectorID: "1", PowerKW: 50, EVSEStatus: "OUTOFORDER", TariffID: "old", PlugType: "CHADEMO"}
+	live := model.Connector{EVSEUID: "BE*LDL*E00000011", ConnectorID: "1", PowerKW: 50, EVSEStatus: "AVAILABLE", TariffID: "current", PlugType: "CHADEMO"}
+	other := model.Connector{EVSEUID: "BE*LDL*E00000010", ConnectorID: "1", PowerKW: 50, EVSEStatus: "AVAILABLE", TariffID: "current"}
+
+	for _, tc := range []struct {
+		name string
+		in   []model.Connector
+	}{
+		{"ghost first", []model.Connector{ghost, live, other}},
+		{"live first", []model.Connector{live, ghost, other}},
+	} {
+		got := collapseDuplicates(tc.in)
+		if len(got) != 2 {
+			t.Fatalf("%s: %d connectors, want 2", tc.name, len(got))
+		}
+		if got[0].EVSEUID != "BE*LDL*E00000011" {
+			t.Errorf("%s: order not stable: %v", tc.name, got[0].EVSEUID)
+		}
+		if got[0].EVSEStatus != "AVAILABLE" || got[0].TariffID != "current" {
+			t.Errorf("%s: kept %s/%s, want AVAILABLE/current", tc.name, got[0].EVSEStatus, got[0].TariffID)
+		}
+	}
+
+	// Two dead copies: the priced one is still the better record.
+	unpriced := ghost
+	unpriced.TariffID = ""
+	got := collapseDuplicates([]model.Connector{unpriced, ghost})
+	if len(got) != 1 || got[0].TariffID != "old" {
+		t.Errorf("dead copies: kept %+v, want the priced one", got)
+	}
+
+	// Distinct connectors of one EVSE are not duplicates.
+	c2 := live
+	c2.ConnectorID = "2"
+	if got := collapseDuplicates([]model.Connector{live, c2}); len(got) != 2 {
+		t.Errorf("connector 1 and 2 of one EVSE collapsed: %d rows", len(got))
+	}
+}

@@ -74,7 +74,65 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 			next = pageURL(base, (page+1)*pageSize)
 		}
 	}
-	return conns, tariffs, nil
+	return collapseDuplicates(conns), tariffs, nil
+}
+
+// collapseDuplicates keeps one connector per roaming EVSE id + connector id.
+//
+// The feed sometimes publishes the same physical EVSE twice under two internal
+// refill-point ids: a live record and a decommissioned one left behind, each
+// with its own tariff. Lidl's Belgian sites are the clearest case — 19 EVSE ids
+// appear as an "inoperative" copy at the operator's OLD price (€0.242/kWh AC)
+// next to an "available" copy at the current one (€0.50). Both collapse onto the
+// same charger row, so without this whichever copy the walk happened to read
+// last decided both the price and the availability we published.
+//
+// Preference: a usable status beats a dead one, then a priced record beats an
+// unpriced one, then the first seen wins (stable). It also protects against the
+// offset pagination overlapping while the publisher regenerates a page.
+func collapseDuplicates(conns []model.Connector) []model.Connector {
+	type key struct{ evse, conn string }
+	best := make(map[key]int, len(conns))
+	order := make([]key, 0, len(conns))
+	for i, c := range conns {
+		k := key{c.EVSEUID, c.ConnectorID}
+		j, seen := best[k]
+		if !seen {
+			best[k] = i
+			order = append(order, k)
+			continue
+		}
+		if rank(conns[i]) > rank(conns[j]) {
+			best[k] = i
+		}
+	}
+	if len(order) == len(conns) {
+		return conns
+	}
+	out := make([]model.Connector, 0, len(order))
+	for _, k := range order {
+		out = append(out, conns[best[k]])
+	}
+	return out
+}
+
+// rank scores how much a record deserves to represent its EVSE: a charger that
+// can serve a driver outranks a dead one, and a priced record outranks a silent
+// one at the same status.
+func rank(c model.Connector) int {
+	score := 0
+	switch c.EVSEStatus {
+	case "AVAILABLE", "CHARGING":
+		score = 4
+	case "OUTOFORDER":
+		score = 2
+	default: // UNKNOWN or absent
+		score = 1
+	}
+	if c.TariffID != "" {
+		score++
+	}
+	return score
 }
 
 // pageConnectors overlays one page's status publication onto its table, re-keys
