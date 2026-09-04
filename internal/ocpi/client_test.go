@@ -88,8 +88,10 @@ func TestClient_V221_DiscoveryAndAuth(t *testing.T) {
 // verbatim (not re-encoded), and a CPO that advertises only Locations reports
 // HasModule("tariffs") == false so the engine skips the unsupported tariffs poll.
 func TestClient_V221_PreEncodedTokenAndModuleDiscovery(t *testing.T) {
-	const encoded = "ODhiZmM0ZjQtOGFmMS00YzY0LTg4MmItMWQyOTQ2YjE2OTcz" // base64 of a UUID
-	wantAuth := "Token " + encoded                                     // verbatim, NOT double-encoded
+	// Synthetic: base64 of an all-zero UUID. Never paste a real NAP credential
+	// here — this repo is public, and a token in a test file is a token leaked.
+	const encoded = "MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw"
+	wantAuth := "Token " + encoded // verbatim, NOT double-encoded
 
 	mux := http.NewServeMux()
 	var srvURL string

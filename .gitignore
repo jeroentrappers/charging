@@ -1,5 +1,11 @@
-# Binaries
+# Binaries. `go build ./cmd/...` drops these at the repo root, and two of them
+# (api, migrate) were committed by accident — a 24 MB and a 14 MB artifact in a
+# public repo. Keep them out.
 /bin/
+/api
+/ingest
+/migrate
+/chargingctl
 cmd/api/api
 cmd/ingest/ingest
 *.exe
