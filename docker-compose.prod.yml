@@ -16,6 +16,12 @@ services:
     # see docs/local-replica.md. On the deployed host the hetz1 override replaces
     # this entirely, so prod is unaffected.
     image: ${DB_IMAGE:-postgis/postgis:17-3.5}
+    # Parallel workers keep their shared tuple stores in /dev/shm, which Docker
+    # caps at 64 MB. The export's full snapshot fans out over the whole charger
+    # table and hit that ceiling once the dataset passed ~1M rows ("could not
+    # resize shared memory segment … No space left on device", SQLSTATE 53100),
+    # failing the snapshot.
+    shm_size: 1gb
     environment:
       POSTGRES_USER: charging
       POSTGRES_PASSWORD: charging
