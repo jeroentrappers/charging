@@ -223,7 +223,7 @@ Jeroen Trappers — Appmire — jeroen@appmire.be — 0497053310
 
 ## 9. Eco-Movement — support@eco-movement.com (new Belgian NAP feed, 2026-09-04)
 
-**Subject:** BE NAP DATEX II feed — thanks, plus five observations from ingesting it
+**Subject:** BE NAP DATEX II feed — thanks, plus six observations from ingesting it
 
 Hello Peter / Eco-Movement team,
 
@@ -235,7 +235,7 @@ reported back in July — a power rating on all but two connectors, where the ol
 feed was missing about 40%. We're also glad to see `timeBasedApplicability` on
 the idle fees; we now price those correctly because of it.
 
-Five things we noticed while ingesting, in case they're easy to act on:
+Six things we noticed while ingesting, in case they're easy to act on:
 
 **1. TotalEnergies publishes almost no prices.** 12,585 of their 12,778 refill
 points carry no `energyRateUpdate` at all — and they account for 99% of every
@@ -287,7 +287,31 @@ United States, and the rest look like placeholders or swapped coordinates:
 All twelve carry `countryCode: BE` in their address, so a bounding-box check
 against the stated country would catch them at your end.
 
-**5. Duplicate `energyPrice` entries.** Many rates repeat the same price under
+**5. Two prices for identical plugs at the same site**, and one publishing
+artefact behind some of it.
+
+At **83 sites**, two refill points of the same current type, power and connector
+type quote different `pricePerKWh` — median 1.35×, up to **2.76×** (MobilityPlus,
+Leuvensesteenweg 186 Diest: €0.3327 on two 7.4 kW AC points, €0.9184 on a third).
+Each side references a different `energyRate` id, and 16 of the price pairs recur
+at more than one site, so we read this as deliberate pricing (host-set tariffs?)
+rather than an error — but we'd rather ask than guess, because a driver at those
+sites pays up to triple depending on which pole they pick. The full list is
+attached (`ecomovement-divergent-prices-2026-09-04.csv`: site, address,
+coordinates, both prices, point counts, rate ids, EVSE ids).
+
+Related, and this one does look like an artefact: **57 EVSE ids are published
+twice**, under two different refill-point `idG`s. In 21 of those pairs the two
+copies carry different prices, and the pattern is consistent — the `inoperative`
+copy carries the operator's OLD tariff while the `available` copy carries the
+current one. All 19 Lidl cases look like this (e.g. `BE*LDL*E00000011`:
+inoperative at €0.363/kWh beside available at €0.7016; the cheap figures are
+€0.20/€0.30 net, which we believe were Lidl's prices some years ago), plus 2 at
+Q8 electric. Since both copies share one roaming EVSE id, a consumer keying on
+that id has to guess which record is current. Dropping the decommissioned copies
+would settle it.
+
+**6. Duplicate `energyPrice` entries.** Many rates repeat the same price under
 different `priceGroupIndex` values — e.g. the same `pricePerMinute` twice at
 index 1 and twice at index 2. Harmless (we collapse identical entries), but it
 roughly doubles the size of those payloads.
