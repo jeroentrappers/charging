@@ -590,6 +590,9 @@ func buildStaticConnectors(pub afirStaticPub, cpoID string) ([]model.Connector, 
 type AFIRStatus struct {
 	Status string        // mapped to our EVSE status vocabulary
 	Tariff *model.Tariff // non-nil if a live price update was present
+	// PriceWithdrawn: a price update WAS published but prices nothing (see
+	// AFIRStatusUpdate.PriceWithdrawn in the JSON reader).
+	PriceWithdrawn bool
 }
 
 // ParseAFIRStatus parses an EnergyInfrastructureStatusPublication into a map
@@ -600,8 +603,8 @@ func ParseAFIRStatus(data []byte) (map[string]AFIRStatus, error) {
 		return nil, fmt.Errorf("decode afir status: %w", err)
 	}
 	out := map[string]AFIRStatus{}
-	pub.each(func(id, status string, tariff *model.Tariff) {
-		out[id] = AFIRStatus{Status: status, Tariff: tariff}
+	pub.each(func(id, status string, tariff *model.Tariff, ratesPublished bool) {
+		out[id] = AFIRStatus{Status: status, Tariff: tariff, PriceWithdrawn: ratesPublished && tariff == nil}
 	})
 	return out, nil
 }
@@ -609,7 +612,7 @@ func ParseAFIRStatus(data []byte) (map[string]AFIRStatus, error) {
 // each walks every refill point status in the publication, resolving the price
 // update per refill point: its own energyRateUpdate wins, else the enclosing
 // station's (EnergyVision publishes station-level updates only).
-func (p afirStatusPub) each(fn func(id, status string, tariff *model.Tariff)) {
+func (p afirStatusPub) each(fn func(id, status string, tariff *model.Tariff, ratesPublished bool)) {
 	for _, st := range p.allStations() {
 		for _, rps := range st.RefillPoints {
 			id := rps.refID()
@@ -635,7 +638,7 @@ func (p afirStatusPub) each(fn func(id, status string, tariff *model.Tariff)) {
 					}
 				}
 			}
-			fn(id, statusVocab(rps.Status), tariff)
+			fn(id, statusVocab(rps.Status), tariff, len(rates) > 0 || len(rps.MixRates) > 0)
 		}
 	}
 }
@@ -665,8 +668,11 @@ func parseAFIRXML(data []byte) (*AFIRDoc, error) {
 		}
 		doc.Kind = "status"
 		doc.Creator = AFIRCreator{Country: pub.creator().Country, NationalIdentifier: pub.creator().NationalIdentifier}
-		pub.each(func(id, status string, tariff *model.Tariff) {
-			doc.Statuses = append(doc.Statuses, AFIRStatusUpdate{EVSEUID: id, Status: status, Tariff: tariff})
+		pub.each(func(id, status string, tariff *model.Tariff, ratesPublished bool) {
+			doc.Statuses = append(doc.Statuses, AFIRStatusUpdate{
+				EVSEUID: id, Status: status, Tariff: tariff,
+				PriceWithdrawn: ratesPublished && tariff == nil,
+			})
 		})
 	case bytes.Contains(data, []byte("EnergyInfrastructureTablePublication")):
 		var pub afirStaticPub

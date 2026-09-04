@@ -35,6 +35,12 @@ type AFIRStatusUpdate struct {
 	EVSEUID string        // the refill-point idG (join key), e.g. "cp-DE*CNT*EP90046*002*1-1"
 	Status  string        // mapped to OUR vocab
 	Tariff  *model.Tariff // from energyRateUpdate adHoc price; nil if none
+	// PriceWithdrawn distinguishes the two reasons Tariff can be nil: the
+	// publisher sent a price update that prices NOTHING (a €0 flat fee standing
+	// in for a missing tariff), rather than sending no price update at all. On a
+	// push/delta feed that difference is everything — the first is evidence the
+	// point has no usable price, the second is no evidence either way.
+	PriceWithdrawn bool
 }
 
 // AFIRDoc is the parsed result of one MessageContainer.
@@ -490,6 +496,7 @@ func jafirBuildStatus(doc *AFIRDoc, pub *jafirStatusPublication) {
 				}
 				// Build a tariff from energyRateUpdate (pick adHoc, else first).
 				if len(cps.EnergyRateUpdate) > 0 {
+					upd.PriceWithdrawn = true // until a usable price is found below
 					sel := 0
 					for i, er := range cps.EnergyRateUpdate {
 						if er.RatePolicy.Value == "adHoc" {
@@ -509,6 +516,7 @@ func jafirBuildStatus(doc *AFIRDoc, pub *jafirStatusPublication) {
 							Currency: currency,
 							Elements: []model.TariffElement{{PriceComponents: comps}},
 						}
+						upd.PriceWithdrawn = false
 					}
 				}
 				doc.Statuses = append(doc.Statuses, upd)

@@ -224,6 +224,17 @@ func (e *Engine) applyStatuses(ctx context.Context, cpoID string, updates []date
 				e.Log.Error("mobilithek upsert status", "id", row.ID, "err", serr)
 				continue
 			}
+			if u.Tariff == nil && u.PriceWithdrawn {
+				// The publisher DID send a price for this point, and it prices
+				// nothing (a €0 flat fee where no tariff has been filed). That is
+				// evidence, not silence, so close any version we hold open —
+				// otherwise the charger keeps ranking on a €0 session forever.
+				if closed, cerr := e.Store.CloseCurrentTariff(ctx, row.ID); cerr != nil {
+					e.Log.Error("mobilithek close withdrawn price", "id", row.ID, "err", cerr)
+				} else if closed {
+					e.Log.Info("mobilithek price withdrawn", "cpo", cpoID, "evse", u.EVSEUID)
+				}
+			}
 			if u.Tariff != nil && u.Tariff.OCPIID != "" {
 				conn := model.Connector{
 					CPOID: cpoID, EVSEUID: u.EVSEUID, ConnectorID: row.ConnectorID,

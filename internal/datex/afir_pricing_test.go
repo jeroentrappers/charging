@@ -196,3 +196,34 @@ func TestAFIRXML_GraceThresholdFromTimeBasedApplicability(t *testing.T) {
 		t.Errorf("AfterMinutes = %d, want 45", timeC.AfterMinutes)
 	}
 }
+
+// A status publication that sends a price update which prices nothing is
+// evidence the point has no usable price — distinct from sending no update at
+// all, which is what push feeds do for points that simply haven't changed.
+func TestAFIRJSON_PriceWithdrawnDistinguishesZeroFromSilence(t *testing.T) {
+	doc := parseTbl(t, napStatus(strings.Join([]string{
+		point("placeholder", `{"priceGroupIndex":0,"priceType":{"value":"flatRate"},"value":0,"taxIncluded":false,"taxRate":21}`),
+		point("priced", kwh),
+		// no energyRateUpdate at all
+		`{"aegiElectricChargingPointStatus":{"reference":{"idG":"silent"},"status":{"value":"available"}}}`,
+	}, ",")))
+
+	by := statusByPoint(t, doc)
+	for _, tc := range []struct {
+		id            string
+		wantTariff    bool
+		wantWithdrawn bool
+	}{
+		{"placeholder", false, true},
+		{"priced", true, false},
+		{"silent", false, false},
+	} {
+		u := by[tc.id]
+		if (u.Tariff != nil) != tc.wantTariff {
+			t.Errorf("%s: tariff present = %v, want %v", tc.id, u.Tariff != nil, tc.wantTariff)
+		}
+		if u.PriceWithdrawn != tc.wantWithdrawn {
+			t.Errorf("%s: PriceWithdrawn = %v, want %v", tc.id, u.PriceWithdrawn, tc.wantWithdrawn)
+		}
+	}
+}
