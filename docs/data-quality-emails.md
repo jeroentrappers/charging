@@ -9,7 +9,8 @@ Sender: Jeroen Trappers, Software engineer at Appmire <jeroen@appmire.be> · 049
 **Drafts 1–7 sent 2026-07-09**; **#8 (Fintraffic) sent 2026-08-20** — it lives in
 its own file because it needed a longer evidence trail than a table row, and it
 is the only one so far to have drawn a substantive reply (see that file).
-**#9 (Eco-Movement, on their new Belgian NAP feed) drafted 2026-09-04.**
+**#9 (Eco-Movement, on their new Belgian NAP feed) sent 2026-09-04**, with
+`ecomovement-divergent-prices-2026-09-04.csv` attached.
 Reply / re-verification tracker:
 
 | # | Source | Sent | Reply | Fixed? (re-verified) |
@@ -22,7 +23,7 @@ Reply / re-verification tracker:
 | 6 | EW Pricing GmbH | 2026-07-09 | — | — |
 | 7 | Monta | 2026-07-09 | — | — |
 | 8 | **Fintraffic (FI)** — draft in [`fintraffic-mail.md`](./fintraffic-mail.md) | 2026-08-20 | **2026-09-02** (Mika Ahvenainen, Development Manager) | ⚠️ partly: the missing records are the **operators'** to submit (Traficom is chasing them) — no Fintraffic-side fix; the unused-tariff over-publication **will** be fixed (`/tariffs` to return only referenced tariffs by default) |
-| 9 | **Eco-Movement** (new BE NAP feed) — draft below | drafted 2026-09-04 | — | — |
+| 9 | **Eco-Movement** (new BE NAP feed) — text below | **2026-09-04** | — | — (awaiting reply; re-check the TotalEnergies price gap, the `taxRate` unit split, the €0 flat fees and the 57 duplicated EVSE ids against a later snapshot) |
 
 Only sources with findings are listed. **No issues found** (nothing to send):
 tesla, road, indigo, mob-chargecloudgmbh (minor), and the smaller Mobilithek
@@ -221,7 +222,7 @@ Jeroen Trappers — Appmire — jeroen@appmire.be — 0497053310
 
 ---
 
-## 9. Eco-Movement — support@eco-movement.com (new Belgian NAP feed, 2026-09-04)
+## 9. Eco-Movement — support@eco-movement.com (new Belgian NAP feed) — SENT 2026-09-04
 
 **Subject:** BE NAP DATEX II feed — thanks, plus six observations from ingesting it
 
