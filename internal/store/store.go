@@ -392,6 +392,19 @@ func (s *Store) ConfirmTariff(ctx context.Context, chargerID int64) error {
 	return err
 }
 
+// CloseCurrentTariff ends a charger's open tariff version, so the charger reads
+// as unpriced from now on while its price history is kept. Used when a
+// full-snapshot source stops publishing a usable price for a charger it still
+// lists: without this the last version stays open forever and the charger keeps
+// ranking on a price its operator has withdrawn (or on a €0 placeholder we have
+// since learned not to trust). Reports whether a version was actually closed.
+func (s *Store) CloseCurrentTariff(ctx context.Context, chargerID int64) (bool, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE tariff_version SET observed_to = now()
+		 WHERE charger_id=$1 AND observed_to IS NULL`, chargerID)
+	return tag.RowsAffected() > 0, err
+}
+
 // ConfirmTariffsSeen bumps last_confirmed_at to now() on the open tariff version
 // of the given source's chargers whose EVSE was re-observed (with a price) in a
 // pass — recording that the price is still current even when it didn't change.

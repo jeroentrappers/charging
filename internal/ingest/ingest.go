@@ -204,6 +204,17 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 			return 0, 0, fmt.Errorf("full pass %s: %w", src.CPO.ID, err)
 		}
 		cacheKey := src.CPO.ID + "/" + KindPrice
+		// A complete list of a source's chargers is also a complete list of its
+		// prices, so a charger this pass listed WITHOUT a usable tariff has no
+		// published price, and any version we still hold open for it is closed.
+		//
+		// Guarded on the pass having returned SOME tariff: several feeds fetch
+		// their prices from a second file or module on a best-effort basis (Road's
+		// tariffs.json, an OCPI tariffs module that answers "not supported"), so a
+		// pass with no tariffs at all is far more likely to be a publisher outage
+		// than every operator withdrawing its price at once. Push/delta sources
+		// are excluded outright: there, absence means "no update sent".
+		closeWithdrawn := fullSnapshotSource(src.CPO.SourceType) && len(tariffs) > 0
 		prev := e.prevSigs(cacheKey)
 		next := make(map[string]uint64, len(conns))
 		changes := 0
@@ -211,6 +222,7 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 		// a stable-but-still-published price counts as "confirmed now", including
 		// the ones the signature cache skips below (whose price didn't change).
 		var pricedSeen []string
+		withdrawn := 0 // prices closed because the source no longer publishes one
 		for _, conn := range conns {
 			// Include the tariff content in the signature, so a row is reprocessed
 			// when its identity, status, OR price changes.
@@ -242,11 +254,26 @@ func (e *Engine) RunPrices(ctx context.Context, src source.Source) error {
 			if ch {
 				changes++
 			}
+			if closeWithdrawn && tariffHash == "" {
+				closed, cerr := e.Store.CloseCurrentTariff(ctx, id)
+				if cerr != nil {
+					e.Log.Error("close tariff", "cpo", src.CPO.ID,
+						"evse", conn.EVSEUID, "connector", conn.ConnectorID, "err", cerr)
+					continue
+				}
+				if closed {
+					withdrawn++
+					changes++
+				}
+			}
 			next[k] = sig
 		}
 		e.storeSigs(cacheKey, next)
 		if err := e.Store.ConfirmTariffsSeen(ctx, src.CPO.ID, pricedSeen); err != nil {
 			e.Log.Error("confirm tariffs", "cpo", src.CPO.ID, "err", err)
+		}
+		if withdrawn > 0 {
+			e.Log.Info("price withdrawn", "cpo", src.CPO.ID, "chargers", withdrawn)
 		}
 		e.reconcileRetired(ctx, src, conns)
 		return len(conns), changes, nil
