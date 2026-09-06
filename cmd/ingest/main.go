@@ -30,7 +30,7 @@ func main() {
 	cfg := config.Load()
 	ctx := context.Background()
 
-	st, err := store.New(ctx, cfg.DatabaseURL)
+	st, err := store.NewWithCredentials(ctx, cfg.DatabaseURL, cfg.DBCredentialsFile)
 	if err != nil {
 		log.Error("connect db", "err", err)
 		os.Exit(1)

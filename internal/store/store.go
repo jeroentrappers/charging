@@ -21,7 +21,29 @@ import (
 type Store struct{ Pool *pgxpool.Pool }
 
 func New(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	return NewWithCredentials(ctx, dsn, "")
+}
+
+// NewWithCredentials is New with the user and password taken from credFile on
+// every new connection instead of from the DSN, so a rotation lands without a
+// restart (see credentials.go). An empty credFile keeps the DSN's own
+// credentials, which is what local runs and the one-shot migrator want.
+func NewWithCredentials(ctx context.Context, dsn, credFile string) (*Store, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	if credFile != "" {
+		creds, err := newCredentials(credFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg.BeforeConnect = func(_ context.Context, cc *pgx.ConnConfig) error {
+			creds.apply(cc)
+			return nil
+		}
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}

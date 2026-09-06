@@ -11,7 +11,11 @@ import (
 
 type Config struct {
 	DatabaseURL string
-	APIAddr     string
+	// DBCredentialsFile, when set, supplies the database user + password on every
+	// new connection instead of the DSN, so a rotation needs no restart. Points at
+	// a mounted secret (docker: ./secrets, Kubernetes: a Secret volume).
+	DBCredentialsFile string
+	APIAddr           string
 
 	// Reference vehicle for the comparable session prices.
 	VehicleUsableKWh   float64
@@ -100,6 +104,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		DatabaseURL:            env("DATABASE_URL", "postgres://charging:charging@localhost:5433/charging?sslmode=disable"),
+		DBCredentialsFile:      env("DB_CREDENTIALS_FILE", ""),
 		APIAddr:                env("API_ADDR", ":8080"),
 		VehicleUsableKWh:       envFloat("VEHICLE_USABLE_KWH", 60),
 		VehicleConsumption:     envFloat("VEHICLE_CONSUMPTION_KWH100", 18),

@@ -79,7 +79,7 @@ func main() {
 		os.Exit(runHealthcheck(cfg.APIAddr))
 	}
 
-	st, err := store.New(context.Background(), cfg.DatabaseURL)
+	st, err := store.NewWithCredentials(context.Background(), cfg.DatabaseURL, cfg.DBCredentialsFile)
 	if err != nil {
 		log.Error("connect db", "err", err)
 		os.Exit(1)

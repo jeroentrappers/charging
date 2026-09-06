@@ -30,37 +30,85 @@ Two properties fall out of the split:
 - **The owner's password can be rotated whenever you like.** Only the migrate
   container uses it, and that container runs once per deploy and exits.
 
-## Rotating the runtime password (no failed queries)
+## How the app reads its credential
 
-Two ordinary deploys. Say `charging_a` is active.
+`api` and `ingest` do not take the database user and password from
+`DATABASE_URL`. They read `/secrets/db-credentials` — a mounted file Ansible
+writes from the vault — on **every new database connection**, through pgx's
+`BeforeConnect` hook (`internal/store/credentials.go`):
 
-**1. Give the idle role a new password.** In
-`deploy/ansible/group_vars/charging/vault.yml`, under `charging_env`, set
-`DB_PASSWORD_CHARGING_B` to a fresh value (`openssl rand -hex 24`), leaving
-`DB_USER: charging_a`. Then:
-
-```bash
-cd deploy/ansible && ansible-playbook site.yml --tags app
+```
+DB_USER=charging_a
+DB_PASSWORD=…
 ```
 
-Nothing that is running is affected: the deploy re-passwords a role nobody is
-connected as.
+A process cannot be handed new environment variables, so a credential baked into
+the DSN at startup can only change by restarting. Reading it from a file means a
+rotation lands on the next connection while the connections already open keep
+serving. Set `DB_CREDENTIALS_FILE` to enable it; unset (local runs, the one-shot
+migrator) the DSN's own credentials are used, exactly as before.
 
-**2. Switch over.** Set `DB_USER: charging_b` in the same file and deploy again.
-The app comes up on a credential that has been valid since step 1, so there is
-no window in which it holds a password the database has already rejected.
+Failure behaviour is deliberately asymmetric: a missing or unparseable file
+**fails the process at startup**, because that means a broken mount and it should
+be loud. The same failure **in flight is ignored** and the last known-good
+credential keeps being used — a mounted secret can briefly vanish while it is
+swapped (Kubernetes replaces the whole directory atomically), and refusing to
+open connections over that would be worse than being a few seconds stale.
 
-Next time, rotate `charging_a` and switch back. The ansible task sets both roles'
-passwords on every deploy, so the active one is simply re-set to the value it
-already has — a no-op that existing sessions never notice.
+## Rotating the runtime password — without restarting anything
 
-**What this does not remove:** the deploy itself. There is one `api` container
-and nginx proxies to it with a single `proxy_pass`, so recreating it drops
-requests for a few seconds — the same blip every deploy has. Making rotation
-fully invisible means fixing that first (a second api replica behind an nginx
-`upstream` with `proxy_next_upstream error timeout http_502`, or blue/green).
-The two-role split is what makes that worth doing: with it, rolling deploys give
-zero-downtime rotation for free.
+Say `charging_a` is active.
+
+**1. Give the idle role a new password.** Set `DB_PASSWORD_CHARGING_B` in the
+vault and deploy (`--tags app`). Nothing live is touched: the deploy re-passwords
+a role nobody is connected as.
+
+**2. Switch over, no restart.** Set `DB_USER: charging_b` in the vault, then:
+
+```bash
+cd deploy/ansible && ansible-playbook site.yml --tags dbcreds
+```
+
+That rewrites `/secrets/db-credentials` and stops there — no image build, no
+container recreation, no dropped requests. New connections come up as
+`charging_b` immediately; the ones already open finish their lives as
+`charging_a` (up to pgx's one-hour `MaxConnLifetime`). To cut that tail short,
+`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename =
+'charging_a'` — the pool reconnects on the new credential.
+
+Because `ingest` keeps a warm in-memory signature cache, avoiding a restart here
+is worth real work: a cold pass rewrites every row (measured: 69,408 rows in
+21 minutes, against 3–4 minutes warm).
+
+Next time, rotate `charging_a` and switch back. Both roles' passwords are set
+from the vault on every deploy, so the active one is simply re-set to the value
+it already has — a no-op that existing sessions never notice.
+
+### Or as part of a deploy
+
+If you would rather fold rotation into a normal deploy, both steps are just
+`--tags app` runs. The credentials file is written before the stack starts, so
+the app never comes up against a password the database has not accepted yet.
+
+Both passwords live in `deploy/ansible/group_vars/charging/vault.yml` under
+`charging_env`, as `DB_PASSWORD_CHARGING_A` / `DB_PASSWORD_CHARGING_B`
+(`openssl rand -hex 24`).
+
+**What this still does not cover:** deploys themselves. There is one `api`
+container behind a single nginx `proxy_pass`, so recreating it drops requests for
+a few seconds. Rotation no longer needs a deploy, so that blip no longer applies
+to it — but any code change still pays it. Fixing that is separate work (a second
+api replica behind an nginx `upstream` with `proxy_next_upstream error timeout
+http_502`, or blue/green), and it is also what `api` needs before it can be
+scaled at all, since it currently hosts the export snapshotter and the Mobilithek
+spool drainers.
+
+**On Kubernetes** this same file is a Secret mounted as a volume: the kubelet
+updates it in place, so rotation stays a `kubectl apply` with no rollout. (Secrets
+injected as environment variables do *not* update, and `subPath` mounts never
+refresh — mount the directory.) It is also the seam a managed database's IAM auth
+or Vault's per-lease roles plug into, where the token expires every few minutes
+and fetching it per connection is the only option.
 
 ## Rotating the owner's password
 
@@ -85,7 +133,7 @@ needs the owner) and `scripts/restore-local-db.sh` work with no configuration.
 ## First install on a fresh box
 
 The roles do not exist until the first migration runs, and their passwords are
-set after the stack starts. If the vault already names `DB_USER`, api and ingest
-will fail to connect on that very first deploy and restart-loop for a few seconds
-until the password task lands, then recover on their own. To avoid even that,
-leave `DB_USER` unset for the first deploy and add it on the second.
+set after the stack starts — but the credentials file is written before it, and
+the app fails fast on a credential that does not work yet. So on a brand-new box
+leave `DB_USER` out of the vault for the first deploy (everything falls back to
+the owner, exactly as it did before this change) and add it on the second.

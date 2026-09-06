@@ -112,6 +112,28 @@
     - { name: mob-key.pem, content: "{{ mob_key_pem }}" }
   no_log: true
 
+# Read by api and ingest on every new database connection (see
+# internal/store/credentials.go), so rewriting this file rotates the credential
+# without restarting anything:
+#
+#   ansible-playbook site.yml --tags dbcreds
+#
+# The full deploy writes it too, before the stack starts — the app fails fast if
+# it is configured but missing.
+- name: Write the runtime database credentials (vault)
+  when: charging_env.DB_USER is defined
+  become: true
+  ansible.builtin.copy:
+    content: |
+      DB_USER={{ charging_env.DB_USER }}
+      DB_PASSWORD={{ charging_env['DB_PASSWORD_' ~ (charging_env.DB_USER | upper)] }}
+    dest: "{{ charging_dir }}/secrets/db-credentials"
+    owner: "{{ mob_secret_uid | default('65532') }}"
+    group: "{{ mob_secret_uid | default('65532') }}"
+    mode: "0400"
+  no_log: true
+  tags: [dbcreds]
+
 - name: Upload .env from local file (copy mode)
   when: secrets_mode == 'copy'
   ansible.builtin.copy:
