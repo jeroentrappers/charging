@@ -11,6 +11,15 @@
 # DATABASE_URL is overridden to the compose DB by docker-compose.prod.yml, so
 # the value here only matters for tooling run outside compose.
 charging_env:
+  # Runtime database credentials. Two interchangeable login roles so a password
+  # can be rotated without touching the one in use — see docs/db-credentials.md.
+  # Rotate by giving the IDLE role a new password and deploying, then pointing
+  # DB_USER at it and deploying again.
+  DB_USER: "charging_a"
+  DB_PASSWORD_CHARGING_A: "CHANGE_ME"      # openssl rand -hex 24
+  DB_PASSWORD_CHARGING_B: "CHANGE_ME"
+  # Owner role: migrations, pg_dump, manual psql. One-shot consumers only.
+  DB_ADMIN_PASSWORD: "CHANGE_ME"
   DATABASE_URL: "postgres://charging:charging@db:5432/charging?sslmode=disable"
   ENERGYVISION_TOKEN: "CHANGE_ME"
   MONTA_CREDS: "CHANGE_ME"

@@ -5,8 +5,11 @@ x-app: &app
   image: charging:latest
   env_file: .env
   environment:
-    # Overrides the dev DATABASE_URL from .env to point at the compose DB.
-    DATABASE_URL: postgres://charging:charging@db:5432/charging?sslmode=disable
+    # Overrides the dev DATABASE_URL from .env to point at the compose DB, as the
+    # rotating RUNTIME role (DML only — see db/migrations/00025_app_login_roles.sql).
+    # DB_USER names whichever of charging_a / charging_b is currently active; the
+    # defaults keep a bare `docker compose up` working for local use.
+    DATABASE_URL: postgres://${DB_USER:-charging}:${DB_PASSWORD:-charging}@db:5432/charging?sslmode=disable
   restart: unless-stopped
 
 services:
@@ -24,7 +27,9 @@ services:
     shm_size: 1gb
     environment:
       POSTGRES_USER: charging
-      POSTGRES_PASSWORD: charging
+      # Only read at initdb, so changing it does nothing to an existing volume —
+      # rotate the owner with ALTER ROLE (see docs/db-credentials.md).
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-charging}
       POSTGRES_DB: charging
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -38,6 +43,11 @@ services:
   migrate:
     <<: *app
     command: ["/usr/local/bin/migrate"]
+    # Migrations are the only DDL, so they run as the owner rather than the
+    # runtime role. It is a one-shot container, so re-passwording the owner never
+    # interrupts anything that is serving traffic.
+    environment:
+      DATABASE_URL: postgres://charging:${DB_ADMIN_PASSWORD:-charging}@db:5432/charging?sslmode=disable
     restart: "no"
     depends_on:
       db:
@@ -49,7 +59,7 @@ services:
     image: ${DB_IMAGE:-postgis/postgis:17-3.5}
     profiles: ["demo"]
     environment:
-      PGPASSWORD: charging
+      PGPASSWORD: ${DB_ADMIN_PASSWORD:-charging}
     entrypoint: ["sh", "-c", "psql -h db -U charging -d charging -v ON_ERROR_STOP=1 -f /seed.sql"]
     volumes:
       - ./db/demo_seed.sql:/seed.sql:ro
@@ -76,7 +86,9 @@ services:
     <<: *app
     command: ["/usr/local/bin/ingest"]
     environment:
-      DATABASE_URL: postgres://charging:charging@db:5432/charging?sslmode=disable
+      # Repeated because a service-level `environment:` replaces the anchor's
+      # rather than merging into it.
+      DATABASE_URL: postgres://${DB_USER:-charging}:${DB_PASSWORD:-charging}@db:5432/charging?sslmode=disable
       METRICS_ADDR: ":9090"
     depends_on:
       migrate:

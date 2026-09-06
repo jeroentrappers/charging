@@ -172,6 +172,26 @@
   register: compose_up
   changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreate' in compose_up.stderr"
 
+# The migration creates charging_a / charging_b without passwords (secrets do not
+# belong in a migration), so the vault is what makes them usable. Both are set on
+# every deploy: the active role's is a no-op re-set of the value it already has,
+# and the idle one's is how a rotation is staged — by the time DB_USER points at
+# a role, its password was set on an earlier deploy, so the app never starts
+# against a credential that does not work yet.
+- name: Set the runtime login-role passwords
+  when: charging_env['DB_PASSWORD_' ~ (item | upper)] is defined
+  ansible.builtin.command:
+    chdir: "{{ charging_dir }}"
+    cmd: >
+      docker compose {{ compose_files | map('regex_replace', '^', '-f ') | join(' ') }}
+      exec -T db psql -U charging -d charging -v ON_ERROR_STOP=1
+      -c "ALTER ROLE {{ item }} PASSWORD '{{ charging_env['DB_PASSWORD_' ~ (item | upper)] }}'"
+  loop:
+    - charging_a
+    - charging_b
+  no_log: true          # the password is the whole point
+  changed_when: false   # setting a role's password to what it already is is not a change
+
 - name: Wait for API health
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ api_loopback_port }}/healthz"
