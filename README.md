@@ -69,6 +69,7 @@ the API (`/api/*`) on one origin; the API serves the bulk **export** and the
 | [`docs/export.md`](docs/export.md) | the open bulk dataset dumps under `/export` |
 | [`docs/frontend.md`](docs/frontend.md) | PWA UX + features |
 | [`docs/access-request-emails.md`](docs/access-request-emails.md) | API-key request drafts |
+| [`docs/db-credentials.md`](docs/db-credentials.md) | database roles + rotating a password with no downtime |
 
 ## Comparison model
 
@@ -260,6 +261,12 @@ in the [appmire4-web deploy memory]; in short:
 cp .env.example .env   # set ADMIN_TOKEN, MONTA_CREDS, PUBLIC_URL, WEB_API_BASE…
 make prod-up           # build + start; migrations run automatically
 ```
+
+In production the api and ingest containers connect as one of two
+interchangeable login roles rather than the database owner, and read that
+credential from a mounted file on every new connection — so a password rotates
+in seconds without restarting either, and a leaked runtime credential cannot
+issue DDL. See [`docs/db-credentials.md`](docs/db-credentials.md).
 
 `PUBLIC_URL` (e.g. `https://charging.appmire.be/api`) makes the OCPI endpoints'
 advertised URLs absolute. `WEB_API_BASE` is the API origin the **browser**

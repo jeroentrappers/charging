@@ -11,7 +11,7 @@ be reused for migrating the other appmire4-web workloads later.
 ansible.cfg            inventory + vault password file
 inventory.ini          [charging] target, [source] = appmire4-web (dump source)
 group_vars/all.yml     non-secret vars (domain, repo, images, ports, OSRM)
-group_vars/charging/vault.yml(.example)   secrets (.env + Mobilithek mTLS certs)
+group_vars/charging/vault.yml(.example)   secrets (.env + DB credentials + Mobilithek mTLS certs)
 site.yml               deploy: bootstrap → charging → nginx
 migrate-data.yml       one-time DB backup/restore (appmire4-web → target)
 roles/bootstrap        docker engine, firewall, base packages
@@ -54,11 +54,37 @@ cd deploy/ansible
 ansible-playbook site.yml                 # full provision + deploy
 ansible-playbook site.yml --tags app      # ship a code update only
 ansible-playbook site.yml --tags nginx    # vhost / TLS only
+ansible-playbook site.yml --tags dbcreds  # rotate the database credential only
 ```
 
 `--tags app` rsyncs the working tree, re-renders `.env`, rebuilds, and `up -d`s
 — so day-to-day updates are one command. OSRM data is prepared only when the
 processed graph is missing.
+
+`--tags dbcreds` writes `secrets/db-credentials` and nothing else: no build, no
+container recreation. api and ingest re-read that file on every new database
+connection, so it rotates the credential **without restarting either** — see
+[Database credentials](#database-credentials).
+
+## Database credentials
+
+The app does not connect as the database owner. Postgres allows a role one
+password, so live rotation needs two interchangeable login roles and a
+switchover:
+
+| vault key (`charging_env`) | meaning |
+|---|---|
+| `DB_USER` | which of `charging_a` / `charging_b` the app currently uses |
+| `DB_PASSWORD_CHARGING_A`, `DB_PASSWORD_CHARGING_B` | one password per role; both are set on every `--tags app` deploy |
+| `DB_ADMIN_PASSWORD` | the owner (`charging`) — migrations, `pg_dump`, manual `psql` |
+
+Rotating is two steps and no downtime: give the **idle** role a new password and
+deploy (nothing live is touched), then point `DB_USER` at it and run
+`--tags dbcreds`. Verified in production 2026-09-06 — 18 seconds, no container
+restarted, connections already open kept serving on the old role.
+
+Full runbook, including the owner's password and the Kubernetes notes:
+[`docs/db-credentials.md`](../../docs/db-credentials.md).
 
 ## Data migration (no data loss)
 
