@@ -9,6 +9,13 @@ retire the old one later. Rotating a password in place therefore breaks every
 So the credential the app uses is never rotated in place. There are two of them,
 and rotation is a switchover.
 
+Verified in production on 2026-09-06: switching `DB_USER` from `charging_a` to
+`charging_b` with `--tags dbcreds` took 18 seconds, opened new connections on the
+new role while the ten already open kept serving as `charging_a`, produced zero
+authentication errors in either container, and left both containers untouched
+(`RestartCount=0`, unchanged `StartedAt`). The 10:00 ingest passes ran on the
+rotated credential.
+
 ## The roles
 
 | role | login | used by | privileges |
