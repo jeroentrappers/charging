@@ -77,7 +77,7 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 			next = pageURL(base, (page+1)*pageSize)
 		}
 	}
-	return collapseDuplicates(conns, updated), tariffs, nil
+	return collapseDuplicates(conns, updated, tariffSupport(conns)), tariffs, nil
 }
 
 // collapseDuplicates keeps one connector per roaming EVSE id + connector id.
@@ -90,15 +90,25 @@ func Fetch(ctx context.Context, cpoID, base, token string) ([]model.Connector, m
 // same charger row, so without this whichever copy the walk happened to read
 // last decided both the price and the availability we published.
 //
-// Preference: a usable status beats a dead one, then a priced record beats an
-// unpriced one, then the more recently updated record wins — the leftover copy's
-// status timestamp stands still (Lidl's ghosts have not moved since the day they
-// were retired) while its live twin is touched whenever a driver plugs in. That
-// tie-break matters: a live charger reads "inoperative" now and then, and
-// without it the ghost's old price won those moments on page order alone.
-// It also protects against offset pagination overlapping while the publisher
+// Preference, in order:
+//
+//  1. a usable status, then a priced record (see rank)
+//  2. the more widely used tariff — an operator's fleet is the best witness to
+//     which of two disagreeing records is current (see tariffSupport)
+//  3. the more recently updated record
+//  4. first seen, so the result is stable
+//
+// Status comes first because a charger that is available now should be
+// described by its own published price, even where the site prices differently
+// from the rest of the operator's fleet — that happens legitimately at 83
+// Belgian sites. Tariff support only decides between records that are equally
+// (un)usable, which is exactly the case the timestamps get wrong: when both
+// copies read "inoperative" the retired one can easily be the one still being
+// refreshed, as Lidl Affligem's has been since its chargers went out of service.
+//
+// This also protects against offset pagination overlapping while the publisher
 // regenerates a page.
-func collapseDuplicates(conns []model.Connector, updated []time.Time) []model.Connector {
+func collapseDuplicates(conns []model.Connector, updated []time.Time, support map[string]int) []model.Connector {
 	type key struct{ evse, conn string }
 	at := func(i int) time.Time {
 		if i < len(updated) {
@@ -116,8 +126,7 @@ func collapseDuplicates(conns []model.Connector, updated []time.Time) []model.Co
 			order = append(order, k)
 			continue
 		}
-		ri, rj := rank(conns[i]), rank(conns[j])
-		if ri > rj || (ri == rj && at(i).After(at(j))) {
+		if betterRecord(conns[i], conns[j], at(i), at(j), support) {
 			best[k] = i
 		}
 	}
@@ -131,9 +140,40 @@ func collapseDuplicates(conns []model.Connector, updated []time.Time) []model.Co
 	return out
 }
 
+// tariffSupport counts how many connectors in the pass reference each tariff.
+//
+// It is the sharpest way to tell a retired duplicate from a live one, because a
+// retired record keeps pointing at the tariff it was retired on. Lidl's feed
+// shows the shape plainly: 398 points on the rate holding today's €0.7016/kWh
+// and 306 on today's €0.50, against 4 and 6 stragglers on the prices those
+// replaced. An operator's own fleet is the best available witness to which of
+// two disagreeing records is current.
+func tariffSupport(conns []model.Connector) map[string]int {
+	support := make(map[string]int)
+	for _, c := range conns {
+		if c.TariffID != "" {
+			support[c.TariffID]++
+		}
+	}
+	return support
+}
+
 // rank scores how much a record deserves to represent its EVSE: a charger that
 // can serve a driver outranks a dead one, and a priced record outranks a silent
 // one at the same status.
+// betterRecord reports whether a should represent the EVSE instead of b.
+func betterRecord(a, b model.Connector, aAt, bAt time.Time, support map[string]int) bool {
+	if ra, rb := rank(a), rank(b); ra != rb {
+		return ra > rb
+	}
+	if a.TariffID != b.TariffID {
+		if sa, sb := support[a.TariffID], support[b.TariffID]; sa != sb {
+			return sa > sb
+		}
+	}
+	return aAt.After(bAt)
+}
+
 func rank(c model.Connector) int {
 	score := 0
 	switch c.EVSEStatus {

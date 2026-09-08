@@ -190,7 +190,7 @@ func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
 		{"ghost first", []model.Connector{ghost, live, other}},
 		{"live first", []model.Connector{live, ghost, other}},
 	} {
-		got := collapseDuplicates(tc.in, nil)
+		got := collapseDuplicates(tc.in, nil, nil)
 		if len(got) != 2 {
 			t.Fatalf("%s: %d connectors, want 2", tc.name, len(got))
 		}
@@ -205,7 +205,7 @@ func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
 	// Two dead copies: the priced one is still the better record.
 	unpriced := ghost
 	unpriced.TariffID = ""
-	got := collapseDuplicates([]model.Connector{unpriced, ghost}, nil)
+	got := collapseDuplicates([]model.Connector{unpriced, ghost}, nil, nil)
 	if len(got) != 1 || got[0].TariffID != "old" {
 		t.Errorf("dead copies: kept %+v, want the priced one", got)
 	}
@@ -213,7 +213,7 @@ func TestCollapseDuplicates_PrefersTheLiveRecord(t *testing.T) {
 	// Distinct connectors of one EVSE are not duplicates.
 	c2 := live
 	c2.ConnectorID = "2"
-	if got := collapseDuplicates([]model.Connector{live, c2}, nil); len(got) != 2 {
+	if got := collapseDuplicates([]model.Connector{live, c2}, nil, nil); len(got) != 2 {
 		t.Errorf("connector 1 and 2 of one EVSE collapsed: %d rows", len(got))
 	}
 }
@@ -227,11 +227,11 @@ func TestCollapseDuplicates_BreaksAStatusTieOnFreshness(t *testing.T) {
 	ghost := model.Connector{EVSEUID: "BE*LDL*E00000019", ConnectorID: "1", EVSEStatus: "OUTOFORDER", TariffID: "old", PlugType: "IEC_62196_T2_COMBO"}
 	live := model.Connector{EVSEUID: "BE*LDL*E00000019", ConnectorID: "1", EVSEStatus: "OUTOFORDER", TariffID: "current", PlugType: "CHADEMO"}
 
-	got := collapseDuplicates([]model.Connector{ghost, live}, []time.Time{stale, fresh})
+	got := collapseDuplicates([]model.Connector{ghost, live}, []time.Time{stale, fresh}, nil)
 	if len(got) != 1 || got[0].TariffID != "current" {
 		t.Errorf("ghost first: kept %+v, want the freshly-updated record", got)
 	}
-	got = collapseDuplicates([]model.Connector{live, ghost}, []time.Time{fresh, stale})
+	got = collapseDuplicates([]model.Connector{live, ghost}, []time.Time{fresh, stale}, nil)
 	if len(got) != 1 || got[0].TariffID != "current" {
 		t.Errorf("live first: kept %+v, want the freshly-updated record", got)
 	}
@@ -239,8 +239,50 @@ func TestCollapseDuplicates_BreaksAStatusTieOnFreshness(t *testing.T) {
 	// freshly-updated dead one.
 	avail := live
 	avail.EVSEStatus = "AVAILABLE"
-	got = collapseDuplicates([]model.Connector{avail, ghost}, []time.Time{stale, fresh})
+	got = collapseDuplicates([]model.Connector{avail, ghost}, []time.Time{stale, fresh}, nil)
 	if len(got) != 1 || got[0].EVSEStatus != "AVAILABLE" {
 		t.Errorf("kept %+v, want the available record", got)
+	}
+}
+
+// When both copies of an EVSE are out of service, timestamps stop telling the
+// truth: Lidl Affligem's retired record is the one their feed keeps refreshing,
+// while the record holding the current price went silent the day the chargers
+// broke. The tariff the rest of the operator's fleet uses settles it.
+func TestCollapseDuplicates_PrefersTheTariffTheFleetUses(t *testing.T) {
+	const retiredRate, currentRate = "COM133", "COM197"
+	support := map[string]int{currentRate: 398, retiredRate: 4}
+	silent := time.Date(2026, 9, 4, 18, 0, 21, 0, time.UTC) // stopped moving when it broke
+	refreshed := time.Date(2026, 9, 7, 10, 10, 14, 0, time.UTC)
+
+	retired := model.Connector{EVSEUID: "BE*LDL*E00000010", ConnectorID: "1", EVSEStatus: "OUTOFORDER", TariffID: retiredRate}
+	current := model.Connector{EVSEUID: "BE*LDL*E00000010", ConnectorID: "1", EVSEStatus: "OUTOFORDER", TariffID: currentRate}
+
+	for _, tc := range []struct {
+		name string
+		in   []model.Connector
+		at   []time.Time
+	}{
+		{"retired listed first and refreshed more recently", []model.Connector{retired, current}, []time.Time{refreshed, silent}},
+		{"current listed first", []model.Connector{current, retired}, []time.Time{silent, refreshed}},
+	} {
+		got := collapseDuplicates(tc.in, tc.at, support)
+		if len(got) != 1 {
+			t.Fatalf("%s: %d connectors, want 1", tc.name, len(got))
+		}
+		if got[0].TariffID != currentRate {
+			t.Errorf("%s: kept %s, want %s — the fleet's tariff must win when both copies are dead",
+				tc.name, got[0].TariffID, currentRate)
+		}
+	}
+
+	// But an available charger keeps its own price even when the fleet prices
+	// differently: 83 Belgian sites legitimately do that.
+	live := current
+	live.EVSEStatus = "AVAILABLE"
+	live.TariffID = "SITE-OWN-RATE"
+	got := collapseDuplicates([]model.Connector{retired, live}, []time.Time{refreshed, silent}, support)
+	if len(got) != 1 || got[0].TariffID != "SITE-OWN-RATE" {
+		t.Errorf("kept %+v, want the available record's own tariff", got)
 	}
 }
