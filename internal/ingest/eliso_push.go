@@ -32,6 +32,11 @@ import (
 // attribution stays with the seeding CPO via ChargersForEVSEAny.
 const elisoCPOID = "mob-eliso"
 
+// elisoTariffPrefix marks a tariff version written by the eliso overlay. The
+// overlay is eliso's own price for its EVSEs, so a broker push for the same EVSE
+// must not overwrite it (see Engine.overlayOwned).
+const elisoTariffPrefix = "eliso-"
+
 type elisoEVSE struct {
 	EVSEID             string   `json:"evseId"`
 	OperatorName       string   `json:"operator_name"`
@@ -78,10 +83,7 @@ func (e *Engine) ingestElisoPush(ctx context.Context, p *elisoPush) (string, int
 	// heartbeat exists for delta feeds that only push what changed.)
 
 	n := 0
-	for _, ev := range p.EVSEs {
-		if ev.EVSEID == "" {
-			continue
-		}
+	for _, ev := range dedupeElisoEVSEs(p.EVSEs) {
 		rows, rerr := e.Store.ChargersForEVSEAny(ctx, ev.EVSEID)
 		if rerr != nil {
 			e.Log.Error("eliso chargers-for-evse", "evse", ev.EVSEID, "err", rerr)
@@ -114,6 +116,41 @@ func (e *Engine) ingestElisoPush(ctx context.Context, p *elisoPush) (string, int
 	}
 	e.Log.Info("eliso push ingested", "cpo", elisoCPOID, "kind", "eliso", "evses", len(p.EVSEs), "rows", n)
 	return "eliso", n, nil
+}
+
+// dedupeElisoEVSEs collapses repeated EVSE entries. eliso's snapshot lists most
+// EVSEs twice, and for some DC points the two copies quote different ad-hoc
+// prices (e.g. 0.49 and 0.59 €/kWh) with the same timestamp and nothing else to
+// tell them apart. Applying both, in whatever order the push happened to list
+// them, flipped the stored price on every push. Keep one entry per EVSE with the
+// highest quoted price and blocking fee, so the result is stable and never
+// understates what a driver may pay. Order of first appearance is preserved and
+// entries without an EVSE id are dropped.
+func dedupeElisoEVSEs(evses []elisoEVSE) []elisoEVSE {
+	idx := make(map[string]int, len(evses))
+	out := make([]elisoEVSE, 0, len(evses))
+	for _, ev := range evses {
+		if ev.EVSEID == "" {
+			continue
+		}
+		i, seen := idx[ev.EVSEID]
+		if !seen {
+			idx[ev.EVSEID] = len(out)
+			out = append(out, ev)
+			continue
+		}
+		out[i].AdhocPrice = maxPrice(out[i].AdhocPrice, ev.AdhocPrice)
+		out[i].BlockingFee = maxPrice(out[i].BlockingFee, ev.BlockingFee)
+	}
+	return out
+}
+
+// maxPrice returns the larger of two optional prices; nil means "not quoted".
+func maxPrice(a, b *float64) *float64 {
+	if a == nil || (b != nil && *b > *a) {
+		return b
+	}
+	return a
 }
 
 // elisoStatus maps eliso's two status fields onto our vocabulary. A
@@ -152,7 +189,7 @@ func elisoTariff(ev elisoEVSE) *model.Tariff {
 	}
 	// Stable per-EVSE tariff id so the SCD2 path only versions on real changes.
 	return &model.Tariff{
-		OCPIID:   "eliso-" + ev.EVSEID,
+		OCPIID:   elisoTariffPrefix + ev.EVSEID,
 		Currency: "EUR",
 		Elements: []model.TariffElement{{PriceComponents: comps}},
 	}

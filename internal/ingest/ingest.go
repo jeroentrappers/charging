@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"math"
 	"runtime"
 	"strings"
 	"sync"
@@ -420,6 +421,66 @@ func (e *Engine) RecordLive(ctx context.Context, chargerID int64, conn model.Con
 	return nil
 }
 
+// euroPrices derives a tariff's euro figures for a charger: the headline
+// comparable and the per-session price matrix. Both are nil when the tariff's
+// currency cannot be converted (see processTariff).
+func (e *Engine) euroPrices(ctx context.Context, tar model.Tariff, conn model.Connector) (*float64, map[string]float64) {
+	rate, convertible := e.toEUR(ctx, 1, tar.Currency)
+	if !convertible {
+		return nil, nil
+	}
+	var comparable *float64
+	if c, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle); ok {
+		c *= rate
+		comparable = &c
+	}
+	prices := pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)
+	if rate != 1 {
+		for k, v := range prices {
+			prices[k] = v * rate
+		}
+	}
+	return comparable, prices
+}
+
+// processStatusTariff applies a tariff carried on a status push. Status pushes
+// publish only the tier in force at that moment, while the table push for the
+// same rate carries the whole schedule (UFC publishes day and night per-minute
+// tiers, and its night status pushes drop the daytime idle fee). Applying each
+// as it arrived opened a new version on every push, alternating forever.
+//
+// So for the rate the charger already holds, a status tariff only versions when
+// the headline price moves: that is what a status push reliably tells us. Long-
+// session fees are left to the table push, whose full schedule wins. A different
+// rate still versions as usual.
+func (e *Engine) processStatusTariff(ctx context.Context, id int64, conn model.Connector, tar model.Tariff) (bool, error) {
+	curID, curHeadline, found, err := e.Store.CurrentTariffRate(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("current tariff rate: %w", err)
+	}
+	if found && curID == tar.OCPIID && curHeadline != nil {
+		if headline, _ := e.euroPrices(ctx, tar, conn); headline != nil && math.Abs(*headline-*curHeadline) < 1e-4 {
+			return false, nil
+		}
+	}
+	return e.processTariff(ctx, id, conn, map[string]model.Tariff{tar.OCPIID: tar})
+}
+
+// overlayOwned reports whether the charger's open tariff was written by an
+// operator overlay (eliso), which another source's push must not replace.
+// Monta publishes its own rate for eliso's EVSEs and the overlay writes eliso's
+// price onto the same rows, so letting both through flipped those chargers
+// between the two prices on every push.
+func (e *Engine) overlayOwned(ctx context.Context, id int64) (bool, error) {
+	curID, _, found, err := e.Store.CurrentTariffRate(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("current tariff rate: %w", err)
+	}
+	return found && overlayRate(curID), nil
+}
+
+func overlayRate(rateID string) bool { return strings.HasPrefix(rateID, elisoTariffPrefix) }
+
 // processTariff applies SCD2 change detection for one connector's tariff.
 // It returns whether a new tariff version was recorded.
 //
@@ -488,6 +549,14 @@ func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connect
 		// unpriced forever, since its content never changes.
 		return false, e.fillMissingEuroPrices(ctx, id, conn, tar)
 	}
+	if found && !overlayRate(tar.OCPIID) {
+		// Only reached when the tariff changed, so the extra lookup is rare.
+		if owned, err := e.overlayOwned(ctx, id); err != nil {
+			return false, err
+		} else if owned {
+			return false, nil // the operator's own overlay price wins over a broker's rate
+		}
+	}
 
 	components, err := tar.Components()
 	if err != nil {
@@ -505,20 +574,9 @@ func (e *Engine) processTariff(ctx context.Context, id int64, conn model.Connect
 	// old to trust), such a tariff is deliberately stored WITHOUT a comparable
 	// price: it shows its real published tariff and sorts as unpriced, rather
 	// than being ranked at a made-up parity.
-	var comparable *float64
+	comparable, prices := e.euroPrices(ctx, tar, conn)
 	pricesJSON := []byte("{}")
-	rate, convertible := e.toEUR(ctx, 1, tar.Currency)
-	if convertible {
-		if c, ok := pricing.Headline(tar, conn.PowerKW, conn.CurrentType, e.Vehicle); ok {
-			c *= rate
-			comparable = &c
-		}
-		prices := pricing.AllPrices(tar, conn.PowerKW, conn.CurrentType, e.Vehicle)
-		if rate != 1 {
-			for k, v := range prices {
-				prices[k] = v * rate
-			}
-		}
+	if prices != nil {
 		var err error
 		if pricesJSON, err = json.Marshal(prices); err != nil {
 			return false, fmt.Errorf("marshal prices: %w", err)

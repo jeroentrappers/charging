@@ -348,6 +348,23 @@ func (s *Store) CurrentTariffHash(ctx context.Context, chargerID int64) (hash st
 	return hash, true, nil
 }
 
+// CurrentTariffRate returns the rate id (the published tariff's own id) and the
+// headline euro price of the charger's open tariff version. found is false when
+// there is no open version; headline is nil when the version is unpriced.
+func (s *Store) CurrentTariffRate(ctx context.Context, chargerID int64) (ocpiID string, headline *float64, found bool, err error) {
+	err = s.Pool.QueryRow(ctx,
+		`SELECT coalesce(price_components->>'ocpi_id', ''), comparable_price_eur::float8
+		 FROM tariff_version WHERE charger_id=$1 AND observed_to IS NULL`,
+		chargerID).Scan(&ocpiID, &headline)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, false, nil
+	}
+	if err != nil {
+		return "", nil, false, err
+	}
+	return ocpiID, headline, true, nil
+}
+
 // TariffWrite is the payload for a new tariff version.
 type TariffWrite struct {
 	Hash              string

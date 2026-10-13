@@ -240,7 +240,7 @@ func (e *Engine) applyStatuses(ctx context.Context, cpoID string, updates []date
 					CPOID: cpoID, EVSEUID: u.EVSEUID, ConnectorID: row.ConnectorID,
 					PowerKW: row.PowerKW, CurrentType: row.CurrentType, TariffID: u.Tariff.OCPIID,
 				}
-				if _, perr := e.processTariff(ctx, row.ID, conn, map[string]model.Tariff{u.Tariff.OCPIID: *u.Tariff}); perr != nil {
+				if _, perr := e.processStatusTariff(ctx, row.ID, conn, *u.Tariff); perr != nil {
 					e.Log.Error("mobilithek status tariff", "id", row.ID, "err", perr)
 				} else if cerr := e.Store.ConfirmTariff(ctx, row.ID); cerr != nil {
 					e.Log.Error("mobilithek confirm tariff", "id", row.ID, "err", cerr)
