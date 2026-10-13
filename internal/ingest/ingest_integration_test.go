@@ -30,7 +30,7 @@ func setup(t *testing.T) *store.Store {
 		t.Skipf("no database available (%v); run `make db-up`", err)
 	}
 	_, err = st.Pool.Exec(ctx,
-		`TRUNCATE tariff_version, charger_status, charger, ingest_run, cpo RESTART IDENTITY CASCADE`)
+		`TRUNCATE tariff_price_month, tariff_version, charger_status, charger, ingest_run, cpo RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Skipf("schema not migrated (%v); run `make migrate`", err)
 	}

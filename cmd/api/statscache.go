@@ -11,7 +11,7 @@ import (
 // entry is served immediately while ONE background refresh recomputes it; only
 // a cold key blocks on the query. The insights numbers move on ingest cadence
 // (minutes to daily), so serving a slightly stale aggregate is free accuracy-
-// wise and turns the ~8s price-trend scan into a hit for every visitor.
+// wise and turns the multi-second scans into a hit for every visitor.
 type statsCache struct {
 	mu      sync.Mutex
 	entries map[string]*statsEntry
@@ -107,8 +107,5 @@ func (s *server) warmStats(ctx context.Context) {
 	}
 	if _, err := s.opStatsSessions(ctx, nil); err != nil {
 		s.log.Warn("stats warmup", "key", "sessions", "err", err)
-	}
-	if _, err := s.opStatsTrend(ctx, &trendIn{Months: 12}); err != nil {
-		s.log.Warn("stats warmup", "key", "trend/12", "err", err)
 	}
 }

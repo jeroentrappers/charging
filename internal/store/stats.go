@@ -182,6 +182,9 @@ type TrendPoint struct {
 // PriceTrend returns the monthly average headline price over the last n months,
 // using each tariff version's validity window (temporal aggregation over the
 // SCD2 history). This is the core "are prices rising?" statistic.
+//
+// It reads the tariff_price_month rollup, so it is only as fresh as the last
+// RefreshPriceMonths; a month the rollup has not seen yet reads as empty.
 func (s *Store) PriceTrend(ctx context.Context, months int) ([]TrendPoint, error) {
 	if months <= 0 || months > 60 {
 		months = 12
@@ -194,14 +197,10 @@ func (s *Store) PriceTrend(ctx context.Context, months int) ([]TrendPoint, error
 				interval '1 month') AS bucket
 		)
 		SELECT to_char(m.bucket, 'YYYY-MM') AS month,
-		       avg(tv.comparable_price_eur)::float8,
-		       count(tv.*)
+		       (p.sum_eur / p.n)::float8,
+		       coalesce(p.n, 0)
 		FROM m
-		LEFT JOIN tariff_version tv
-		  ON tv.comparable_price_eur IS NOT NULL
-		 AND tv.observed_from < (m.bucket + interval '1 month')
-		 AND (tv.observed_to IS NULL OR tv.observed_to >= m.bucket)
-		GROUP BY m.bucket
+		LEFT JOIN tariff_price_month p ON p.month = m.bucket::date
 		ORDER BY m.bucket`, months)
 	if err != nil {
 		return nil, err
@@ -216,4 +215,47 @@ func (s *Store) PriceTrend(ctx context.Context, months int) ([]TrendPoint, error
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// RefreshPriceMonths brings the tariff_price_month rollup up to date and returns
+// the first month it recomputed plus how many months it wrote.
+//
+// Versions only open and close at now(), so the versions touching a month are
+// fixed once the month is over: a month computed after it ended is final. Each
+// call therefore recomputes only from the earliest non-final month (normally
+// the current one, plus the previous one on the first refresh after a month
+// rolls over), reading just the versions still open or closed since then. An
+// empty rollup is backfilled from the whole history in one pass.
+//
+// One deliberate difference from aggregating live: FillDerivedPrices can later
+// give an open version a euro price it lacked, and a final month does not pick
+// that up. The month keeps the prices as they stood when it ended.
+func (s *Store) RefreshPriceMonths(ctx context.Context) (from time.Time, months int64, err error) {
+	var empty bool
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT count(*) = 0,
+		       coalesce(min(month) FILTER (WHERE computed_at < month + interval '1 month'),
+		                date_trunc('month', now())::date)
+		FROM tariff_price_month`).Scan(&empty, &from); err != nil {
+		return time.Time{}, 0, err
+	}
+	if empty {
+		from = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	tag, err := s.Pool.Exec(ctx, `
+		INSERT INTO tariff_price_month (month, sum_eur, n, computed_at)
+		SELECT b.bucket::date, sum(tv.comparable_price_eur), count(*), now()
+		FROM tariff_version tv,
+		     generate_series(greatest(date_trunc('month', tv.observed_from), $1::date),
+		                     date_trunc('month', coalesce(tv.observed_to, now())),
+		                     interval '1 month') AS b(bucket)
+		WHERE tv.comparable_price_eur IS NOT NULL
+		  AND (tv.observed_to IS NULL OR tv.observed_to >= $1::date)
+		GROUP BY b.bucket
+		ON CONFLICT (month) DO UPDATE
+		   SET sum_eur = excluded.sum_eur, n = excluded.n, computed_at = excluded.computed_at`, from)
+	if err != nil {
+		return from, 0, err
+	}
+	return from, tag.RowsAffected(), nil
 }

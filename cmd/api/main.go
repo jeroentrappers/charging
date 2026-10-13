@@ -186,8 +186,10 @@ func main() {
 	}
 
 	// Warm the insights caches so the first visitor after a restart doesn't
-	// pay for the cold queries (the price-trend history scan takes seconds).
+	// pay for the cold queries.
 	go s.warmStats(context.Background())
+	// Keep the monthly price-trend rollup current (backfills on first run).
+	go s.runPriceRollup(context.Background(), time.Hour)
 
 	srv := &http.Server{
 		Addr:              cfg.APIAddr,

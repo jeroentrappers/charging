@@ -580,21 +580,17 @@ type trendOut struct {
 }
 
 func (s *server) opStatsTrend(ctx context.Context, in *trendIn) (*trendOut, error) {
-	// The heavy one: a temporal aggregation over the full SCD2 tariff history
-	// (~8s cold). Monthly buckets barely move, so cache for an hour.
-	key := fmt.Sprintf("trend/%d", in.Months)
-	v, err := s.stats.get(ctx, key, time.Hour, func(ctx context.Context) (any, error) {
-		res, err := s.st.PriceTrend(ctx, in.Months)
-		if res == nil {
-			res = []store.TrendPoint{}
-		}
-		return res, err
-	})
+	// Reads the tariff_price_month rollup (a dozen rows, kept current by
+	// runPriceRollup), so unlike the other stats it needs no cache.
+	res, err := s.st.PriceTrend(ctx, in.Months)
 	if err != nil {
 		s.log.Error("stats price-trend", "err", err)
 		return nil, huma.Error500InternalServerError("query failed")
 	}
+	if res == nil {
+		res = []store.TrendPoint{}
+	}
 	out := &trendOut{}
-	out.Body.Trend = v.([]store.TrendPoint)
+	out.Body.Trend = res
 	return out, nil
 }
