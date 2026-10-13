@@ -8,8 +8,8 @@
 // TariffID="".
 //
 // The dated CSV download URL is not stable, so Fetch scrapes the landing page
-// for the current link. The CSV itself is ISO-8859-1 encoded, semicolon
-// delimited, uses a comma as decimal separator, and is preceded by a preamble:
+// for the current link. The CSV used to be ISO-8859-1 and is now UTF-8 with a
+// BOM (both are accepted, see decode); it is semicolon delimited, uses a comma as decimal separator, and is preceded by a preamble:
 // the real header row is the one containing "Breitengrad" and "Betreiber".
 package bnetza
 
@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding/charmap"
 
@@ -86,13 +87,14 @@ func get(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 }
 
 // Parse maps the Ladesäulenregister CSV to canonical connectors. The CSV is
-// ISO-8859-1 encoded; it is decoded to UTF-8, the preamble is trimmed, then the
-// remaining records are read with a semicolon delimiter. No tariffs exist in
-// this source, so the tariff map is always empty.
+// decoded to UTF-8, the preamble is trimmed, then the remaining records are
+// read with a semicolon delimiter. No tariffs exist in this source, so the
+// tariff map is always empty. A register that yields no connectors is an error:
+// the real one lists well over 100k, so zero means the format changed.
 func Parse(cpoID string, data []byte) ([]model.Connector, map[string]model.Tariff, error) {
-	utf8Data, err := charmap.ISO8859_1.NewDecoder().Bytes(data)
+	utf8Data, err := decode(data)
 	if err != nil {
-		return nil, nil, fmt.Errorf("decode latin-1: %w", err)
+		return nil, nil, err
 	}
 
 	trimmed, err := trimPreamble(utf8Data)
@@ -172,7 +174,28 @@ func Parse(cpoID string, data []byte) ([]model.Connector, map[string]model.Tarif
 			})
 		}
 	}
+	if len(conns) == 0 {
+		return nil, nil, fmt.Errorf("bnetza: no connectors parsed (header: %v)", header)
+	}
 	return conns, tariffs, nil
+}
+
+// decode returns the register as UTF-8. It was published as ISO-8859-1 until
+// mid-2026 and as UTF-8 with a BOM since. Decoding UTF-8 as Latin-1 mangles the
+// umlauts in the header ("Längengrad" no longer matches), which silently dropped
+// every row, so only fall back to Latin-1 when the bytes are not valid UTF-8.
+func decode(data []byte) ([]byte, error) {
+	if rest, ok := bytes.CutPrefix(data, []byte("\xef\xbb\xbf")); ok {
+		return rest, nil
+	}
+	if utf8.Valid(data) {
+		return data, nil
+	}
+	out, err := charmap.ISO8859_1.NewDecoder().Bytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("decode latin-1: %w", err)
+	}
+	return out, nil
 }
 
 // trimPreamble drops everything before the real header line, which is the first

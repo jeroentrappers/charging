@@ -3,6 +3,8 @@ package bnetza
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 // Latin-1 byte values for accented chars used in the German headers/data.
@@ -110,5 +112,39 @@ func TestParse(t *testing.T) {
 	}
 	if c1.Lat != 52.520008 || c1.Lon != 13.404954 {
 		t.Errorf("c1 coords: got %v,%v", c1.Lat, c1.Lon)
+	}
+}
+
+// TestParse_UTF8BOM covers the register as published since mid-2026: UTF-8
+// with a BOM. Decoding it as Latin-1 garbles "Längengrad", which used to drop
+// every row without an error.
+func TestParse_UTF8BOM(t *testing.T) {
+	utf8Data, err := charmap.ISO8859_1.NewDecoder().Bytes(sampleCSV())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"bom":    append([]byte("\xef\xbb\xbf"), utf8Data...),
+		"no bom": utf8Data,
+	} {
+		conns, _, err := Parse("bnetza", data)
+		if err != nil {
+			t.Fatalf("%s: Parse error: %v", name, err)
+		}
+		if len(conns) != 3 {
+			t.Fatalf("%s: expected 3 connectors, got %d", name, len(conns))
+		}
+		if conns[0].City != "München" || conns[0].Lon != 11.0 {
+			t.Errorf("%s: c0 city/lon: got %q / %v", name, conns[0].City, conns[0].Lon)
+		}
+	}
+}
+
+// TestParse_NoConnectorsIsError makes a format change fail the pass loudly
+// instead of reporting a successful pass that saw nothing.
+func TestParse_NoConnectorsIsError(t *testing.T) {
+	data := []byte("Breitengrad;Laengengrad;Betreiber\r\n48,1;11,0;X\r\n")
+	if _, _, err := Parse("bnetza", data); err == nil {
+		t.Fatal("expected an error when no connectors are parsed")
 	}
 }
